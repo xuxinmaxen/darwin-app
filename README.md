@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Darwin
 
-## Getting Started
+> **多人意图合成。让团队的判断被 AI 合成为一份共鸣的产物。**
 
-First, run the development server:
+[![v0 demo](https://img.shields.io/badge/v0-mock%20demo-blue)](public/demo.html)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+Darwin 是第一个把"多人意图"作为头等输入、AI 作为意图调和者的协作生成产品。
+
+- **真人**贡献目的、品味、约束
+- **Agent**贡献视角、执行、规模
+- 两者在同一画布上协作
+
+## 核心机制
+
+| 层 | 作用 |
+|---|---|
+| **Intent Layer** | 用户一句话 → AI 抽取为结构化 Intent（type / scope / weight） |
+| **Tension as First-class** | 同 scope 语义对立时显性化冲突,AI 提议调和方案,人仲裁 |
+| **AI as Mediator** | AI 是抽取者 / 提议者,**不是决策者**。最终拍板权属于人 |
+| **Format-agnostic Adapter** | 同一组 Intent 可输出落地页 / PPT / 文档 / 设计稿 |
+
+## 演进阶段
+
+- [x] **v0** — 静态 mock demo（[在线体验](https://darwin-app.vercel.app/demo)）
+- [ ] **v1** — 单人 Intent → Claude 抽取 → HTML 产物（验证意图层）
+- [ ] **v2** — 多人实时 + Tension 检测 + 决策留痕
+- [ ] **v3** — Agent 对话（Atlas/Lyra）+ 多 Adapter
+- [ ] **v4** — 团队记忆 + 影子 Agent
+
+## 本地开发
 
 ```bash
+git clone https://github.com/xuxinmaxen/darwin-app.git
+cd darwin-app
+npm install
+cp .env.example .env.local
+# 在 .env.local 填入 ANTHROPIC_API_KEY 等
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+打开 [http://localhost:3000](http://localhost:3000)。
+访问 [http://localhost:3000/demo.html](http://localhost:3000/demo.html) 查看 v0 mock demo。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 文档
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- [`CLAUDE.md`](CLAUDE.md) — AI 协作约定 + 第一性原理
+- [`docs/architecture.md`](docs/architecture.md) — 系统架构 + 数据流
+- [`docs/v1-spec.md`](docs/v1-spec.md) — V1 MVP 范围 + API 契约
 
-## Learn More
+## 技术栈
 
-To learn more about Next.js, take a look at the following resources:
+Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 · Claude API · Supabase · Vercel
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 名字由来
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Darwin** —— 多人意图通过冲突、讨论、共识完成自然选择,产物在持续进化。
