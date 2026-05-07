@@ -6,6 +6,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { describeClaudeConfig } from '@/lib/claude';
 import type { HealthResponse } from '@/lib/types';
 
 export async function GET() {
@@ -21,6 +22,7 @@ export async function GET() {
           process.env.SUPABASE_SERVICE_ROLE_KEY
       ),
     },
+    claude: describeClaudeConfig(),
     timestamp: new Date().toISOString(),
   };
   return NextResponse.json(body);

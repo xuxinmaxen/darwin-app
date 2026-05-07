@@ -6,6 +6,7 @@
  */
 
 import Link from 'next/link';
+import { describeClaudeConfig } from '@/lib/claude';
 import type { HealthResponse } from '@/lib/types';
 
 async function getHealth(): Promise<HealthResponse | null> {
@@ -22,6 +23,7 @@ async function getHealth(): Promise<HealthResponse | null> {
           process.env.SUPABASE_SERVICE_ROLE_KEY
       ),
     },
+    claude: describeClaudeConfig(),
     timestamp: new Date().toISOString(),
   };
 }
@@ -29,6 +31,7 @@ async function getHealth(): Promise<HealthResponse | null> {
 export default async function Home() {
   const health = await getHealth();
   const env = health?.env ?? { anthropic: false, supabase: false };
+  const claude = health?.claude;
 
   return (
     <main className="min-h-screen bg-[#FAF9F5] text-[#1A1A1C]">
@@ -60,6 +63,22 @@ export default async function Home() {
               <StatusBadge ok={env.supabase} />
             </li>
           </ul>
+          {claude && (
+            <dl className="mt-4 space-y-1.5 rounded-lg bg-zinc-50 p-3 text-[11px] text-zinc-600">
+              <div className="flex justify-between gap-4">
+                <dt className="text-zinc-500">Base URL</dt>
+                <dd className="truncate font-mono text-zinc-800">{claude.baseURL}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-zinc-500">Default model</dt>
+                <dd className="font-mono text-zinc-800">{claude.modelDefault}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-zinc-500">Opus model</dt>
+                <dd className="font-mono text-zinc-800">{claude.modelOpus}</dd>
+              </div>
+            </dl>
+          )}
           {(!env.anthropic || !env.supabase) && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
               <strong className="font-semibold">下一步:</strong>

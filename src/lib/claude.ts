@@ -17,6 +17,10 @@ export const MODEL_OPUS =
   process.env.CLAUDE_MODEL_OPUS ?? 'claude-opus-4-1';
 
 // ─── Client (singleton) ────────────────────────────────────
+//
+// Supports both Anthropic-direct and Anthropic-compatible gateways
+// (e.g. Hermes / cc-switch / Deeplumen proxy).
+// If ANTHROPIC_BASE_URL is set, requests go there instead of api.anthropic.com.
 
 let _client: Anthropic | null = null;
 
@@ -28,8 +32,19 @@ function getClient(): Anthropic {
       'ANTHROPIC_API_KEY is not set. Copy .env.example → .env.local and fill it in.'
     );
   }
-  _client = new Anthropic({ apiKey });
+  const baseURL = process.env.ANTHROPIC_BASE_URL?.trim() || undefined;
+  _client = new Anthropic({ apiKey, baseURL });
   return _client;
+}
+
+/** For diagnostics / health endpoint — does NOT throw if env is missing */
+export function describeClaudeConfig() {
+  return {
+    hasKey: Boolean(process.env.ANTHROPIC_API_KEY),
+    baseURL: process.env.ANTHROPIC_BASE_URL?.trim() || 'https://api.anthropic.com',
+    modelDefault: MODEL_DEFAULT,
+    modelOpus: MODEL_OPUS,
+  };
 }
 
 // ─── Generic call ──────────────────────────────────────────

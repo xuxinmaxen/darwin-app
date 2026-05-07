@@ -187,5 +187,11 @@ export type HealthResponse = {
     anthropic: boolean;
     supabase: boolean;
   };
+  claude: {
+    hasKey: boolean;
+    baseURL: string;
+    modelDefault: string;
+    modelOpus: string;
+  };
   timestamp: string;
 };
