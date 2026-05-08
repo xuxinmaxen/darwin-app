@@ -1,0 +1,277 @@
+/**
+ * Intent[] → 产物 合成器
+ *
+ * 行为:
+ *   1. 默认先试 Claude (走 lib/claude.ts → 当前指向 Hermes)
+ *   2. Claude 报错 / 超时 / Hermes 503 → 自动回退本地 template
+ *   3. 想强制走 template (省流量调试 UI),设 env DARWIN_DISABLE_CLAUDE=1
+ *
+ * 这样的好处:Hermes 解锁 / 换原生 Anthropic key 后,无需改代码,
+ * dev server 重启一次就直接走 Claude。
+ */
+
+import type { Project, Intent } from './types';
+import { callLLM, llmProvider } from './llm';
+import {
+  buildSynthesizeSystem,
+  buildSynthesizeUser,
+  looksLikeValidHtml,
+  stripCodeFences,
+} from './prompts/synthesize-html';
+
+export type SynthesisResult = {
+  content: string;
+  source: 'llm' | 'template';
+  reason?: string;
+};
+
+// HTML 8000 token 约 80-100s 生成,留足 margin。可通过 env 调,长时间项目也能用。
+const LLM_TIMEOUT_MS = Number(process.env.LLM_SYNTHESIZE_TIMEOUT_MS) || 180_000;
+
+export async function synthesize(
+  project: Project,
+  intents: Intent[]
+): Promise<SynthesisResult> {
+  if (process.env.DARWIN_DISABLE_CLAUDE === '1') {
+    return {
+      content: renderTemplate(project, intents),
+      source: 'template',
+      reason: 'DARWIN_DISABLE_CLAUDE=1 强制使用本地模板',
+    };
+  }
+
+  if (!llmProvider()) {
+    return {
+      content: renderTemplate(project, intents),
+      source: 'template',
+      reason: '未配置 OPENAI_API_KEY 或 ANTHROPIC_API_KEY,使用本地模板',
+    };
+  }
+
+  // 优先走 LLM,失败回退
+  try {
+    const html = await Promise.race([
+      callLLMForHtmlSynthesis(project, intents),
+      timeout(LLM_TIMEOUT_MS),
+    ]);
+    return { content: html, source: 'llm' };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn('[synthesize] LLM path failed, falling back to template:', reason);
+    return {
+      content: renderTemplate(project, intents),
+      source: 'template',
+      reason: `LLM 失败: ${reason.slice(0, 120)}`,
+    };
+  }
+}
+
+// ─── LLM path ──────────────────────────────────────────────
+
+async function callLLMForHtmlSynthesis(
+  project: Project,
+  intents: Intent[]
+): Promise<string> {
+  const system = buildSynthesizeSystem(project);
+  const user = buildSynthesizeUser(intents);
+
+  const raw = await callLLM({
+    system,
+    user,
+    cacheSystem: true,
+    maxTokens: 8000,
+    temperature: 0.4,
+  });
+
+  const cleaned = stripCodeFences(raw);
+  if (!looksLikeValidHtml(cleaned)) {
+    throw new Error(
+      `LLM 返回不是 HTML 文档 (前 100 字符: ${cleaned.slice(0, 100)})`
+    );
+  }
+  return cleaned;
+}
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`Claude 调用超时 ${ms}ms`)), ms)
+  );
+}
+
+// ─── Template fallback ────────────────────────────────────
+
+function renderTemplate(project: Project, intents: Intent[]): string {
+  if (project.type === 'html') return renderHtml(project, intents);
+  return renderMarkdown(project, intents);
+}
+
+function renderHtml(project: Project, intents: Intent[]): string {
+  const goals = intents.filter(i => i.type === 'Goal');
+  const constraints = intents.filter(
+    i => i.type === 'Constraint' || i.type === 'Veto'
+  );
+  const preferences = intents.filter(i => i.type === 'Preference');
+
+  const heroTitle = project.name;
+  const heroSub =
+    goals[0]?.statement ||
+    project.background ||
+    `由 ${intents.length} 条 Intent 合成的页面`;
+
+  const featureCards = goals
+    .slice(1, 7)
+    .map(
+      (g, idx) => `
+      <article class="feature">
+        <div class="feat-num">0${idx + 1}</div>
+        <p class="feat-text">${escapeHtml(g.statement)}</p>
+      </article>`
+    )
+    .join('');
+
+  const promiseList = constraints
+    .map(c => `<li>${escapeHtml(c.statement)}</li>`)
+    .join('');
+
+  const prefList = preferences
+    .map(p => `<li>${escapeHtml(p.statement)}</li>`)
+    .join('');
+
+  const generatedAt = new Date().toLocaleString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(project.name)}</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",sans-serif;background:#FAF9F5;color:#1A1A1C;line-height:1.55;-webkit-font-smoothing:antialiased}
+  .frame{max-width:1080px;margin:0 auto;background:#fff;box-shadow:0 0 0 1px #E8E5DA, 0 16px 48px rgba(20,20,30,.06)}
+  .hero{padding:80px 60px 64px;background:radial-gradient(ellipse 80% 90% at 100% 0%,rgba(79,70,229,.10),transparent 60%),radial-gradient(ellipse 80% 90% at 0% 100%,rgba(124,58,237,.06),transparent 60%);border-bottom:1px solid #E8E5DA}
+  .eyebrow{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:99px;background:#fff;color:#3730A3;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:18px;border:1px solid #DEE2FF}
+  .eyebrow::before{content:"";width:5px;height:5px;border-radius:50%;background:#4F46E5}
+  h1{font-size:44px;line-height:1.1;letter-spacing:-.025em;margin:0 0 18px;font-weight:700}
+  .sub{font-size:17px;color:#525560;max-width:600px;margin:0 0 32px;line-height:1.6}
+  .actions{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{padding:12px 22px;border-radius:9px;font-size:14px;font-weight:500;cursor:pointer;border:0;font-family:inherit;letter-spacing:-.005em;transition:transform .15s}
+  .btn:hover{transform:translateY(-1px)}
+  .btn-p{background:#1A1A1C;color:#fff;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+  .btn-g{background:transparent;border:1px solid #D8D5C8;color:#525560;box-shadow:0 1px 2px rgba(20,20,30,.03)}
+  .features{padding:64px 60px;border-bottom:1px solid #E8E5DA}
+  .section-eyebrow{font-size:11px;color:#8E8F99;letter-spacing:.12em;text-transform:uppercase;margin-bottom:28px;font-weight:600}
+  .features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+  .feature{padding:24px;border:1px solid #E8E5DA;border-radius:14px;background:#FAFAFA;transition:transform .2s,box-shadow .2s}
+  .feature:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(20,20,30,.06)}
+  .feat-num{font-size:11px;color:#4F46E5;font-weight:700;letter-spacing:.08em;margin-bottom:10px;font-family:ui-monospace,Menlo,monospace}
+  .feat-text{margin:0;font-size:14px;color:#1A1A1C;line-height:1.55}
+  .promises,.prefs{padding:48px 60px;background:#F7F6F0;border-bottom:1px solid #E8E5DA}
+  .prefs{background:#fff}
+  .promises h2,.prefs h2{font-size:20px;letter-spacing:-.015em;margin:0 0 14px}
+  .promises ul,.prefs ul{padding-left:22px;color:#525560;font-size:14px;margin:0}
+  .promises li,.prefs li{margin-bottom:6px;line-height:1.6}
+  .cta{padding:80px 60px;text-align:center}
+  .cta h2{font-size:30px;letter-spacing:-.02em;margin:0 0 12px;font-weight:700}
+  .cta-sub{color:#525560;margin:0 0 24px;font-size:14.5px}
+  .meta{padding:20px 60px;color:#8E8F99;font-size:11px;text-align:center;background:#F4F2EA;border-top:1px solid #E8E5DA;font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+  <div class="frame">
+    <section class="hero">
+      <div class="eyebrow">${escapeHtml(project.name)}</div>
+      <h1>${escapeHtml(heroTitle)}</h1>
+      <p class="sub">${escapeHtml(heroSub)}</p>
+      <div class="actions">
+        <button class="btn btn-p">立即试用 →</button>
+        <button class="btn btn-g">观看演示</button>
+      </div>
+    </section>
+    ${
+      featureCards
+        ? `<section class="features"><div class="section-eyebrow">核心能力</div><div class="features-grid">${featureCards}</div></section>`
+        : ''
+    }
+    ${
+      promiseList
+        ? `<section class="promises"><h2>我们的承诺</h2><ul>${promiseList}</ul></section>`
+        : ''
+    }
+    ${
+      prefList
+        ? `<section class="prefs"><h2>设计偏好</h2><ul>${prefList}</ul></section>`
+        : ''
+    }
+    <section class="cta">
+      <h2>准备好开始了吗？</h2>
+      <p class="cta-sub">由 ${intents.length} 条 Intent 合成 · ${generatedAt}</p>
+      <button class="btn btn-p">免费开始 →</button>
+    </section>
+    <div class="meta">
+      Darwin 模板合成 · ${intents.length} intents · ${generatedAt} · Claude 解锁后会换成 LLM 直出
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function renderMarkdown(project: Project, intents: Intent[]): string {
+  const lines: string[] = [];
+  const generatedAt = new Date().toLocaleString('zh-CN');
+
+  lines.push(`# ${project.name}\n`);
+  if (project.background) lines.push(`> ${project.background}\n`);
+
+  const grouped: Record<string, Intent[]> = {
+    Goal: [],
+    Constraint: [],
+    Preference: [],
+    Reference: [],
+    Veto: [],
+  };
+  for (const i of intents) grouped[i.type]?.push(i);
+
+  if (grouped.Goal.length > 0) {
+    lines.push(`## 目标\n`);
+    for (const i of grouped.Goal)
+      lines.push(`- **${i.scope}** (${i.weight}): ${i.statement}`);
+    lines.push('');
+  }
+  if (grouped.Constraint.length > 0 || grouped.Veto.length > 0) {
+    lines.push(`## 约束 / 红线\n`);
+    for (const i of [...grouped.Constraint, ...grouped.Veto])
+      lines.push(`- **${i.type}** [${i.scope}]: ${i.statement}`);
+    lines.push('');
+  }
+  if (grouped.Preference.length > 0) {
+    lines.push(`## 偏好\n`);
+    for (const i of grouped.Preference)
+      lines.push(`- ${i.statement}`);
+    lines.push('');
+  }
+  if (grouped.Reference.length > 0) {
+    lines.push(`## 参考\n`);
+    for (const i of grouped.Reference) lines.push(`- ${i.statement}`);
+    lines.push('');
+  }
+
+  lines.push(
+    `\n---\n\n*合成于 ${generatedAt} · ${intents.length} intents · template fallback*`
+  );
+  return lines.join('\n');
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}

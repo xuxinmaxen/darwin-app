@@ -13,15 +13,19 @@ import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
 import IntentForm from '@/components/IntentForm';
 import ProjectActionsMenu from '@/components/ProjectActionsMenu';
+import ProjectCanvas from '@/components/ProjectCanvas';
+import type { Version } from '@/lib/versions';
 
 export default function ProjectShell({
   project,
   intents,
   claudeReady,
+  initialVersion,
 }: {
   project: Project;
   intents: Intent[];
   claudeReady: boolean;
+  initialVersion: Version | null;
 }) {
   return (
     <div className="view-project">
@@ -102,111 +106,31 @@ export default function ProjectShell({
         {/* CENTER: CANVAS */}
         <section className="canvas-wrap">
           <div className="statusbar">
-            <span className={`status-icon ${intents.length === 0 ? 'idle' : ''}`} />
+            <span className={`status-icon ${intents.length === 0 ? 'idle' : initialVersion ? 'done' : ''}`} />
             <span className="status-text">
               {intents.length === 0 ? (
                 <>等待输入。所有人到齐后，AI 会把意图合成为产物。</>
-              ) : claudeReady ? (
+              ) : initialVersion ? (
                 <>
-                  已收集 <strong>{intents.length}</strong> 条 Intent · Claude 抽取已上线
+                  已合成 · <strong>{intents.length}</strong> 条 Intent · {TYPE_LABEL[project.type]}
                 </>
               ) : (
                 <>
-                  已收集 <strong>{intents.length}</strong> 条 Intent · 等 Claude 解锁后开始合成
+                  已收集 <strong>{intents.length}</strong> 条 Intent · 等待合成
                 </>
               )}
             </span>
           </div>
 
           <div className="canvas">
-            <CanvasContent
+            <ProjectCanvas
               project={project}
-              intentCount={intents.length}
+              intents={intents}
+              initialVersion={initialVersion}
               claudeReady={claudeReady}
             />
           </div>
         </section>
-      </div>
-    </div>
-  );
-}
-
-function CanvasContent({
-  project,
-  intentCount,
-  claudeReady,
-}: {
-  project: Project;
-  intentCount: number;
-  claudeReady: boolean;
-}) {
-  if (intentCount === 0) {
-    return (
-      <div className="canvas-empty">
-        <div className="canvas-empty-illu">
-          <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth={1.4}>
-            <path d="M11 3v16M3 11h16M5.5 5.5l11 11M16.5 5.5l-11 11" />
-          </svg>
-        </div>
-        <div>
-          <strong>等待 Intent 输入</strong>
-          <p>
-            大家各自表达想要什么，AI 会抽取为结构化 Intent，再合成为产物。冲突浮现时不阻塞他人贡献。
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="canvas-empty">
-      <div className="canvas-empty-illu">
-        <svg viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth={1.4}>
-          <circle cx="11" cy="11" r="6" />
-          <circle cx="11" cy="11" r="2" fill="currentColor" />
-        </svg>
-      </div>
-      <div>
-        <strong>
-          {claudeReady
-            ? `已收集 ${intentCount} 条 Intent · 准备合成 ${TYPE_LABEL[project.type]}`
-            : `已收集 ${intentCount} 条 Intent · 等 Claude 解锁`}
-        </strong>
-        <p>
-          {claudeReady ? (
-            <>
-              下一步：把这 {intentCount} 条 Intent 合成为 {TYPE_LABEL[project.type]} 产物。这块即将接入 Claude，按 scope 局部增量重渲染。
-            </>
-          ) : (
-            <>
-              Intent 已经在持久化。Hermes Key 解锁后，这块会从 Intent[] 合成真实 {TYPE_LABEL[project.type]} — 同一组意图通过 Adapter 输出多种产物形态。
-            </>
-          )}
-        </p>
-        {project.background && (
-          <p
-            style={{
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: '1px solid var(--line)',
-              maxWidth: 480,
-            }}
-          >
-            <strong
-              style={{
-                color: 'var(--text-2)',
-                fontSize: 11,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                display: 'block',
-                marginBottom: 4,
-              }}
-            >
-              项目背景
-            </strong>
-            {project.background}
-          </p>
-        )}
       </div>
     </div>
   );
