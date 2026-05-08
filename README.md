@@ -2,7 +2,8 @@
 
 > **多人意图合成。让团队的判断被 AI 合成为一份共鸣的产物。**
 
-[![v0 demo](https://img.shields.io/badge/v0-mock%20demo-blue)](public/demo.html)
+[![Live](https://img.shields.io/badge/live-darwin--app.vercel.app-6366F1)](https://darwin-app-virid.vercel.app)
+[![v0 demo](https://img.shields.io/badge/v0-mock%20demo-blue)](https://darwin-app-virid.vercel.app/demo.html)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -23,8 +24,9 @@ Darwin 是第一个把"多人意图"作为头等输入、AI 作为意图调和�
 
 ## 演进阶段
 
-- [x] **v0** — 静态 mock demo（[在线体验](https://darwin-app.vercel.app/demo)）
-- [ ] **v1** — 单人 Intent → Claude 抽取 → HTML 产物（验证意图层）
+- [x] **v0** — 静态 mock demo（[在线体验](https://darwin-app-virid.vercel.app/demo.html)）
+- [x] **v1 (in progress)** — Workspace + 项目详情 + Intent CRUD（[在线体验](https://darwin-app-virid.vercel.app)）。Claude 抽取等 Hermes 解锁
+- [ ] **v1 完成** — Claude 抽取上线 → HTML 产物合成
 - [ ] **v2** — 多人实时 + Tension 检测 + 决策留痕
 - [ ] **v3** — Agent 对话（Atlas/Lyra）+ 多 Adapter
 - [ ] **v4** — 团队记忆 + 影子 Agent
