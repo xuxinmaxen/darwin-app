@@ -259,6 +259,26 @@ body {
 }
 .ws-toolbar-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+.ws-link-btn {
+  margin-left: 6px;
+  background: transparent; border: 0;
+  color: var(--text-3); font-size: 11px;
+  cursor: pointer; font-family: inherit;
+  padding: 2px 6px; border-radius: 5px;
+  transition: all 0.15s;
+}
+.ws-link-btn:hover { background: var(--panel-2); color: var(--accent); }
+
+.ws-foot {
+  margin-top: 60px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11px; color: var(--text-3);
+}
+.ws-foot a { color: var(--text-2); text-decoration: none; }
+.ws-foot a:hover { color: var(--accent); }
+
 /* Buttons */
 .ws-btn {
   height: 34px; padding: 0 14px; border-radius: 8px;
@@ -446,6 +466,7 @@ body {
   transition: grid-template-columns 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .main.drawer-closed { grid-template-columns: 300px minmax(0, 1fr) 0; }
+.main.main-v1 { grid-template-columns: 320px minmax(0, 1fr); }
 
 .board {
   background: var(--panel-2);
