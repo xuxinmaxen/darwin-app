@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local SQLite db
+darwin.db
+darwin.db-journal
+darwin.db-wal
+darwin.db-shm

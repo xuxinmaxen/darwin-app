@@ -1,28 +1,25 @@
 /**
  * GET /api/health
  *
- * Sanity check: am I configured? Does Claude/Supabase env exist?
+ * Sanity check: am I configured? Which LLM provider is active?
  * Does NOT actually call external services — keep it cheap.
  */
 
 import { NextResponse } from 'next/server';
-import { describeClaudeConfig } from '@/lib/claude';
-import type { HealthResponse } from '@/lib/types';
+import { describeLLM } from '@/lib/llm';
 
 export async function GET() {
-  const body: HealthResponse = {
+  const llm = describeLLM();
+  const body = {
     ok: true,
     service: 'darwin',
     version: 'v1.0.0-dev',
     env: {
       anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-      supabase: Boolean(
-        process.env.NEXT_PUBLIC_SUPABASE_URL &&
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-      ),
+      openai: Boolean(process.env.OPENAI_API_KEY),
+      sqlite: true,
     },
-    claude: describeClaudeConfig(),
+    llm,
     timestamp: new Date().toISOString(),
   };
   return NextResponse.json(body);

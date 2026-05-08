@@ -1,11 +1,10 @@
 /**
- * Project queries (Supabase).
+ * Project queries — 走本地 SQLite (lib/db.ts)。
  *
- * Server-only — uses service role client. Never import this file from a
- * Client Component.
+ * Server-only。永远不要从 Client Component 引。
  */
 
-import { supabaseAdmin } from './supabase/server';
+import { db, newId, nowISO } from './db';
 import type {
   Project,
   ProjectType,
@@ -44,26 +43,21 @@ function rowToProject(row: ProjectRow): Project {
 // ─── Queries ───────────────────────────────────────────────
 
 export async function listProjects(ownerId?: string): Promise<Project[]> {
-  const db = supabaseAdmin();
-  let query = db
-    .from('projects')
-    .select('*')
-    .order('updated_at', { ascending: false });
-  if (ownerId) query = query.eq('owner_id', ownerId);
-  const { data, error } = await query;
-  if (error) throw new Error(`listProjects: ${error.message}`);
-  return (data as ProjectRow[]).map(rowToProject);
+  const conn = db();
+  const sql = ownerId
+    ? `SELECT * FROM projects WHERE owner_id = ? ORDER BY updated_at DESC`
+    : `SELECT * FROM projects ORDER BY updated_at DESC`;
+  const rows = (
+    ownerId ? conn.prepare(sql).all(ownerId) : conn.prepare(sql).all()
+  ) as ProjectRow[];
+  return rows.map(rowToProject);
 }
 
 export async function getProject(id: string): Promise<Project | null> {
-  const db = supabaseAdmin();
-  const { data, error } = await db
-    .from('projects')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw new Error(`getProject(${id}): ${error.message}`);
-  return data ? rowToProject(data as ProjectRow) : null;
+  const row = db()
+    .prepare('SELECT * FROM projects WHERE id = ?')
+    .get(id) as ProjectRow | undefined;
+  return row ? rowToProject(row) : null;
 }
 
 export type CreateProjectInput = {
@@ -77,27 +71,30 @@ export type CreateProjectInput = {
 export async function createProject(
   input: CreateProjectInput
 ): Promise<Project> {
-  const db = supabaseAdmin();
-  const { data, error } = await db
-    .from('projects')
-    .insert({
-      name: input.name,
-      type: input.type,
-      background: input.background ?? null,
-      conflict_mode: input.conflictMode ?? 'discuss',
-      status: 'draft',
-      owner_id: input.ownerId,
-    })
-    .select('*')
-    .single();
-  if (error) throw new Error(`createProject: ${error.message}`);
-  return rowToProject(data as ProjectRow);
+  const id = newId();
+  const now = nowISO();
+  db()
+    .prepare(
+      `INSERT INTO projects (id, name, type, background, conflict_mode, status, owner_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.name,
+      input.type,
+      input.background ?? null,
+      input.conflictMode ?? 'discuss',
+      input.ownerId,
+      now,
+      now
+    );
+  const created = await getProject(id);
+  if (!created) throw new Error('createProject: insert succeeded but read failed');
+  return created;
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const db = supabaseAdmin();
-  const { error } = await db.from('projects').delete().eq('id', id);
-  if (error) throw new Error(`deleteProject(${id}): ${error.message}`);
+  db().prepare('DELETE FROM projects WHERE id = ?').run(id);
 }
 
 export type UpdateProjectInput = {
@@ -111,34 +108,44 @@ export async function updateProject(
   id: string,
   input: UpdateProjectInput
 ): Promise<Project> {
-  const db = supabaseAdmin();
-  const patch: Record<string, unknown> = {};
-  if (input.name !== undefined) patch.name = input.name;
-  if (input.background !== undefined) patch.background = input.background;
-  if (input.status !== undefined) patch.status = input.status;
-  if (input.conflictMode !== undefined) patch.conflict_mode = input.conflictMode;
-  patch.updated_at = new Date().toISOString();
+  const fields: string[] = [];
+  const values: unknown[] = [];
+  if (input.name !== undefined) {
+    fields.push('name = ?');
+    values.push(input.name);
+  }
+  if (input.background !== undefined) {
+    fields.push('background = ?');
+    values.push(input.background);
+  }
+  if (input.status !== undefined) {
+    fields.push('status = ?');
+    values.push(input.status);
+  }
+  if (input.conflictMode !== undefined) {
+    fields.push('conflict_mode = ?');
+    values.push(input.conflictMode);
+  }
+  fields.push('updated_at = ?');
+  values.push(nowISO());
 
-  const { data, error } = await db
-    .from('projects')
-    .update(patch)
-    .eq('id', id)
-    .select('*')
-    .single();
-  if (error) throw new Error(`updateProject(${id}): ${error.message}`);
-  return rowToProject(data as ProjectRow);
+  values.push(id);
+  db()
+    .prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`)
+    .run(...values);
+
+  const updated = await getProject(id);
+  if (!updated) throw new Error(`updateProject(${id}): row not found after update`);
+  return updated;
 }
 
 /** 项目从 draft 跳到 collaborating 的轻量 hook —— 写第一条 Intent 时调一下。 */
 export async function bumpToCollaborating(id: string): Promise<void> {
-  const db = supabaseAdmin();
-  const { error } = await db
-    .from('projects')
-    .update({
-      status: 'collaborating',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .eq('status', 'draft');
-  if (error) throw new Error(`bumpToCollaborating(${id}): ${error.message}`);
+  db()
+    .prepare(
+      `UPDATE projects
+       SET status = 'collaborating', updated_at = ?
+       WHERE id = ? AND status = 'draft'`
+    )
+    .run(nowISO(), id);
 }

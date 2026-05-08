@@ -1,9 +1,9 @@
 /**
- * Intent queries (Supabase).
- * Server-only.
+ * Intent queries — 走本地 SQLite (lib/db.ts)。
+ * Server-only。
  */
 
-import { supabaseAdmin } from './supabase/server';
+import { db, newId, nowISO } from './db';
 import type {
   Intent,
   IntentType,
@@ -42,14 +42,12 @@ function rowToIntent(row: IntentRow): Intent {
 export async function listIntentsByProject(
   projectId: string
 ): Promise<Intent[]> {
-  const db = supabaseAdmin();
-  const { data, error } = await db
-    .from('intents')
-    .select('*')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: true });
-  if (error) throw new Error(`listIntentsByProject: ${error.message}`);
-  return (data as IntentRow[]).map(rowToIntent);
+  const rows = db()
+    .prepare(
+      `SELECT * FROM intents WHERE project_id = ? ORDER BY created_at ASC`
+    )
+    .all(projectId) as IntentRow[];
+  return rows.map(rowToIntent);
 }
 
 export type CreateIntentInput = {
@@ -63,47 +61,50 @@ export type CreateIntentInput = {
   rationale?: string | null;
 };
 
-export async function createIntent(
-  input: CreateIntentInput
-): Promise<Intent> {
-  const db = supabaseAdmin();
-  const { data, error } = await db
-    .from('intents')
-    .insert({
-      project_id: input.projectId,
-      author_id: input.authorId,
-      author_kind: input.authorKind,
-      statement: input.statement,
-      // V1 placeholder defaults — Phase 3 replaces these by calling Claude.
-      type: input.type ?? 'Goal',
-      scope: input.scope ?? 'global',
-      weight: input.weight ?? 'should',
-      rationale: input.rationale ?? null,
-    })
-    .select('*')
-    .single();
-  if (error) throw new Error(`createIntent: ${error.message}`);
-  return rowToIntent(data as IntentRow);
+export async function createIntent(input: CreateIntentInput): Promise<Intent> {
+  const id = newId();
+  const now = nowISO();
+  db()
+    .prepare(
+      `INSERT INTO intents
+        (id, project_id, author_id, author_kind, statement, type, scope, weight, rationale, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      input.projectId,
+      input.authorId,
+      input.authorKind,
+      input.statement,
+      input.type ?? 'Goal',
+      input.scope ?? 'global',
+      input.weight ?? 'should',
+      input.rationale ?? null,
+      now
+    );
+
+  const row = db()
+    .prepare('SELECT * FROM intents WHERE id = ?')
+    .get(id) as IntentRow | undefined;
+  if (!row) throw new Error('createIntent: insert succeeded but read failed');
+  return rowToIntent(row);
 }
 
 export async function deleteIntent(
   id: string
 ): Promise<{ projectId: string } | null> {
-  const db = supabaseAdmin();
-  const { data, error } = await db
-    .from('intents')
-    .delete()
-    .eq('id', id)
-    .select('project_id')
-    .maybeSingle();
-  if (error) throw new Error(`deleteIntent(${id}): ${error.message}`);
-  if (!data) return null;
-  return { projectId: (data as { project_id: string }).project_id };
+  const conn = db();
+  const row = conn
+    .prepare('SELECT project_id FROM intents WHERE id = ?')
+    .get(id) as { project_id: string } | undefined;
+  if (!row) return null;
+  conn.prepare('DELETE FROM intents WHERE id = ?').run(id);
+  return { projectId: row.project_id };
 }
 
 /**
- * 给一组项目批量取最近的 Intent 摘要（卡片预览用）。
- * 一次查询内拉全部，再在内存里按 project_id 聚合，避免 N+1。
+ * 给一组项目批量取最近的 Intent 摘要 (卡片预览用)。
+ * 用一条 SQL 拉全部,在内存按 project_id 分组,避免 N+1。
  */
 export async function summarizeIntentsForProjects(
   projectIds: string[]
@@ -111,33 +112,34 @@ export async function summarizeIntentsForProjects(
   const result = new Map<string, { count: number; preview?: string }>();
   if (projectIds.length === 0) return result;
 
-  const db = supabaseAdmin();
-  const { data, error } = await db
-    .from('intents')
-    .select('project_id, statement, created_at')
-    .in('project_id', projectIds)
-    .order('created_at', { ascending: false });
-  if (error) throw new Error(`summarizeIntentsForProjects: ${error.message}`);
+  const placeholders = projectIds.map(() => '?').join(',');
+  const rows = db()
+    .prepare(
+      `SELECT project_id, statement
+       FROM intents
+       WHERE project_id IN (${placeholders})
+       ORDER BY created_at DESC`
+    )
+    .all(...projectIds) as Array<{ project_id: string; statement: string }>;
 
-  type Row = { project_id: string; statement: string; created_at: string };
-  const grouped = new Map<string, Row[]>();
-  for (const row of (data as Row[]) ?? []) {
+  const grouped = new Map<string, string[]>();
+  for (const row of rows) {
     const list = grouped.get(row.project_id) ?? [];
-    list.push(row);
+    list.push(row.statement);
     grouped.set(row.project_id, list);
   }
 
   for (const id of projectIds) {
-    const rows = grouped.get(id) ?? [];
-    if (rows.length === 0) {
+    const statements = grouped.get(id) ?? [];
+    if (statements.length === 0) {
       result.set(id, { count: 0 });
       continue;
     }
-    const preview = rows
+    const preview = statements
       .slice(0, 3)
-      .map(r => r.statement.replace(/\s+/g, ' ').trim())
+      .map(s => s.replace(/\s+/g, ' ').trim())
       .join(' · ');
-    result.set(id, { count: rows.length, preview });
+    result.set(id, { count: statements.length, preview });
   }
 
   return result;

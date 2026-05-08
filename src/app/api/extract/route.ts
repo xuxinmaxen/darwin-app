@@ -9,7 +9,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { callClaudeJSON } from '@/lib/claude';
+import { callLLMJSON } from '@/lib/llm';
 import {
   buildExtractIntentSystem,
   buildExtractIntentUser,
@@ -47,8 +47,9 @@ export async function POST(req: NextRequest) {
     });
     const user = buildExtractIntentUser(body.statement);
 
-    const extracted = await callClaudeJSON<ExtractedIntent>(user, {
+    const extracted = await callLLMJSON<ExtractedIntent>({
       system,
+      user,
       cacheSystem: true,
       maxTokens: 256,
       temperature: 0,

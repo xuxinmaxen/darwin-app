@@ -59,7 +59,7 @@ export default function ProjectCard({
         <span className="proj-collab">
           <span className="avatar xu" title="徐鑫">徐</span>
         </span>
-        <span className="proj-meta">
+        <span className="proj-meta" suppressHydrationWarning>
           <strong>{intentCount}</strong>条 Intent
           <span className="proj-meta-sep" />
           {formatRelativeTime(project.updatedAt)}

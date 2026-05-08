@@ -118,11 +118,10 @@ export default function WorkspaceShell({
               <div className="ws-toolbar-actions">
                 <span
                   className="status-pill ok"
-                  style={{ display: supabaseConfigured ? 'inline-flex' : 'none' }}
-                  title="Supabase 已连接"
+                  title="SQLite 本地数据库 (darwin.db)"
                 >
                   <span className="dot" />
-                  Supabase
+                  SQLite
                 </span>
                 <span
                   className={`status-pill ${claudeReady ? 'ok' : 'warn'}`}
@@ -152,15 +151,10 @@ export default function WorkspaceShell({
                     <strong>没有找到「{query}」相关的项目</strong>
                     换个关键词试试，或者点右上角「新建项目」从一句话开始。
                   </>
-                ) : supabaseConfigured ? (
+                ) : (
                   <>
                     <strong>还没有项目</strong>
                     点右上角「新建项目」，从一句话开始。
-                  </>
-                ) : (
-                  <>
-                    <strong>请先配置 Supabase</strong>
-                    在 <code>.env.local</code> 配齐 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY。
                   </>
                 )}
               </div>

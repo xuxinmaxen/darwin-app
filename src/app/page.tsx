@@ -5,7 +5,7 @@
  * Shell 自己管搜索/过滤/快捷键。
  */
 
-import { describeClaudeConfig } from '@/lib/claude';
+import { describeLLM } from '@/lib/llm';
 import { listProjects } from '@/lib/projects';
 import { summarizeIntentsForProjects } from '@/lib/intents';
 import type { Project } from '@/lib/types';
@@ -39,27 +39,16 @@ async function safeLoad(): Promise<{
 }
 
 export default async function WorkspacePage() {
-  const claude = describeClaudeConfig();
-  const supabaseConfigured = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-
-  const { projects, summaries, error: dbError } = supabaseConfigured
-    ? await safeLoad()
-    : {
-        projects: [] as Project[],
-        summaries: {} as Record<string, Summary>,
-        error: null,
-      };
+  const llm = describeLLM();
+  const { projects, summaries, error: dbError } = await safeLoad();
 
   return (
     <WorkspaceShell
       projects={projects}
       summaries={summaries}
-      supabaseConfigured={supabaseConfigured}
-      claudeReady={claude.hasKey}
-      claudeModel={claude.modelDefault}
+      supabaseConfigured={true}
+      claudeReady={llm.hasKey}
+      claudeModel={llm.provider ? `${llm.provider} · ${llm.model}` : '未配置'}
       dbError={dbError}
     />
   );

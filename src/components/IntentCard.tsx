@@ -66,7 +66,10 @@ export default function IntentCard({ intent }: { intent: Intent }) {
         <span className={`avatar ${avatarCls}`}>{short}</span>
         <span className="intent-author">{name}</span>
         <span className="intent-role">/ {role}</span>
-        <span className="intent-time">{formatTime(intent.createdAt)}</span>
+        {/* suppressHydrationWarning: 服务端 vs 客户端渲染相差一分钟时,React 会警告 */}
+        <span className="intent-time" suppressHydrationWarning>
+          {formatTime(intent.createdAt)}
+        </span>
       </div>
       <p className="intent-body">{intent.statement}</p>
       <div className="intent-meta">
