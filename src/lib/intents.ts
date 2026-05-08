@@ -86,10 +86,19 @@ export async function createIntent(
   return rowToIntent(data as IntentRow);
 }
 
-export async function deleteIntent(id: string): Promise<void> {
+export async function deleteIntent(
+  id: string
+): Promise<{ projectId: string } | null> {
   const db = supabaseAdmin();
-  const { error } = await db.from('intents').delete().eq('id', id);
+  const { data, error } = await db
+    .from('intents')
+    .delete()
+    .eq('id', id)
+    .select('project_id')
+    .maybeSingle();
   if (error) throw new Error(`deleteIntent(${id}): ${error.message}`);
+  if (!data) return null;
+  return { projectId: (data as { project_id: string }).project_id };
 }
 
 /**

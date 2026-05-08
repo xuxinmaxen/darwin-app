@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { deleteIntent } from '@/lib/intents';
 
 type Params = { params: Promise<{ id: string }> };
@@ -12,7 +13,9 @@ type Params = { params: Promise<{ id: string }> };
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   try {
-    await deleteIntent(id);
+    const removed = await deleteIntent(id);
+    revalidatePath('/');
+    if (removed) revalidatePath(`/projects/${removed.projectId}`);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(

@@ -6,6 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getProject, deleteProject } from '@/lib/projects';
 
 type Params = { params: Promise<{ id: string }> };
@@ -33,6 +34,10 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   try {
     await deleteProject(id);
+    revalidatePath('/');
+    revalidatePath('/memory');
+    revalidatePath('/employees');
+    revalidatePath(`/projects/${id}`);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(

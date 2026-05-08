@@ -62,12 +62,12 @@ export default function NewProjectButton() {
           setError(json.error || `请求失败 (${res.status})`);
           return;
         }
-        const created: Project = json.project;
+        // Stay on workspace and refresh — let the user see the new card
+        // appear at the top of the list. They can click in when ready.
         setOpen(false);
         setName('');
         setBackground('');
         setType('html');
-        router.push(`/projects/${created.id}`);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

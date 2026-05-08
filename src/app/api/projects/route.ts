@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listProjects, createProject } from '@/lib/projects';
 
@@ -52,6 +53,9 @@ export async function POST(req: NextRequest) {
       conflictMode: body.conflictMode,
       ownerId: DEMO_OWNER_ID,
     });
+    revalidatePath('/');
+    revalidatePath('/memory');
+    revalidatePath('/employees');
     return NextResponse.json({ ok: true, project }, { status: 201 });
   } catch (err) {
     return NextResponse.json(

@@ -11,6 +11,9 @@ import { summarizeIntentsForProjects } from '@/lib/intents';
 import type { Project } from '@/lib/types';
 import WorkspaceShell from '@/components/WorkspaceShell';
 
+// 工作台读 DB,绝不能被 build-time 静态预渲染 —— 否则新建项目后看不到。
+export const dynamic = 'force-dynamic';
+
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
 
 type Summary = { count: number; preview?: string };

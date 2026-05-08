@@ -9,6 +9,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listIntentsByProject, createIntent } from '@/lib/intents';
 
@@ -66,6 +67,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       weight: body.weight,
       rationale: body.rationale,
     });
+    revalidatePath('/');
+    revalidatePath(`/projects/${projectId}`);
     return NextResponse.json({ ok: true, intent }, { status: 201 });
   } catch (err) {
     return NextResponse.json(

@@ -5,6 +5,8 @@
 import { listProjects } from '@/lib/projects';
 import V2StubShell from '@/components/V2StubShell';
 
+export const dynamic = 'force-dynamic';
+
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
 
 export default async function EmployeesPage() {
