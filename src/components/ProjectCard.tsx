@@ -1,75 +1,71 @@
 /**
- * Single project card — Server Component, links to /projects/[id].
+ * 项目卡片 — Server Component，链接到 /projects/[id]。
+ * 视觉与 public/demo.html 中的 .proj 卡片一致。
  */
 
 import Link from 'next/link';
 import type { Project } from '@/lib/types';
+import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 
-const TYPE_LABEL: Record<Project['type'], string> = {
-  html: '落地页',
-  ppt: 'PPT',
-  doc: '文档',
-  design: '设计稿',
-};
+function formatRelativeTime(iso: string) {
+  const now = Date.now();
+  const t = new Date(iso).getTime();
+  const diffSec = Math.max(0, Math.floor((now - t) / 1000));
+  if (diffSec < 60) return '刚刚';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} 分钟前`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} 小时前`;
+  if (diffSec < 86400 * 7) return `${Math.floor(diffSec / 86400)} 天前`;
+  return new Date(iso).toLocaleDateString('zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+  });
+}
 
-const STATUS_LABEL: Record<Project['status'], string> = {
-  draft: '草稿',
-  collaborating: '协作中',
-  tension: '有分歧',
-  converged: '已收敛',
-  published: '已发布',
-};
+export default function ProjectCard({
+  project,
+  intentCount,
+  preview,
+}: {
+  project: Project;
+  intentCount: number;
+  preview?: string;
+}) {
+  const previewText =
+    preview?.trim() ||
+    project.background?.trim() ||
+    '还没有 Intent。打开项目，开始第一句表达。';
 
-const STATUS_TONE: Record<Project['status'], string> = {
-  draft: 'bg-zinc-100 text-zinc-600',
-  collaborating: 'bg-indigo-50 text-indigo-700',
-  tension: 'bg-amber-50 text-amber-700',
-  converged: 'bg-emerald-50 text-emerald-700',
-  published: 'bg-violet-50 text-violet-700',
-};
-
-export default function ProjectCard({ project }: { project: Project }) {
-  const updated = new Date(project.updatedAt);
   return (
     <Link
       href={`/projects/${project.id}`}
-      className="group flex h-full flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 transition hover:border-indigo-300 hover:shadow-sm"
+      className={`proj${project.status === 'collaborating' || project.status === 'tension' ? ' featured' : ''}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
-          {TYPE_LABEL[project.type]}
+      <div className="proj-head">
+        <span className="proj-type">
+          <TypeIcon type={project.type} />
+          <span>{TYPE_LABEL[project.type]}</span>
         </span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.04em] ${
-            STATUS_TONE[project.status]
-          }`}
-        >
+        <span className={`proj-status ${project.status}`}>
+          <span className="dot" />
           {STATUS_LABEL[project.status]}
         </span>
       </div>
-      <h3 className="text-base font-semibold leading-tight tracking-tight">
-        {project.name}
-      </h3>
-      {project.background && (
-        <p className="line-clamp-2 text-xs text-zinc-500">
-          {project.background}
-        </p>
-      )}
-      <div className="mt-auto flex items-center justify-between border-t border-zinc-100 pt-3 text-[11px] text-zinc-500">
-        <span>
-          {project.conflictMode === 'discuss'
-            ? '员工讨论共识'
-            : 'AI 最优解判断'}
+
+      <h3 className="proj-card-name">{project.name}</h3>
+
+      <p className="proj-preview">{previewText}</p>
+
+      <div className="proj-foot">
+        <span className="proj-collab">
+          <span className="avatar xu" title="徐鑫">徐</span>
         </span>
-        <time dateTime={project.updatedAt}>
-          {updated.toLocaleDateString('zh-CN', {
-            month: 'numeric',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
-        </time>
+        <span className="proj-meta">
+          <strong>{intentCount}</strong>条 Intent
+          <span className="proj-meta-sep" />
+          {formatRelativeTime(project.updatedAt)}
+        </span>
       </div>
     </Link>
   );
 }
+

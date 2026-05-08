@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * Intent input form (Client Component).
+ * Intent 输入框（quickbar 样式，看板底部）— Client Component。
  *
- * V1: just statement → POST. type/scope/weight default to Goal/global/should
- * server-side. Phase 3 will route through /api/extract for Claude抽取.
+ * V1：直接 statement → POST，type/scope/weight 服务端默认 Goal/global/should。
+ * Phase 3 将 POST 路由到 /api/extract 走 Claude 抽取。
  */
 
 import { useState, useTransition } from 'react';
@@ -16,8 +16,7 @@ export default function IntentForm({ projectId }: { projectId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function submit() {
     setError(null);
     const trimmed = statement.trim();
     if (!trimmed) return;
@@ -42,40 +41,42 @@ export default function IntentForm({ projectId }: { projectId: string }) {
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      className="rounded-xl border border-zinc-200 bg-white p-4"
-    >
-      <div className="flex items-start gap-2">
-        <textarea
-          value={statement}
-          onChange={e => setStatement(e.target.value)}
-          placeholder="说一句你想要什么,可以尽情表达…"
-          rows={2}
-          disabled={isPending}
-          onKeyDown={e => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-              e.currentTarget.form?.requestSubmit();
-            }
-          }}
-          className="min-h-[60px] flex-1 resize-none rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm leading-relaxed outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 disabled:opacity-60"
-        />
-        <button
-          type="submit"
-          disabled={isPending || !statement.trim()}
-          className="self-stretch rounded-lg bg-zinc-900 px-4 text-sm font-medium text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPending ? '添加中…' : '添加 ↵'}
-        </button>
-      </div>
-      <p className="mt-2 text-[11px] text-zinc-400">
-        V1 暂不接 Claude 抽取,先以默认 type/scope/weight 入库。Cmd/Ctrl + Enter 快捷提交。
-      </p>
-      {error && (
-        <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error}
+    <>
+      {error && <div className="quickbar-error">{error}</div>}
+
+      <div className="quickbar">
+        <div className="quickbar-row">
+          <span className="avatar xu">徐</span>
+          <textarea
+            value={statement}
+            onChange={e => setStatement(e.target.value)}
+            disabled={isPending}
+            placeholder="说说你想要什么，可以尽情表达…"
+            rows={2}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
         </div>
-      )}
-    </form>
+        <div className="quickbar-foot">
+          <span className="quickbar-hint">
+            <span className="kbd">⌘</span>
+            <span className="kbd">↵</span>
+            提交
+          </span>
+          <button
+            type="button"
+            className="quickbar-submit"
+            disabled={isPending || !statement.trim()}
+            onClick={submit}
+          >
+            {isPending ? '添加中…' : '添加 Intent'}
+          </button>
+        </div>
+      </div>
+    </>
   );
 }

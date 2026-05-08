@@ -91,3 +91,45 @@ export async function deleteIntent(id: string): Promise<void> {
   const { error } = await db.from('intents').delete().eq('id', id);
   if (error) throw new Error(`deleteIntent(${id}): ${error.message}`);
 }
+
+/**
+ * 给一组项目批量取最近的 Intent 摘要（卡片预览用）。
+ * 一次查询内拉全部，再在内存里按 project_id 聚合，避免 N+1。
+ */
+export async function summarizeIntentsForProjects(
+  projectIds: string[]
+): Promise<Map<string, { count: number; preview?: string }>> {
+  const result = new Map<string, { count: number; preview?: string }>();
+  if (projectIds.length === 0) return result;
+
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from('intents')
+    .select('project_id, statement, created_at')
+    .in('project_id', projectIds)
+    .order('created_at', { ascending: false });
+  if (error) throw new Error(`summarizeIntentsForProjects: ${error.message}`);
+
+  type Row = { project_id: string; statement: string; created_at: string };
+  const grouped = new Map<string, Row[]>();
+  for (const row of (data as Row[]) ?? []) {
+    const list = grouped.get(row.project_id) ?? [];
+    list.push(row);
+    grouped.set(row.project_id, list);
+  }
+
+  for (const id of projectIds) {
+    const rows = grouped.get(id) ?? [];
+    if (rows.length === 0) {
+      result.set(id, { count: 0 });
+      continue;
+    }
+    const preview = rows
+      .slice(0, 3)
+      .map(r => r.statement.replace(/\s+/g, ' ').trim())
+      .join(' · ');
+    result.set(id, { count: rows.length, preview });
+  }
+
+  return result;
+}

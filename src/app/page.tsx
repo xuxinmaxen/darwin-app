@@ -1,146 +1,160 @@
 /**
- * 工作台 (V1)
+ * 工作台 (V1) — Server Component
  *
- * 真实 DB 驱动:Server Component 直接调 listProjects(),渲染项目网格 +
- * Client Component 表单创建新项目。
+ * 视觉对齐 public/demo.html 的 view-workspace（topbar + sidebar + ws-content）。
+ * 真实 Supabase 项目 + 每个项目的 Intent 数量摘要。
  */
 
 import Link from 'next/link';
 import { describeClaudeConfig } from '@/lib/claude';
 import { listProjects } from '@/lib/projects';
+import { summarizeIntentsForProjects } from '@/lib/intents';
 import type { Project } from '@/lib/types';
-import NewProjectForm from '@/components/NewProjectForm';
+import Sidebar from '@/components/Sidebar';
 import ProjectCard from '@/components/ProjectCard';
+import NewProjectButton from '@/components/NewProjectButton';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
 
-async function safeListProjects(): Promise<{
+type LoadResult = {
   projects: Project[];
+  summaries: Map<string, { count: number; preview?: string }>;
   error: string | null;
-}> {
+};
+
+async function safeLoad(): Promise<LoadResult> {
   try {
     const projects = await listProjects(DEMO_OWNER_ID);
-    return { projects, error: null };
+    const summaries = await summarizeIntentsForProjects(
+      projects.map(p => p.id)
+    );
+    return { projects, summaries, error: null };
   } catch (err) {
     return {
       projects: [],
+      summaries: new Map(),
       error: err instanceof Error ? err.message : String(err),
     };
   }
 }
 
-export default async function Home() {
+export default async function WorkspacePage() {
   const claude = describeClaudeConfig();
   const supabaseConfigured = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
       process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-  const { projects, error: dbError } = supabaseConfigured
-    ? await safeListProjects()
-    : { projects: [] as Project[], error: null };
+
+  const { projects, summaries, error: dbError } = supabaseConfigured
+    ? await safeLoad()
+    : {
+        projects: [] as Project[],
+        summaries: new Map<string, { count: number; preview?: string }>(),
+        error: null,
+      };
 
   return (
-    <main className="min-h-screen bg-[#FAF9F5] text-[#1A1A1C]">
-      <div className="mx-auto max-w-5xl px-6 py-12">
-        {/* Header */}
-        <header className="mb-10 flex items-end justify-between gap-6">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-indigo-700">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
-              Darwin · v1
-            </div>
-            <h1 className="text-4xl font-bold tracking-tight">工作台</h1>
-            <p className="mt-2 text-sm text-zinc-500">
-              多人意图合成。让团队的判断被 AI 合成为一份共鸣的产物。
-            </p>
-          </div>
-          <Link
-            href="/demo.html"
-            className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-xs font-medium text-zinc-700 transition hover:border-indigo-300 hover:text-indigo-700"
-          >
-            v0 Mock Demo →
-          </Link>
-        </header>
-
-        {/* Status strip */}
-        <div className="mb-6 flex flex-wrap items-center gap-3 text-[11px]">
-          <Pill ok={claude.hasKey} label="Anthropic key" />
-          <Pill ok={supabaseConfigured} label="Supabase" />
-          <span className="text-zinc-400">•</span>
-          <span className="font-mono text-zinc-500">
-            {claude.baseURL.replace(/^https?:\/\//, '')}
-          </span>
-          <span className="text-zinc-400">•</span>
-          <span className="font-mono text-zinc-500">
-            {claude.modelDefault}
-          </span>
+    <div className="view-workspace">
+      <header className="ws-topbar">
+        <div className="brand">
+          <div className="brand-logo" aria-hidden />
+          <span className="brand-name">Darwin</span>
+          <span className="brand-sub">多人意图合成</span>
         </div>
+        <div className="ws-topbar-spacer" />
+        <div className="ws-search-bar">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <circle cx="6" cy="6" r="4" />
+            <path d="M9 9l3 3" />
+          </svg>
+          <input placeholder="搜索项目…" disabled />
+          <span className="kbd">⌘K</span>
+        </div>
+        <div className="ws-user">
+          <div className="avatar xu" title="徐鑫 / 产品">徐</div>
+        </div>
+      </header>
 
-        {/* Create form */}
-        <section className="mb-8">
-          <NewProjectForm />
-        </section>
+      <div className="ws-body">
+        <Sidebar active="projects" projectsCount={projects.length} />
 
-        {/* Project grid */}
-        <section>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">
-              我的项目{' '}
-              <span className="ml-1.5 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
-                {projects.length}
-              </span>
-            </h2>
-          </div>
-          {dbError && (
-            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-xs text-red-800">
-              <strong className="font-semibold">DB error:</strong> {dbError}
+        <main className="ws-content">
+          <section className="ws-section">
+            <div className="ws-hero">
+              <div className="ws-hero-eyebrow">
+                <span className="dot" />
+                项目管理
+              </div>
+              <h1 className="ws-title">把团队的意图，合成为一份产物</h1>
+              <p className="ws-sub">
+                每个项目以 Intent Layer 协作。多人输入、AI 合成、单一收敛。同一份意图可以输出落地页、PPT、文档或设计稿。
+              </p>
             </div>
-          )}
-          {projects.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-12 text-center text-sm text-zinc-500">
-              {supabaseConfigured
-                ? '还没有项目。在上方输入名称,点「创建」开始第一个。'
-                : '配置 Supabase 后,这里会显示真实项目列表。'}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map(p => (
-                <ProjectCard key={p.id} project={p} />
-              ))}
-            </div>
-          )}
-        </section>
 
-        {/* Footer */}
-        <footer className="mt-16 flex items-center justify-between border-t border-zinc-200 pt-6 text-[11px] text-zinc-400">
-          <span>v1 dev · Server Component + Supabase Postgres</span>
-          <Link
-            href="/api/health"
-            className="font-mono hover:text-zinc-600"
-          >
-            /api/health
-          </Link>
-        </footer>
+            <div className="ws-toolbar">
+              <div className="ws-section-title">
+                最近项目
+                <span className="count">{projects.length}</span>
+              </div>
+
+              <div className="ws-toolbar-actions">
+                <span className="status-pill ok" style={{ display: supabaseConfigured ? 'inline-flex' : 'none' }}>
+                  <span className="dot" />
+                  Supabase 已连接
+                </span>
+                <span
+                  className={`status-pill ${claude.hasKey ? 'ok' : 'warn'}`}
+                  title={claude.baseURL}
+                >
+                  <span className="dot" />
+                  {claude.hasKey ? `Claude · ${claude.modelDefault}` : 'Claude 待解锁'}
+                </span>
+                <NewProjectButton />
+              </div>
+            </div>
+
+            {dbError && (
+              <div className="error-banner">
+                <strong>DB error:</strong> {dbError}
+              </div>
+            )}
+
+            {projects.length === 0 ? (
+              <div className="proj-empty">
+                <strong>{supabaseConfigured ? '还没有项目' : '请先配置 Supabase'}</strong>
+                {supabaseConfigured ? (
+                  <>点右上角「新建项目」，从一句话开始。</>
+                ) : (
+                  <>
+                    在 <code>.env.local</code> 配齐 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY。
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="ws-projects">
+                {projects.map(p => {
+                  const summary = summaries.get(p.id) ?? { count: 0 };
+                  return (
+                    <ProjectCard
+                      key={p.id}
+                      project={p}
+                      intentCount={summary.count}
+                      preview={summary.preview}
+                    />
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ marginTop: 60, fontSize: 11, color: 'var(--text-3)', display: 'flex', justifyContent: 'space-between' }}>
+              <span>v1 · Server Component + Supabase Postgres</span>
+              <Link href="/api/health" style={{ color: 'inherit', fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', textDecoration: 'none' }}>
+                /api/health
+              </Link>
+            </div>
+          </section>
+        </main>
       </div>
-    </main>
-  );
-}
-
-function Pill({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium ${
-        ok
-          ? 'bg-emerald-50 text-emerald-700'
-          : 'bg-amber-50 text-amber-700'
-      }`}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          ok ? 'bg-emerald-500' : 'bg-amber-500'
-        }`}
-      />
-      {label}
-    </span>
+    </div>
   );
 }
