@@ -99,3 +99,46 @@ export async function deleteProject(id: string): Promise<void> {
   const { error } = await db.from('projects').delete().eq('id', id);
   if (error) throw new Error(`deleteProject(${id}): ${error.message}`);
 }
+
+export type UpdateProjectInput = {
+  name?: string;
+  background?: string | null;
+  status?: ProjectStatus;
+  conflictMode?: ConflictMode;
+};
+
+export async function updateProject(
+  id: string,
+  input: UpdateProjectInput
+): Promise<Project> {
+  const db = supabaseAdmin();
+  const patch: Record<string, unknown> = {};
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.background !== undefined) patch.background = input.background;
+  if (input.status !== undefined) patch.status = input.status;
+  if (input.conflictMode !== undefined) patch.conflict_mode = input.conflictMode;
+  patch.updated_at = new Date().toISOString();
+
+  const { data, error } = await db
+    .from('projects')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`updateProject(${id}): ${error.message}`);
+  return rowToProject(data as ProjectRow);
+}
+
+/** 项目从 draft 跳到 collaborating 的轻量 hook —— 写第一条 Intent 时调一下。 */
+export async function bumpToCollaborating(id: string): Promise<void> {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from('projects')
+    .update({
+      status: 'collaborating',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .eq('status', 'draft');
+  if (error) throw new Error(`bumpToCollaborating(${id}): ${error.message}`);
+}

@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listIntentsByProject, createIntent } from '@/lib/intents';
+import { bumpToCollaborating } from '@/lib/projects';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -66,6 +67,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       scope: body.scope,
       weight: body.weight,
       rationale: body.rationale,
+    });
+    // Auto-promote: 第一条 Intent 落地时把项目从 draft 推到 collaborating
+    // (no-op if status 已经不是 draft)
+    await bumpToCollaborating(projectId).catch(() => {
+      // 状态推进失败不影响主流程,后台日志即可
     });
     revalidatePath('/');
     revalidatePath(`/projects/${projectId}`);

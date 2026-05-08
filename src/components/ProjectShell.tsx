@@ -12,6 +12,7 @@ import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
 import IntentForm from '@/components/IntentForm';
+import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 
 export default function ProjectShell({
   project,
@@ -64,6 +65,7 @@ export default function ProjectShell({
 
         <div className="topbar-spacer" />
 
+        <ProjectActionsMenu project={project} />
         <div className="ws-user">
           <div className="avatar xu" title="徐鑫">徐</div>
         </div>
