@@ -56,6 +56,9 @@ export type Intent = {
   weight: IntentWeight;
   rationale?: string | null;
 
+  /** 哪条 Intent 触发了这一条 (Agent react 用)。null = 自然产生 */
+  triggerIntentId?: string | null;
+
   createdAt: string;
 };
 

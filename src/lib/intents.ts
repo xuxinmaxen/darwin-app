@@ -22,6 +22,7 @@ type IntentRow = {
   weight: string;
   rationale: string | null;
   created_at: string;
+  trigger_intent_id: string | null;
 };
 
 function rowToIntent(row: IntentRow): Intent {
@@ -36,6 +37,7 @@ function rowToIntent(row: IntentRow): Intent {
     weight: row.weight as IntentWeight,
     rationale: row.rationale,
     createdAt: row.created_at,
+    triggerIntentId: row.trigger_intent_id ?? null,
   };
 }
 
@@ -59,6 +61,8 @@ export type CreateIntentInput = {
   scope?: string;
   weight?: IntentWeight;
   rationale?: string | null;
+  /** 哪条 Intent 触发了这一条 (Agent react 用)。null = 自然产生 */
+  triggerIntentId?: string | null;
 };
 
 export async function createIntent(input: CreateIntentInput): Promise<Intent> {
@@ -67,8 +71,8 @@ export async function createIntent(input: CreateIntentInput): Promise<Intent> {
   db()
     .prepare(
       `INSERT INTO intents
-        (id, project_id, author_id, author_kind, statement, type, scope, weight, rationale, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        (id, project_id, author_id, author_kind, statement, type, scope, weight, rationale, trigger_intent_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -80,6 +84,7 @@ export async function createIntent(input: CreateIntentInput): Promise<Intent> {
       input.scope ?? 'global',
       input.weight ?? 'should',
       input.rationale ?? null,
+      input.triggerIntentId ?? null,
       now
     );
 
@@ -88,6 +93,41 @@ export async function createIntent(input: CreateIntentInput): Promise<Intent> {
     .get(id) as IntentRow | undefined;
   if (!row) throw new Error('createIntent: insert succeeded but read failed');
   return rowToIntent(row);
+}
+
+/**
+ * 计算一条 Intent 的「Agent 接话链长度」: 从这条往上回溯到 human 起点 (或停止追溯) 的跳数。
+ *
+ * - human Intent (无论 trigger): depth = 0
+ * - agent Intent 但 triggerIntentId=null (manual speak 起点): depth = 0
+ * - agent Intent + triggerIntentId 指向 human: depth = 1
+ * - agent Intent + triggerIntentId 指向 agent (depth=1): depth = 2
+ * - 超过深度上限或追到 null: 返回当前深度
+ *
+ * 用于 agent-react 决定要不要给 trigger 接话:
+ *   计算 trigger 的 depth + 1, 如果 > MAX_CHAIN_DEPTH 直接 silent。
+ */
+export async function chainDepthOf(
+  intentId: string,
+  maxDepth = 8
+): Promise<number> {
+  let cursor: string | null = intentId;
+  let depth = 0;
+  while (cursor && depth < maxDepth) {
+    const row = db()
+      .prepare(
+        `SELECT author_kind, trigger_intent_id FROM intents WHERE id = ?`
+      )
+      .get(cursor) as
+      | { author_kind: string; trigger_intent_id: string | null }
+      | undefined;
+    if (!row) return depth;
+    if (row.author_kind === 'human') return depth;
+    if (!row.trigger_intent_id) return depth;
+    depth += 1;
+    cursor = row.trigger_intent_id;
+  }
+  return depth;
 }
 
 export async function getIntent(id: string): Promise<Intent | null> {

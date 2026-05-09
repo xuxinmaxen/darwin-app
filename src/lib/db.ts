@@ -102,11 +102,22 @@ function seedDefaultEmployee(conn: Database.Database) {
 
 /** Idempotent column migrations for already-existing tables. */
 function ensureColumns(conn: Database.Database) {
-  const cols = conn
+  const versionsCols = conn
     .prepare(`PRAGMA table_info(versions)`)
     .all() as { name: string }[];
-  if (!cols.some(c => c.name === 'published_at')) {
+  if (!versionsCols.some(c => c.name === 'published_at')) {
     conn.exec(`ALTER TABLE versions ADD COLUMN published_at TEXT`);
+  }
+
+  const intentsCols = conn
+    .prepare(`PRAGMA table_info(intents)`)
+    .all() as { name: string }[];
+  if (!intentsCols.some(c => c.name === 'trigger_intent_id')) {
+    // 一条 Intent 是被哪条 Intent 触发的 (Agent react 的来源)。
+    // null 表示自然产生 (Human 输入 / Agent 手动 speak)。
+    // 注意: 不加 FK 约束, 因为旧 intent 可能被删, 不希望 cascade 删除新生 intent。
+    conn.exec(`ALTER TABLE intents ADD COLUMN trigger_intent_id TEXT`);
+    conn.exec(`CREATE INDEX IF NOT EXISTS idx_intents_trigger ON intents(trigger_intent_id)`);
   }
 }
 
