@@ -16,8 +16,9 @@ import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getLatestVersion, publishVersion } from '@/lib/versions';
-import { markPublished, getProject } from '@/lib/projects';
+import { markPublished, getProject, listCollaborators } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
+import { listTensions } from '@/lib/tensions';
 
 const Body = z.object({ versionId: z.string().optional() });
 
@@ -58,7 +59,11 @@ export async function POST(req: Request, { params }: Params) {
     const published = await publishVersion(id, targetVersionId);
     await markPublished(id);
 
-    const intentCount = (await listIntentsByProject(id)).length;
+    const [intents, tensions, collaborators] = await Promise.all([
+      listIntentsByProject(id),
+      listTensions(id),
+      listCollaborators(id),
+    ]);
 
     revalidatePath(`/projects/${id}`);
     revalidatePath('/');
@@ -67,8 +72,10 @@ export async function POST(req: Request, { params }: Params) {
       ok: true,
       version: published,
       stats: {
-        intents: intentCount,
+        intents: intents.length,
         intentIds: published.intentIds.length,
+        consensusCount: tensions.filter(t => t.status === 'resolved').length,
+        contributorCount: collaborators.length,
       },
     });
   } catch (err) {

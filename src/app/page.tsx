@@ -9,6 +9,7 @@ import { describeLLM } from '@/lib/llm';
 import { listProjects, listCollaboratorsByProjects } from '@/lib/projects';
 import { summarizeIntentsForProjects } from '@/lib/intents';
 import { listEmployees } from '@/lib/employees';
+import { loadSidebarCounts } from '@/lib/sidebar-counts';
 import type { Project } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
 import WorkspaceShell from '@/components/WorkspaceShell';
@@ -53,7 +54,8 @@ async function safeLoad(): Promise<{
 
 export default async function WorkspacePage() {
   const llm = describeLLM();
-  const { projects, summaries, collaborators, employees, error: dbError } = await safeLoad();
+  const [{ projects, summaries, collaborators, employees, error: dbError }, counts] =
+    await Promise.all([safeLoad(), loadSidebarCounts(DEMO_OWNER_ID)]);
 
   return (
     <WorkspaceShell
@@ -65,6 +67,8 @@ export default async function WorkspacePage() {
       claudeReady={llm.hasKey}
       claudeModel={llm.provider ? `${llm.provider} · ${llm.model}` : '未配置'}
       dbError={dbError}
+      memoryCount={counts.memoryCount}
+      employeesCount={counts.employeesCount}
     />
   );
 }

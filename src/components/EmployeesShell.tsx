@@ -29,9 +29,13 @@ const DELETE_ICON = (
 export default function EmployeesShell({
   initialEmployees,
   projectsCount,
+  memoryCount,
+  employeesCount,
 }: {
   initialEmployees: Employee[];
   projectsCount: number;
+  memoryCount?: number;
+  employeesCount?: number;
 }) {
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [editing, setEditing] = useState<Employee | null>(null);
@@ -151,7 +155,12 @@ export default function EmployeesShell({
       </header>
 
       <div className="ws-body">
-        <Sidebar active="employees" projectsCount={projectsCount} />
+        <Sidebar
+          active="employees"
+          projectsCount={projectsCount}
+          memoryCount={memoryCount}
+          employeesCount={employeesCount}
+        />
 
         <main className="ws-content">
           <section className="ws-section">

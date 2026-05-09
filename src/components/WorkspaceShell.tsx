@@ -25,6 +25,8 @@ export default function WorkspaceShell({
   claudeReady,
   claudeModel,
   dbError,
+  memoryCount,
+  employeesCount,
 }: {
   projects: Project[];
   summaries: Record<string, Summary>;
@@ -34,6 +36,8 @@ export default function WorkspaceShell({
   claudeReady: boolean;
   claudeModel: string;
   dbError: string | null;
+  memoryCount?: number;
+  employeesCount?: number;
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -90,7 +94,12 @@ export default function WorkspaceShell({
       </header>
 
       <div className="ws-body">
-        <Sidebar active="projects" projectsCount={projects.length} />
+        <Sidebar
+          active="projects"
+          projectsCount={projects.length}
+          memoryCount={memoryCount}
+          employeesCount={employeesCount}
+        />
 
         <main className="ws-content">
           <section className="ws-section">
@@ -198,9 +207,13 @@ export default function WorkspaceShell({
 export function Sidebar({
   active,
   projectsCount,
+  memoryCount,
+  employeesCount,
 }: {
   active: 'projects' | 'memory' | 'employees';
   projectsCount: number;
+  memoryCount?: number;
+  employeesCount?: number;
 }) {
   return (
     <aside className="ws-sidebar">
@@ -223,7 +236,11 @@ export function Sidebar({
             <circle cx="2.5" cy="11.5" r=".8" fill="currentColor" />
           </svg>
           团队记忆
-          <span className="soon">V2</span>
+          {memoryCount === undefined ? (
+            <span className="soon">V2</span>
+          ) : (
+            <span className="nav-count">{memoryCount}</span>
+          )}
         </Link>
 
         <Link href="/employees" className={`nav-item${active === 'employees' ? ' active' : ''}`}>
@@ -234,7 +251,11 @@ export function Sidebar({
             <path d="M12.5 11c-.3-1.4-1.2-2.4-2.5-2.4" />
           </svg>
           员工管理
-          <span className="soon">V2</span>
+          {employeesCount === undefined ? (
+            <span className="soon">V2</span>
+          ) : (
+            <span className="nav-count">{employeesCount}</span>
+          )}
         </Link>
       </nav>
 

@@ -4,12 +4,12 @@
  * 拉 prefs / agent learning / timeline 后塞给 MemoryShell。
  */
 
-import { listProjects } from '@/lib/projects';
 import {
   listPrefs,
   listAgentLearning,
   listMemoryTimeline,
 } from '@/lib/team-memory';
+import { loadSidebarCounts } from '@/lib/sidebar-counts';
 import MemoryShell from '@/components/MemoryShell';
 
 export const dynamic = 'force-dynamic';
@@ -17,11 +17,11 @@ export const dynamic = 'force-dynamic';
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
 
 export default async function MemoryPage() {
-  const [prefs, agents, timeline, projects] = await Promise.all([
+  const [prefs, agents, timeline, counts] = await Promise.all([
     listPrefs(DEMO_OWNER_ID),
     listAgentLearning(DEMO_OWNER_ID),
     listMemoryTimeline(DEMO_OWNER_ID),
-    listProjects(DEMO_OWNER_ID).catch(() => []),
+    loadSidebarCounts(DEMO_OWNER_ID),
   ]);
 
   return (
@@ -29,7 +29,9 @@ export default async function MemoryPage() {
       initialPrefs={prefs}
       agents={agents}
       timeline={timeline}
-      projectsCount={projects.length}
+      projectsCount={counts.projectsCount}
+      memoryCount={counts.memoryCount}
+      employeesCount={counts.employeesCount}
     />
   );
 }

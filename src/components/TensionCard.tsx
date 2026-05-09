@@ -22,6 +22,9 @@ type Props = {
   tension: Tension;
   intentMap: Map<string, Intent>;
   employeeMap: Map<string, Employee>;
+  /** 决定底部 CTA 是 "开讨论" (discuss) 还是 "AI 决策" (ai_decide)。本地未实现 ai_decide
+   *  时仍走开讨论流程, 但按钮文案匹配项目设置, 不让用户感觉设置无效。 */
+  conflictMode: 'discuss' | 'ai_decide';
   onResolved: (tensionId: string) => void;
   onDiscuss: (tension: Tension) => void;
 };
@@ -31,6 +34,7 @@ export default function TensionCard({
   tension,
   intentMap,
   employeeMap,
+  conflictMode,
   onResolved,
   onDiscuss,
 }: Props) {
@@ -147,10 +151,21 @@ export default function TensionCard({
           onClick={() => onDiscuss(tension)}
           disabled={selecting !== null}
         >
-          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <path d="M2 5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H6l-3 2v-2a3 3 0 0 1-1-2.5V5z" strokeLinejoin="round" />
-          </svg>
-          开讨论
+          {conflictMode === 'ai_decide' ? (
+            <>
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path d="M7 1.5L8.5 5l3.5 1.2-3.5 1.2L7 11l-1.5-3.5L2 6.2l3.5-1.2z" strokeLinejoin="round" />
+              </svg>
+              让 AI 评分决策
+            </>
+          ) : (
+            <>
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                <path d="M2 5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H6l-3 2v-2a3 3 0 0 1-1-2.5V5z" strokeLinejoin="round" />
+              </svg>
+              开讨论
+            </>
+          )}
         </button>
         <span className="tension-foot-hint">
           AI 是调和者,人是仲裁者。决议会写入团队记忆。

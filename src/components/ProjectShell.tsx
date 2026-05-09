@@ -82,7 +82,12 @@ export default function ProjectShell({
     project.status === 'published' ? 'published' : 'draft'
   );
   const [celebrationOpen, setCelebrationOpen] = useState(false);
-  const [publishStats, setPublishStats] = useState<{ intents: number; versions: number } | null>(null);
+  const [publishStats, setPublishStats] = useState<{
+    intents: number;
+    versions: number;
+    consensusCount: number;
+    contributorCount: number;
+  } | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
 
   // ─── Version handlers ──────────────────────────────────
@@ -322,6 +327,9 @@ export default function ProjectShell({
       setPublishStats({
         intents: json.stats?.intents ?? intents.length,
         versions: versionsTotal,
+        consensusCount: json.stats?.consensusCount ?? 0,
+        contributorCount:
+          json.stats?.contributorCount ?? collaboratorsState.length,
       });
       setCelebrationOpen(true);
     } catch (err) {
@@ -482,6 +490,7 @@ export default function ProjectShell({
                   tension={t}
                   intentMap={intentById}
                   employeeMap={employeeById}
+                  conflictMode={project.conflictMode}
                   onResolved={handleTensionResolved}
                   onDiscuss={handleDiscussTension}
                 />
@@ -566,8 +575,8 @@ export default function ProjectShell({
         }
         stats={[
           { num: publishStats?.intents ?? intents.length, label: 'Intent 命中' },
-          { num: 1, label: '位贡献者' },
-          { num: 0, label: '次冲突共识' },
+          { num: publishStats?.contributorCount ?? collaboratorsState.length, label: '位贡献者' },
+          { num: publishStats?.consensusCount ?? 0, label: '次冲突共识' },
           { num: `v${publishStats?.versions ?? versionsTotal}`, label: '产物版本' },
         ]}
         onClose={() => setCelebrationOpen(false)}

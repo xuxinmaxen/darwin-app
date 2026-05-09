@@ -54,11 +54,15 @@ export default function MemoryShell({
   agents,
   timeline,
   projectsCount,
+  memoryCount,
+  employeesCount,
 }: {
   initialPrefs: TeamPref[];
   agents: AgentLearning[];
   timeline: MemoryEvent[];
   projectsCount: number;
+  memoryCount?: number;
+  employeesCount?: number;
 }) {
   const [prefs, setPrefs] = useState<TeamPref[]>(initialPrefs);
   const [editing, setEditing] = useState<TeamPref | null>(null);
@@ -123,7 +127,12 @@ export default function MemoryShell({
       </header>
 
       <div className="ws-body">
-        <Sidebar active="memory" projectsCount={projectsCount} />
+        <Sidebar
+          active="memory"
+          projectsCount={projectsCount}
+          memoryCount={memoryCount}
+          employeesCount={employeesCount}
+        />
 
         <main className="ws-content">
           <section className="ws-section">
