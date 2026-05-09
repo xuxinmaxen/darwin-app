@@ -466,6 +466,10 @@ body {
   border: 2px solid var(--panel); margin-left: -5px;
 }
 .proj-collab .avatar:first-child { margin-left: 0; }
+.proj-collab .avatar.avatar-more {
+  background: var(--panel-3); color: var(--text-2);
+  font-weight: 600; letter-spacing: 0;
+}
 .proj-meta {
   font-size: 10.5px; color: var(--text-3);
   display: flex; align-items: center; gap: 5px;
@@ -1787,3 +1791,71 @@ body {
   background: transparent; border: 0; cursor: pointer;
   color: inherit; font-size: 16px; line-height: 1; padding: 0 4px;
 }
+
+/* ===================================================================
+ * Collaborators picker (新建项目模态)
+ * =================================================================== */
+.collab-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.collab-group-label {
+  grid-column: 1 / -1;
+  font-size: 10.5px; color: var(--text-3); font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  margin: 4px 0 2px;
+}
+.collab-group-label:first-child { margin-top: 0; }
+.collab-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer; font-family: inherit;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.collab-row:hover:not(:disabled) {
+  border-color: var(--line-2); background: var(--panel-2);
+}
+.collab-row.is-checked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.collab-row .avatar {
+  width: 26px; height: 26px; font-size: 11px;
+  border: 0; flex-shrink: 0;
+}
+.collab-text {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 1px;
+}
+.collab-name {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  letter-spacing: -0.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.collab-role {
+  font-size: 10.5px; color: var(--text-3);
+}
+.collab-check {
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid var(--line-2);
+  background: var(--panel);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.12s;
+}
+.collab-check.on {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+.collab-check svg { width: 10px; height: 10px; }
+.collab-empty {
+  padding: 14px; border: 1px dashed var(--line-2); border-radius: 8px;
+  font-size: 12px; color: var(--text-3); text-align: center;
+}
+.collab-empty a { color: var(--accent); }

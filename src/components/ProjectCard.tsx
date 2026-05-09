@@ -5,6 +5,7 @@
 
 import Link from 'next/link';
 import type { Project } from '@/lib/types';
+import type { Employee } from '@/lib/employees';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 
@@ -22,14 +23,18 @@ function formatRelativeTime(iso: string) {
   });
 }
 
+const MAX_AVATARS_VISIBLE = 4;
+
 export default function ProjectCard({
   project,
   intentCount,
   preview,
+  collaborators,
 }: {
   project: Project;
   intentCount: number;
   preview?: string;
+  collaborators: Employee[];
 }) {
   const previewText =
     preview?.trim() ||
@@ -58,7 +63,23 @@ export default function ProjectCard({
 
         <div className="proj-foot">
           <span className="proj-collab">
-            <span className="avatar xu" title="徐鑫">徐</span>
+            {collaborators.slice(0, MAX_AVATARS_VISIBLE).map(e => (
+              <span
+                key={e.id}
+                className={`avatar ${e.cls}${e.kind === 'agent' ? ' agent' : ''}`}
+                title={`${e.name}${e.role ? ` · ${e.role}` : ''}${e.kind === 'agent' ? '（Agent）' : ''}`}
+              >
+                {e.short}
+              </span>
+            ))}
+            {collaborators.length > MAX_AVATARS_VISIBLE && (
+              <span
+                className="avatar avatar-more"
+                title={`还有 ${collaborators.length - MAX_AVATARS_VISIBLE} 位协作者`}
+              >
+                +{collaborators.length - MAX_AVATARS_VISIBLE}
+              </span>
+            )}
           </span>
           <span className="proj-meta" suppressHydrationWarning>
             <strong>{intentCount}</strong>条 Intent

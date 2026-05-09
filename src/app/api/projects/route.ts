@@ -33,6 +33,7 @@ const CreateBody = z.object({
   type: z.enum(['html', 'ppt', 'doc', 'design']),
   background: z.string().max(4000).optional(),
   conflictMode: z.enum(['discuss', 'ai_decide']).default('discuss'),
+  collaboratorIds: z.array(z.string()).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
       background: body.background ?? null,
       conflictMode: body.conflictMode,
       ownerId: DEMO_OWNER_ID,
+      collaboratorIds: body.collaboratorIds,
     });
     revalidatePath('/');
     revalidatePath('/memory');

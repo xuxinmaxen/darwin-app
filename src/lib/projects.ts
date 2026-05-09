@@ -11,6 +11,7 @@ import type {
   ConflictMode,
   ProjectStatus,
 } from './types';
+import type { Employee } from './employees';
 
 // ─── DB row → Project shape ────────────────────────────────
 
@@ -66,6 +67,8 @@ export type CreateProjectInput = {
   background?: string | null;
   conflictMode?: ConflictMode;
   ownerId: string;
+  /** 额外协作者 (owner 自动加入,不需要重复传) */
+  collaboratorIds?: string[];
 };
 
 export async function createProject(
@@ -73,24 +76,128 @@ export async function createProject(
 ): Promise<Project> {
   const id = newId();
   const now = nowISO();
-  db()
-    .prepare(
-      `INSERT INTO projects (id, name, type, background, conflict_mode, status, owner_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
-    )
-    .run(
-      id,
-      input.name,
-      input.type,
-      input.background ?? null,
-      input.conflictMode ?? 'discuss',
-      input.ownerId,
-      now,
-      now
+  // owner 默认是协作者; 去重后插
+  const allCollabs = Array.from(
+    new Set([input.ownerId, ...(input.collaboratorIds ?? [])])
+  );
+  const conn = db();
+  const tx = conn.transaction(() => {
+    conn
+      .prepare(
+        `INSERT INTO projects (id, name, type, background, conflict_mode, status, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.name,
+        input.type,
+        input.background ?? null,
+        input.conflictMode ?? 'discuss',
+        input.ownerId,
+        now,
+        now
+      );
+    const insertCollab = conn.prepare(
+      `INSERT OR IGNORE INTO project_collaborators (project_id, employee_id, added_at)
+       VALUES (?, ?, ?)`
     );
+    for (const empId of allCollabs) {
+      insertCollab.run(id, empId, now);
+    }
+  });
+  tx();
   const created = await getProject(id);
   if (!created) throw new Error('createProject: insert succeeded but read failed');
   return created;
+}
+
+// ─── Collaborators ─────────────────────────────────────────
+
+type EmployeeRow = {
+  id: string;
+  kind: 'human' | 'agent';
+  name: string;
+  short: string;
+  role: string;
+  email: string | null;
+  persona: string | null;
+  cls: string;
+  owner_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+function rowToEmployee(row: EmployeeRow): Employee {
+  return {
+    id: row.id,
+    kind: row.kind,
+    name: row.name,
+    short: row.short,
+    role: row.role,
+    email: row.email,
+    persona: row.persona,
+    cls: row.cls,
+    ownerId: row.owner_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export async function listCollaborators(projectId: string): Promise<Employee[]> {
+  const rows = db()
+    .prepare(
+      `SELECT e.* FROM employees e
+       JOIN project_collaborators pc ON pc.employee_id = e.id
+       WHERE pc.project_id = ?
+       ORDER BY pc.added_at ASC`
+    )
+    .all(projectId) as EmployeeRow[];
+  return rows.map(rowToEmployee);
+}
+
+/** 批量: 给一组 projectId 一次性拉所有 collaborators, 返回 Map<projectId, Employee[]> */
+export async function listCollaboratorsByProjects(
+  projectIds: string[]
+): Promise<Map<string, Employee[]>> {
+  const result = new Map<string, Employee[]>();
+  if (projectIds.length === 0) return result;
+  const placeholders = projectIds.map(() => '?').join(',');
+  const rows = db()
+    .prepare(
+      `SELECT pc.project_id AS pid, e.* FROM employees e
+       JOIN project_collaborators pc ON pc.employee_id = e.id
+       WHERE pc.project_id IN (${placeholders})
+       ORDER BY pc.added_at ASC`
+    )
+    .all(...projectIds) as (EmployeeRow & { pid: string })[];
+  for (const row of rows) {
+    const list = result.get(row.pid) ?? [];
+    list.push(rowToEmployee(row));
+    result.set(row.pid, list);
+  }
+  for (const id of projectIds) {
+    if (!result.has(id)) result.set(id, []);
+  }
+  return result;
+}
+
+export async function setCollaborators(
+  projectId: string,
+  ownerId: string,
+  collaboratorIds: string[]
+): Promise<void> {
+  const all = Array.from(new Set([ownerId, ...collaboratorIds]));
+  const now = nowISO();
+  const conn = db();
+  const tx = conn.transaction(() => {
+    conn.prepare(`DELETE FROM project_collaborators WHERE project_id = ?`).run(projectId);
+    const ins = conn.prepare(
+      `INSERT OR IGNORE INTO project_collaborators (project_id, employee_id, added_at)
+       VALUES (?, ?, ?)`
+    );
+    for (const empId of all) ins.run(projectId, empId, now);
+  });
+  tx();
 }
 
 export async function deleteProject(id: string): Promise<void> {

@@ -10,6 +10,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import type { Project } from '@/lib/types';
+import type { Employee } from '@/lib/employees';
 import ProjectCard from '@/components/ProjectCard';
 import NewProjectButton from '@/components/NewProjectButton';
 
@@ -18,6 +19,8 @@ type Summary = { count: number; preview?: string };
 export default function WorkspaceShell({
   projects,
   summaries,
+  collaborators,
+  employees,
   supabaseConfigured,
   claudeReady,
   claudeModel,
@@ -25,6 +28,8 @@ export default function WorkspaceShell({
 }: {
   projects: Project[];
   summaries: Record<string, Summary>;
+  collaborators: Record<string, Employee[]>;
+  employees: Employee[];
   supabaseConfigured: boolean;
   claudeReady: boolean;
   claudeModel: string;
@@ -134,7 +139,7 @@ export default function WorkspaceShell({
                   <span className="dot" />
                   {claudeReady ? `Claude · ${claudeModel}` : 'Claude 待解锁'}
                 </span>
-                <NewProjectButton />
+                <NewProjectButton employees={employees} />
               </div>
             </div>
 
@@ -168,6 +173,7 @@ export default function WorkspaceShell({
                       project={p}
                       intentCount={summary.count}
                       preview={summary.preview}
+                      collaborators={collaborators[p.id] ?? []}
                     />
                   );
                 })}

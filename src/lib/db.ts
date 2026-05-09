@@ -75,6 +75,16 @@ CREATE TABLE IF NOT EXISTS employees (
 
 CREATE INDEX IF NOT EXISTS idx_employees_owner_created
   ON employees (owner_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS project_collaborators (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  added_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  PRIMARY KEY (project_id, employee_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pc_project ON project_collaborators (project_id);
+CREATE INDEX IF NOT EXISTS idx_pc_employee ON project_collaborators (employee_id);
 `;
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
