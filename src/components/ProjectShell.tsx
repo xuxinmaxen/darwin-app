@@ -23,7 +23,6 @@ import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
 import IntentForm from '@/components/IntentForm';
-import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 import ProjectCanvas from '@/components/ProjectCanvas';
 import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
@@ -113,16 +112,6 @@ export default function ProjectShell({
   };
 
   // ─── Computed ──────────────────────────────────────────
-  // 每个 scope 关键字 → 对应 Intent 数量 (溯源模式下 pill 显示这个数)
-  const intentScopeCounts = useMemo<Map<string, number>>(() => {
-    const m = new Map<string, number>();
-    for (const i of intents) {
-      const key = i.scope === 'global' ? '*' : i.scope.split('.')[0];
-      m.set(key, (m.get(key) ?? 0) + 1);
-    }
-    return m;
-  }, [intents]);
-
   // canvas 高亮的 scope 集合: hover Intent 卡片驱动
   const highlightScopes = useMemo<ReadonlySet<string>>(() => {
     if (!hoveredIntentId) return EMPTY_SET;
@@ -223,7 +212,6 @@ export default function ProjectShell({
           onPublishClick={handlePublish}
         />
 
-        <ProjectActionsMenu project={project} />
         <div className="ws-user">
           <div className="avatar xu" title="徐鑫">徐</div>
         </div>
@@ -299,7 +287,6 @@ export default function ProjectShell({
               highlightScopes={highlightScopes}
               onSectionHover={setHoveredSectionScope}
               traceMode={traceMode}
-              intentScopeCounts={intentScopeCounts}
               onVersionCreated={handleVersionCreated}
               onExitPreview={handleExitPreview}
             />

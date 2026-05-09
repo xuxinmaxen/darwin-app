@@ -46,21 +46,45 @@ const HIGHLIGHT_STYLE = `
     z-index: 9999;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
+    gap: 6px;
+    padding: 4px 10px 4px 5px;
     border-radius: 999px;
-    background: #4F46E5;
-    color: #fff;
-    font: 600 11px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(8px);
+    border: 1px solid #E8E5DA;
+    color: #525560;
+    font: 500 10.5px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
     letter-spacing: 0;
-    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35);
+    box-shadow: 0 1px 2px rgba(20, 20, 30, 0.04), 0 0 0 1px rgba(20, 20, 30, 0.04);
     pointer-events: none;
     user-select: none;
   }
-  [data-scope].darwin-trace > .darwin-trace-pill::before {
-    content: "";
-    width: 5px; height: 5px; border-radius: 50%;
-    background: rgba(255, 255, 255, 0.9);
+  .darwin-trace-pill .darwin-trace-stack {
+    display: inline-flex;
+    align-items: center;
+  }
+  .darwin-trace-pill .darwin-trace-avatar {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    color: #fff;
+    font: 600 9px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1.5px solid #fff;
+    flex-shrink: 0;
+    box-sizing: border-box;
+  }
+  .darwin-trace-pill .darwin-trace-avatar + .darwin-trace-avatar {
+    margin-left: -4px;
+  }
+  .darwin-trace-pill .darwin-trace-avatar.is-human {
+    background: linear-gradient(135deg, #3B82F6, #1D4ED8);
+  }
+  .darwin-trace-pill .darwin-trace-avatar.is-agent {
+    background: linear-gradient(135deg, #8B5CF6, #6D28D9);
+  }
+  .darwin-trace-pill .darwin-trace-num {
+    font-variant-numeric: tabular-nums;
+    color: #525560;
   }
 `;
 
@@ -80,7 +104,6 @@ export default function ProjectCanvas({
   highlightScopes,
   onSectionHover,
   traceMode,
-  intentScopeCounts,
   onVersionCreated,
   onExitPreview,
 }: {
@@ -92,7 +115,6 @@ export default function ProjectCanvas({
   highlightScopes?: ReadonlySet<string>;
   onSectionHover?: (scope: string | null) => void;
   traceMode?: boolean;
-  intentScopeCounts?: ReadonlyMap<string, number>;
   onVersionCreated: (v: Version) => void;
   onExitPreview?: () => void;
 }) {
@@ -164,34 +186,59 @@ export default function ProjectCanvas({
     });
   }, [iframeReady, highlightScopes]);
 
-  // 溯源 toggle: traceMode true → 全部 [data-scope] 加 .darwin-trace 和 pill
+  // 溯源 toggle: traceMode true → 全部 [data-scope] 加 .darwin-trace + 头像 pill
   useEffect(() => {
     if (!iframeReady) return;
     const doc = iframeRef.current?.contentDocument;
     if (!doc) return;
     const nodes = doc.querySelectorAll<HTMLElement>('[data-scope]');
+
+    // 给定 section scope, 找出驱动它的所有 Intent (含 global 兜底)
+    const intentsForScope = (scope: string): Intent[] =>
+      intents.filter(
+        i =>
+          i.scope === 'global' ||
+          i.scope === scope ||
+          i.scope.startsWith(scope + '.')
+      );
+
+    const renderAvatar = (kind: 'human' | 'agent'): string => {
+      const cls = kind === 'agent' ? 'is-agent' : 'is-human';
+      const short = kind === 'agent' ? 'A' : '徐';
+      return `<span class="darwin-trace-avatar ${cls}">${short}</span>`;
+    };
+
     nodes.forEach(n => {
       const scope = n.dataset.scope || '';
-      const existing = n.querySelector<HTMLElement>(':scope > .darwin-trace-pill');
-      if (traceMode) {
-        n.classList.add('darwin-trace');
-        const direct = intentScopeCounts?.get(scope) ?? 0;
-        const wildcard = intentScopeCounts?.get('*') ?? 0;
-        const total = direct + wildcard;
-        const label = total > 0 ? `${total} · Intent` : '0 · Intent';
-        if (existing) {
-          existing.textContent = label;
-        } else {
-          const pill = doc.createElement('div');
-          pill.className = 'darwin-trace-pill';
-          pill.textContent = label;
-          n.appendChild(pill);
-        }
-      } else {
+      let pill = n.querySelector<HTMLElement>(':scope > .darwin-trace-pill');
+      if (!traceMode) {
         n.classList.remove('darwin-trace');
-        if (existing) existing.remove();
+        if (pill) pill.remove();
+        return;
       }
+
+      const matched = intentsForScope(scope);
+      const total = matched.length;
+      // unique authorKind, 保持稳定顺序: human 在前
+      const kinds: ('human' | 'agent')[] = [];
+      for (const i of matched) {
+        if (!kinds.includes(i.authorKind)) kinds.push(i.authorKind);
+      }
+      kinds.sort((a) => (a === 'human' ? -1 : 1));
+
+      n.classList.add('darwin-trace');
+      const inner = total > 0
+        ? `<span class="darwin-trace-stack">${kinds.map(renderAvatar).join('')}</span><span class="darwin-trace-num">${total} 条 Intent</span>`
+        : '<span class="darwin-trace-num">未命中</span>';
+
+      if (!pill) {
+        pill = doc.createElement('div');
+        pill.className = 'darwin-trace-pill';
+        n.appendChild(pill);
+      }
+      pill.innerHTML = inner;
     });
+
     return () => {
       const cleanupDoc = iframeRef.current?.contentDocument;
       if (!cleanupDoc) return;
@@ -202,7 +249,7 @@ export default function ProjectCanvas({
         .querySelectorAll<HTMLElement>('[data-scope].darwin-trace')
         .forEach(n => n.classList.remove('darwin-trace'));
     };
-  }, [iframeReady, traceMode, intentScopeCounts]);
+  }, [iframeReady, traceMode, intents]);
 
   // ─── 自动重合成 ──────────────────────────────────────────
   useEffect(() => {
