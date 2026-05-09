@@ -8,7 +8,7 @@
  */
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Sidebar } from '@/components/WorkspaceShell';
 import EmployeeModal from '@/components/EmployeeModal';
 import type { Employee } from '@/lib/employees';
@@ -40,6 +40,15 @@ export default function EmployeesShell({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 真人 → 它对应的数字员工 (linked_human_id)
+  const digitalByHumanId = useMemo(() => {
+    const m = new Map<string, Employee>();
+    for (const e of employees) {
+      if (e.kind === 'agent' && e.linkedHumanId) m.set(e.linkedHumanId, e);
+    }
+    return m;
+  }, [employees]);
+
   function openNew() {
     setEditing(null);
     setModalOpen(true);
@@ -48,17 +57,49 @@ export default function EmployeesShell({
     setEditing(emp);
     setModalOpen(true);
   }
-  function handleSaved(saved: Employee) {
+  function handleSaved(saved: Employee, digital: Employee | null) {
     setEmployees(prev => {
-      const idx = prev.findIndex(e => e.id === saved.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = saved;
-        return next;
+      const next = [...prev];
+      const idx = next.findIndex(e => e.id === saved.id);
+      if (idx >= 0) next[idx] = saved;
+      else next.push(saved);
+      if (digital) {
+        const di = next.findIndex(e => e.id === digital.id);
+        if (di >= 0) next[di] = digital;
+        else next.push(digital);
       }
-      return [...prev, saved];
+      return next;
     });
     setModalOpen(false);
+  }
+
+  async function toggleOnline(emp: Employee) {
+    if (emp.kind !== 'human') return;
+    const next = !emp.isOnline;
+    // 乐观更新
+    setEmployees(prev =>
+      prev.map(e => (e.id === emp.id ? { ...e, isOnline: next } : e))
+    );
+    try {
+      const res = await fetch(`/api/employees/${emp.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isOnline: next }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        // 回滚
+        setEmployees(prev =>
+          prev.map(e => (e.id === emp.id ? { ...e, isOnline: !next } : e))
+        );
+        setError(json.error || '切换在线状态失败');
+      }
+    } catch (err) {
+      setEmployees(prev =>
+        prev.map(e => (e.id === emp.id ? { ...e, isOnline: !next } : e))
+      );
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function handleConfirmDelete(id: string) {
@@ -144,10 +185,14 @@ export default function EmployeesShell({
             <div className="ws-employees">
               {employees.map(emp => {
                 const isDefault = emp.id === DEMO_OWNER_ID;
+                const linkedDigital =
+                  emp.kind === 'human' ? digitalByHumanId.get(emp.id) ?? null : null;
+                const isDigitalTwin =
+                  emp.kind === 'agent' && !!emp.linkedHumanId;
                 return (
                   <div
                     key={emp.id}
-                    className={`emp${emp.kind === 'agent' ? ' emp-agent' : ''}`}
+                    className={`emp${emp.kind === 'agent' ? ' emp-agent' : ''}${isDigitalTwin ? ' emp-digital' : ''}`}
                   >
                     <div className="card-actions">
                       <button
@@ -170,15 +215,43 @@ export default function EmployeesShell({
                       )}
                     </div>
                     <div className="emp-head">
-                      <span className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}>
+                      <span
+                        className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}
+                      >
                         {emp.short}
+                        {emp.kind === 'human' && (
+                          <button
+                            type="button"
+                            className={`emp-online-dot${emp.isOnline ? ' is-on' : ''}`}
+                            onClick={ev => {
+                              ev.stopPropagation();
+                              toggleOnline(emp);
+                            }}
+                            title={emp.isOnline ? '在线 · 点击切到离线' : '离线 · 点击切到在线'}
+                            aria-label={emp.isOnline ? '在线' : '离线'}
+                          />
+                        )}
                       </span>
                       <span className={`emp-kind ${emp.kind}`}>
                         <span className="dot" />
-                        {emp.kind === 'agent' ? 'AGENT' : 'HUMAN'}
+                        {isDigitalTwin
+                          ? '数字员工'
+                          : emp.kind === 'agent'
+                            ? 'AGENT'
+                            : 'HUMAN'}
                       </span>
                     </div>
-                    <div className="emp-name">{emp.name}</div>
+                    <div className="emp-name">
+                      {emp.name}
+                      {linkedDigital && (
+                        <span
+                          className="emp-has-digital"
+                          title={`已配置数字员工: ${linkedDigital.name}`}
+                        >
+                          ⚡ AI
+                        </span>
+                      )}
+                    </div>
                     <span className="emp-role">{emp.role}</span>
                     <div className="emp-meta">
                       {emp.kind === 'agent' ? (
@@ -216,6 +289,7 @@ export default function EmployeesShell({
       <EmployeeModal
         open={modalOpen}
         initial={editing}
+        initialDigital={editing ? digitalByHumanId.get(editing.id) ?? null : null}
         onClose={() => setModalOpen(false)}
         onSaved={handleSaved}
       />

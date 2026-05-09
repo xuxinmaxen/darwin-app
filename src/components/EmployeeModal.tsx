@@ -22,13 +22,16 @@ const ROLE_HINT: Record<string, string> = {
 type Props = {
   open: boolean;
   initial: Employee | null; // null = 新建模式
+  /** 真人 initial 已有的数字员工 (编辑时父组件传入); 无 = null */
+  initialDigital?: Employee | null;
   onClose: () => void;
-  onSaved: (employee: Employee) => void;
+  onSaved: (employee: Employee, digital: Employee | null) => void;
 };
 
 export default function EmployeeModal({
   open,
   initial,
+  initialDigital,
   onClose,
   onSaved,
 }: Props) {
@@ -38,8 +41,13 @@ export default function EmployeeModal({
   const [role, setRole] = useState(initial?.role ?? 'PM');
   const [email, setEmail] = useState(initial?.email ?? '');
   const [persona, setPersona] = useState(initial?.persona ?? '');
+  const [withDigital, setWithDigital] = useState<boolean>(!!initialDigital);
+  const [isOnline, setIsOnline] = useState<boolean>(initial?.isOnline ?? true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // 已有数字员工的话, 不允许在这里取消 (后端没做 unlink, 防止误操作)
+  const digitalLocked = isEdit && !!initialDigital;
 
   // 每次打开时重置表单
   useEffect(() => {
@@ -49,9 +57,11 @@ export default function EmployeeModal({
     setRole(initial?.role ?? 'PM');
     setEmail(initial?.email ?? '');
     setPersona(initial?.persona ?? '');
+    setWithDigital(!!initialDigital);
+    setIsOnline(initial?.isOnline ?? true);
     setError(null);
     setSaving(false);
-  }, [open, initial]);
+  }, [open, initial, initialDigital]);
 
   // ESC 关
   useEffect(() => {
@@ -91,6 +101,9 @@ export default function EmployeeModal({
             role,
             email: kind === 'human' ? email.trim() || null : undefined,
             persona: kind === 'agent' ? persona.trim() || null : undefined,
+            isOnline: kind === 'human' ? isOnline : undefined,
+            // 编辑时 withDigital=true 是「补」, 已存在 ensureDigitalForHuman 是 noop
+            withDigital: kind === 'human' && withDigital ? true : undefined,
           }
         : {
             kind,
@@ -98,6 +111,8 @@ export default function EmployeeModal({
             role,
             email: kind === 'human' ? email.trim() || null : null,
             persona: kind === 'agent' ? persona.trim() || null : null,
+            isOnline: kind === 'human' ? isOnline : undefined,
+            withDigital: kind === 'human' ? withDigital : undefined,
           };
       const res = await fetch(url, {
         method,
@@ -109,7 +124,7 @@ export default function EmployeeModal({
         setError(json.error || `请求失败 (${res.status})`);
         return;
       }
-      onSaved(json.employee);
+      onSaved(json.employee, json.digital ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -212,20 +227,82 @@ export default function EmployeeModal({
           </div>
 
           {kind === 'human' && (
-            <div className="field">
-              <label className="field-label" htmlFor="emp-email">
-                邮箱 <span className="field-hint">选填</span>
-              </label>
-              <input
-                id="emp-email"
-                className="field-input"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="name@deeplumen.com"
-                disabled={saving}
-              />
-            </div>
+            <>
+              <div className="field">
+                <label className="field-label" htmlFor="emp-email">
+                  邮箱 <span className="field-hint">选填</span>
+                </label>
+                <input
+                  id="emp-email"
+                  className="field-input"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="name@deeplumen.com"
+                  disabled={saving}
+                />
+              </div>
+
+              <div className="field field-row">
+                <label className="field-label" style={{ marginBottom: 0, flex: 1 }}>
+                  在线状态
+                  <span className="field-hint">— 离线时项目里会建议邀请其 AI 替身</span>
+                </label>
+                <button
+                  type="button"
+                  className={`online-toggle${isOnline ? ' is-on' : ''}`}
+                  onClick={() => !saving && setIsOnline(v => !v)}
+                  disabled={saving}
+                  aria-pressed={isOnline}
+                >
+                  <span className="online-dot" />
+                  {isOnline ? '在线' : '离线'}
+                </button>
+              </div>
+
+              <div className="field">
+                <button
+                  type="button"
+                  className={`digital-toggle${withDigital ? ' is-on' : ''}${digitalLocked ? ' is-locked' : ''}`}
+                  onClick={() => {
+                    if (saving || digitalLocked) return;
+                    setWithDigital(v => !v);
+                  }}
+                  aria-pressed={withDigital}
+                  title={digitalLocked ? '已有数字员工; 暂不支持解绑' : undefined}
+                >
+                  <span className={`digital-toggle-check${withDigital ? ' on' : ''}`}>
+                    {withDigital && (
+                      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}>
+                        <path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
+                  <span className="digital-toggle-body">
+                    <span className="digital-toggle-title">
+                      为 TA 创建数字员工
+                      {digitalLocked && <span className="digital-toggle-tag">已创建</span>}
+                    </span>
+                    <span className="digital-toggle-sub">
+                      项目里 TA 不在线/忙碌时,数字员工可代为参与协作。
+                    </span>
+                  </span>
+                </button>
+
+                {withDigital && (
+                  <div className="digital-preview">
+                    <span className="digital-preview-label">将创建</span>
+                    <span className="avatar agent-emerald agent">
+                      {[...(name.trim() || '?')][0]}
+                    </span>
+                    <span className="digital-preview-name">
+                      {name.trim() || '员工名'} AI
+                    </span>
+                    <span className="digital-preview-role">{role}</span>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
           {kind === 'agent' && (

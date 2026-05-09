@@ -1793,6 +1793,169 @@ body {
 }
 
 /* ===================================================================
+ * Modal: online toggle + digital twin switch + preview
+ * =================================================================== */
+.field-row {
+  display: flex; align-items: center; gap: 12px;
+}
+.online-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px;
+  background: var(--panel); border: 1px solid var(--line);
+  color: var(--text-2); cursor: pointer; font-family: inherit;
+  font-size: 12px; font-weight: 500;
+  transition: border-color 0.15s, color 0.15s;
+}
+.online-toggle:hover:not(:disabled) {
+  border-color: var(--line-2); color: var(--text);
+}
+.online-toggle:disabled { opacity: 0.55; cursor: not-allowed; }
+.online-toggle .online-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--text-3);
+  box-shadow: 0 0 0 0 transparent;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.online-toggle.is-on {
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #047857;
+  background: rgba(16, 185, 129, 0.06);
+}
+.online-toggle.is-on .online-dot {
+  background: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  animation: online-pulse 2s ease-in-out infinite;
+}
+@keyframes online-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18); }
+  50%      { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.05); }
+}
+
+.digital-toggle {
+  width: 100%; text-align: left;
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer; font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.digital-toggle:hover:not(.is-locked) {
+  border-color: var(--line-2); background: var(--panel-2);
+}
+.digital-toggle.is-on {
+  border-color: rgba(6, 182, 212, 0.35);
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.05), rgba(167, 139, 250, 0.05));
+}
+.digital-toggle.is-locked {
+  cursor: default;
+  border-color: rgba(6, 182, 212, 0.35);
+  background: var(--panel-2);
+}
+.digital-toggle-check {
+  width: 18px; height: 18px; border-radius: 5px;
+  border: 1.5px solid var(--line-2);
+  background: var(--panel);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+  transition: all 0.12s;
+}
+.digital-toggle-check.on {
+  background: linear-gradient(135deg, #06B6D4, #A78BFA);
+  border-color: transparent;
+  color: #fff;
+}
+.digital-toggle-check svg { width: 11px; height: 11px; }
+.digital-toggle-body {
+  flex: 1; display: flex; flex-direction: column; gap: 3px;
+}
+.digital-toggle-title {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  letter-spacing: -0.005em;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.digital-toggle-tag {
+  font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px;
+  color: #0E7490; background: rgba(6, 182, 212, 0.10);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+.digital-toggle-sub {
+  font-size: 11px; color: var(--text-3); line-height: 1.5;
+}
+
+.digital-preview {
+  margin-top: 10px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px dashed rgba(6, 182, 212, 0.30);
+}
+.digital-preview-label {
+  font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.digital-preview .avatar {
+  width: 28px; height: 28px; font-size: 11px;
+  border: 0; flex-shrink: 0;
+}
+.digital-preview-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  letter-spacing: -0.005em;
+}
+.digital-preview-role {
+  font-size: 11px; color: var(--text-3);
+  padding: 2px 7px; border-radius: 4px;
+  background: var(--panel-2); border: 1px solid var(--line);
+  margin-left: auto;
+}
+
+/* 卡片在线点 (右下贴在头像上) */
+.emp .avatar { position: relative; overflow: visible; }
+.emp-online-dot {
+  position: absolute;
+  right: -2px; bottom: -2px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--panel);
+  background: var(--text-3);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+.emp-online-dot:hover {
+  box-shadow: 0 0 0 4px rgba(20, 20, 30, 0.06);
+}
+.emp-online-dot.is-on {
+  background: #10B981;
+}
+.emp-online-dot.is-on:hover {
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18);
+}
+
+/* 卡片"含数字员工" */
+.emp-has-digital {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 5px;
+  margin-left: 8px;
+  vertical-align: middle;
+  color: #0E7490;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.10), rgba(167, 139, 250, 0.10));
+  border: 1px solid rgba(6, 182, 212, 0.30);
+}
+
+/* 数字员工卡片标签 (顶端 emp-agent 的紫渐变保留, 下面区分) */
+.emp.emp-digital::before {
+  background: linear-gradient(90deg, #06B6D4, #34D399);
+}
+
+/* ===================================================================
  * Collaborators picker (新建项目模态)
  * =================================================================== */
 .collab-grid {
