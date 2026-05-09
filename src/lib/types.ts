@@ -93,6 +93,33 @@ export type Tension = {
   resolvedAt?: string | null;
 };
 
+// ─── Thread (讨论) ─────────────────────────────────────────
+
+export type ThreadStatus = 'active' | 'resolved';
+export type ThreadMessageKind = 'human' | 'agent' | 'system';
+
+export type Thread = {
+  id: string;
+  projectId: string;
+  scope: string;
+  title: string;
+  status: ThreadStatus;
+  tensionId?: string | null;
+  createdAt: string;
+  resolvedAt?: string | null;
+};
+
+export type ThreadMessage = {
+  id: string;
+  threadId: string;
+  authorId: string;            // employee.id 或 'system'
+  authorKind: ThreadMessageKind;
+  body: string;                // 支持简单 markdown (strong)
+  isDecision: boolean;
+  decisionPayload?: { selectedOptionKey: string } | null;
+  createdAt: string;
+};
+
 /** Claude 抽取的原始输出（写库前的中间形态）*/
 export type ExtractedIntent = Pick<
   Intent,

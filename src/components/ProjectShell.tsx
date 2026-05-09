@@ -30,9 +30,10 @@ import VersionsPanel from '@/components/VersionsPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import CelebrationModal from '@/components/CelebrationModal';
 import TensionCard from '@/components/TensionCard';
+import DiscussionDrawer from '@/components/DiscussionDrawer';
 import type { Version } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
-import type { Tension } from '@/lib/types';
+import type { Tension, Thread, ThreadMessage } from '@/lib/types';
 
 const MAX_TOPBAR_AVATARS = 5;
 
@@ -128,6 +129,103 @@ export default function ProjectShell({
 
   // Tensions: 本地 state, 解决/检测出新的会更新
   const [activeTensions, setActiveTensions] = useState<Tension[]>(initialActiveTensions);
+
+  // 讨论抽屉状态
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeThread, setActiveThread] = useState<Thread | null>(null);
+  const [activeMessages, setActiveMessages] = useState<ThreadMessage[]>([]);
+
+  // 关联当前 thread 的 tension (内联仲裁需要)
+  const activeThreadTension = useMemo(() => {
+    if (!activeThread?.tensionId) return null;
+    return activeTensions.find(t => t.id === activeThread.tensionId) ?? null;
+  }, [activeThread, activeTensions]);
+
+  async function loadThreadMessages(threadId: string) {
+    const res = await fetch(`/api/threads/${threadId}/messages`);
+    const json = await res.json();
+    if (json.ok) setActiveMessages(json.messages);
+  }
+
+  async function handleDiscussTension(tension: Tension) {
+    // 找/创建 tension 关联的 thread
+    const partyA = intentById.get(tension.intentIds[0]);
+    const partyB = intentById.get(tension.intentIds[1]);
+    const partyAName = partyA ? (employeeById.get(partyA.authorId)?.name ?? '?') : '?';
+    const partyBName = partyB ? (employeeById.get(partyB.authorId)?.name ?? '?') : '?';
+
+    const openingBody = [
+      `**${tension.scope}** 区块发现冲突: **${partyAName}** ⇄ **${partyBName}**`,
+      '',
+      `${partyAName} 主张: ${partyA?.statement ?? '?'}`,
+      `${partyBName} 主张: ${partyB?.statement ?? '?'}`,
+      '',
+      'AI 已生成 3 个调和方案 (见下方),团队可在此讨论或直接选定。',
+    ].join('\n');
+
+    try {
+      const res = await fetch(`/api/projects/${project.id}/threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: tension.scope,
+          title: `${tension.scope} · ${partyAName} ⇄ ${partyBName}`,
+          tensionId: tension.id,
+          openingMessages: [
+            {
+              authorId: 'system',
+              authorKind: 'system',
+              body: openingBody,
+            },
+          ],
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) return;
+      setActiveThread(json.thread);
+      setDrawerOpen(true);
+      await loadThreadMessages(json.thread.id);
+    } catch {
+      // 静默
+    }
+  }
+
+  async function handleSendMessage(body: string) {
+    if (!activeThread) return;
+    const res = await fetch(`/api/threads/${activeThread.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+    });
+    const json = await res.json();
+    if (json.ok) {
+      setActiveMessages(prev => [...prev, json.message]);
+    } else {
+      throw new Error(json.error || '发送失败');
+    }
+  }
+
+  async function handleDrawerResolveTension(selectedOptionKey: string) {
+    if (!activeThread?.tensionId) return;
+    const res = await fetch(
+      `/api/projects/${project.id}/tensions/${activeThread.tensionId}/resolve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selectedOptionKey }),
+      }
+    );
+    const json = await res.json();
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || '决议失败');
+    }
+    // tension 关闭 + thread 关闭 + 重新拉消息让 system "决议" 消息出现
+    setActiveTensions(prev => prev.filter(t => t.id !== activeThread.tensionId));
+    setActiveThread(prev => (prev ? { ...prev, status: 'resolved' } : prev));
+    await loadThreadMessages(activeThread.id);
+    // 给用户看到"已收敛"动画后再 reload
+    setTimeout(() => window.location.reload(), 800);
+  }
 
   const intentById = useMemo(() => {
     const m = new Map<string, Intent>();
@@ -309,7 +407,7 @@ export default function ProjectShell({
       </div>
 
       {/* MAIN GRID — V1: 2 cols (board + canvas). V2 加上讨论抽屉 */}
-      <div className="main main-v1">
+      <div className={`main main-v1${drawerOpen ? ' has-drawer' : ''}`}>
         {/* LEFT: INTENT BOARD */}
         <aside className="board">
           <div className="board-head">
@@ -385,6 +483,7 @@ export default function ProjectShell({
                   intentMap={intentById}
                   employeeMap={employeeById}
                   onResolved={handleTensionResolved}
+                  onDiscuss={handleDiscussTension}
                 />
               ))}
             </div>
@@ -405,6 +504,19 @@ export default function ProjectShell({
             />
           </div>
         </section>
+
+        {drawerOpen && (
+          <DiscussionDrawer
+            open={drawerOpen}
+            thread={activeThread}
+            messages={activeMessages}
+            tension={activeThreadTension}
+            employeeMap={employeeById}
+            onClose={() => setDrawerOpen(false)}
+            onSend={handleSendMessage}
+            onResolveTension={handleDrawerResolveTension}
+          />
+        )}
       </div>
 
       {versionPanelOpen && (

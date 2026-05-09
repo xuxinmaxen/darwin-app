@@ -16,6 +16,11 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { resolveTension, getTension } from '@/lib/tensions';
 import { maybeBackToCollaborating } from '@/lib/detect-tension';
+import {
+  findThreadByTension,
+  resolveThread,
+  createMessage,
+} from '@/lib/threads';
 
 const DEMO_AUTHOR_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -59,16 +64,41 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   try {
+    // 找关联 thread (如果通过"开讨论"路径过来 + body 没显式传)
+    let threadId = body.threadId ?? null;
+    if (!threadId) {
+      const thread = await findThreadByTension(tensionId);
+      if (thread) threadId = thread.id;
+    }
+
     const resolved = await resolveTension({
       tensionId,
       selectedOptionKey: body.selectedOptionKey,
       decidedBy: body.decidedBy ?? [DEMO_AUTHOR_ID],
-      threadId: body.threadId ?? null,
+      threadId,
     });
     await maybeBackToCollaborating(projectId);
+
+    // 关联 thread 也 resolve + 写决策消息
+    if (threadId) {
+      const selectedOption = tension.options.find(
+        o => o.key === body.selectedOptionKey
+      );
+      const optionTitle = selectedOption?.title ?? body.selectedOptionKey;
+      await createMessage({
+        threadId,
+        authorId: 'system',
+        authorKind: 'system',
+        body: `✓ 决议: 选定方案 **${body.selectedOptionKey}** · ${optionTitle}`,
+        isDecision: true,
+        decisionPayload: { selectedOptionKey: body.selectedOptionKey },
+      });
+      await resolveThread(threadId);
+    }
+
     revalidatePath(`/projects/${projectId}`);
     revalidatePath('/');
-    return NextResponse.json({ ok: true, tension: resolved });
+    return NextResponse.json({ ok: true, tension: resolved, threadId });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

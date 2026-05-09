@@ -101,6 +101,33 @@ CREATE TABLE IF NOT EXISTS tensions (
 
 CREATE INDEX IF NOT EXISTS idx_tensions_project_status
   ON tensions (project_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS threads (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  title TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','resolved')),
+  tension_id TEXT,                    -- 软关联,Tension 删了不删讨论
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_threads_project ON threads (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_tension ON threads (tension_id);
+
+CREATE TABLE IF NOT EXISTS thread_messages (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  author_id TEXT NOT NULL,
+  author_kind TEXT NOT NULL CHECK (author_kind IN ('human','agent','system')),
+  body TEXT NOT NULL,
+  is_decision INTEGER NOT NULL DEFAULT 0,
+  decision_payload TEXT,              -- JSON: {selectedOptionKey}
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_thread ON thread_messages (thread_id, created_at ASC);
 `;
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';

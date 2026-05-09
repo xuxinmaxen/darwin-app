@@ -23,6 +23,7 @@ type Props = {
   intentMap: Map<string, Intent>;
   employeeMap: Map<string, Employee>;
   onResolved: (tensionId: string) => void;
+  onDiscuss: (tension: Tension) => void;
 };
 
 export default function TensionCard({
@@ -31,6 +32,7 @@ export default function TensionCard({
   intentMap,
   employeeMap,
   onResolved,
+  onDiscuss,
 }: Props) {
   const [selecting, setSelecting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +141,20 @@ export default function TensionCard({
       {error && <div className="tension-error">⚠️ {error}</div>}
 
       <div className="tension-foot">
-        AI 是调和者,人是仲裁者。决议会写入团队记忆。
+        <button
+          type="button"
+          className="tension-discuss-btn"
+          onClick={() => onDiscuss(tension)}
+          disabled={selecting !== null}
+        >
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <path d="M2 5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H6l-3 2v-2a3 3 0 0 1-1-2.5V5z" strokeLinejoin="round" />
+          </svg>
+          开讨论
+        </button>
+        <span className="tension-foot-hint">
+          AI 是调和者,人是仲裁者。决议会写入团队记忆。
+        </span>
       </div>
     </div>
   );
