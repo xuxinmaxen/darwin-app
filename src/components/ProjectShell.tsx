@@ -18,7 +18,7 @@
  */
 
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
@@ -29,8 +29,10 @@ import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import CelebrationModal from '@/components/CelebrationModal';
+import TensionCard from '@/components/TensionCard';
 import type { Version } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
+import type { Tension } from '@/lib/types';
 
 const MAX_TOPBAR_AVATARS = 5;
 
@@ -55,6 +57,7 @@ export default function ProjectShell({
   initialVersion,
   versionsTotal: initialVersionsTotal,
   collaborators,
+  activeTensions: initialActiveTensions,
 }: {
   project: Project;
   intents: Intent[];
@@ -62,6 +65,7 @@ export default function ProjectShell({
   initialVersion: Version | null;
   versionsTotal: number;
   collaborators: Employee[];
+  activeTensions: Tension[];
 }) {
   // ─── State ─────────────────────────────────────────────
   const [hoveredIntentId, setHoveredIntentId] = useState<string | null>(null);
@@ -121,6 +125,52 @@ export default function ProjectShell({
   // 协作者: 本地 state, 面板修改后即时反映
   const [collaboratorsState, setCollaboratorsState] = useState<Employee[]>(collaborators);
   const [collabPanelOpen, setCollabPanelOpen] = useState(false);
+
+  // Tensions: 本地 state, 解决/检测出新的会更新
+  const [activeTensions, setActiveTensions] = useState<Tension[]>(initialActiveTensions);
+
+  const intentById = useMemo(() => {
+    const m = new Map<string, Intent>();
+    for (const i of intents) m.set(i.id, i);
+    return m;
+  }, [intents]);
+
+  const handleTensionResolved = (tensionId: string) => {
+    setActiveTensions(prev => prev.filter(t => t.id !== tensionId));
+    // 触发 router refresh 让看板和产物按新决议重新合成
+    if (typeof window !== 'undefined') {
+      // Tension 解决后让 ProjectCanvas 检测到 intents 没变但需要重合成 — 现状是
+      // canvas 自动合成基于 intent hash, tension 解决不变 hash。简化做法:
+      // 直接 location.reload 让所有数据 (含 versions count) 都刷新一遍。
+      // 后续可优化为单独 trigger 一次 synthesize。
+      window.location.reload();
+    }
+  };
+
+  // 轮询 active tensions (LLM 检测是 fire-and-forget, 客户端要主动拉)
+  // 在用户加 Intent 后短时间内拉几次, 避免错过新冒出来的 tension
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async (delayMs: number) => {
+      await new Promise(r => setTimeout(r, delayMs));
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/projects/${project.id}/tensions`);
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok) {
+          const active = (json.tensions as Tension[]).filter(t => t.status === 'active');
+          setActiveTensions(active);
+        }
+      } catch {
+        // 静默
+      }
+    };
+    // intents.length 变化后 5s / 12s 各拉一次 (检测异步, 一般 5-15s 内完成)
+    poll(5000);
+    poll(12000);
+    return () => { cancelled = true; };
+  }, [intents.length, project.id]);
   const employeeById = useMemo(() => {
     const m = new Map<string, Employee>();
     for (const e of collaboratorsState) m.set(e.id, e);
@@ -299,10 +349,15 @@ export default function ProjectShell({
 
         {/* CENTER: CANVAS */}
         <section className="canvas-wrap">
-          <div className="statusbar">
-            <span className={`status-icon ${intents.length === 0 ? 'idle' : currentVersion ? 'done' : ''}`} />
+          <div className={`statusbar${activeTensions.length > 0 ? ' has-tension' : ''}`}>
+            <span className={`status-icon ${activeTensions.length > 0 ? 'tension' : intents.length === 0 ? 'idle' : currentVersion ? 'done' : ''}`} />
             <span className="status-text">
-              {intents.length === 0 ? (
+              {activeTensions.length > 0 ? (
+                <>
+                  检测到 <strong>{activeTensions.length}</strong> 个未决冲突 ·
+                  AI 已提议调和方案,等待团队仲裁
+                </>
+              ) : intents.length === 0 ? (
                 <>等待输入。所有人到齐后，AI 会把意图合成为产物。</>
               ) : currentVersion ? (
                 <>
@@ -319,6 +374,21 @@ export default function ProjectShell({
               )}
             </span>
           </div>
+
+          {activeTensions.length > 0 && (
+            <div className="tension-stack">
+              {activeTensions.map(t => (
+                <TensionCard
+                  key={t.id}
+                  projectId={project.id}
+                  tension={t}
+                  intentMap={intentById}
+                  employeeMap={employeeById}
+                  onResolved={handleTensionResolved}
+                />
+              ))}
+            </div>
+          )}
 
           <div className="canvas">
             <ProjectCanvas

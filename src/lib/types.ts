@@ -62,28 +62,22 @@ export type Intent = {
   createdAt: string;
 };
 
-/** Claude 抽取的原始输出（写库前的中间形态）*/
-export type ExtractedIntent = Pick<
-  Intent,
-  'type' | 'scope' | 'weight' | 'rationale'
->;
-
 // ─── Tension ───────────────────────────────────────────────
 
 export type TensionVariant = 'human' | 'agents';
 export type TensionStatus = 'active' | 'resolved';
 
 export type TensionOption = {
-  key: string; // "A" | "B" | "C"
+  key: string;        // 'A' | 'B' | 'C' | 'custom'
   title: string;
   desc: string;
 };
 
 export type TensionResolution = {
   selectedOptionKey: string;
-  decidedBy: string[]; // user/agent ids
+  decidedBy: string[];      // employee ids
   decidedAt: string;
-  threadId?: string;
+  threadId?: string | null; // 关联讨论 thread (v2: 4.13)
 };
 
 export type Tension = {
@@ -93,12 +87,17 @@ export type Tension = {
   intentIds: string[];
   variant: TensionVariant;
   status: TensionStatus;
-  title: string;
-  desc: string;
   options: TensionOption[];
   resolution?: TensionResolution | null;
   createdAt: string;
+  resolvedAt?: string | null;
 };
+
+/** Claude 抽取的原始输出（写库前的中间形态）*/
+export type ExtractedIntent = Pick<
+  Intent,
+  'type' | 'scope' | 'weight' | 'rationale'
+>;
 
 // ─── Version (产物快照) ─────────────────────────────────────
 

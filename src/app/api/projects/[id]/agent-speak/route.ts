@@ -127,6 +127,14 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     await bumpToCollaborating(projectId).catch(() => {});
 
+    if (intent.weight === 'must') {
+      setTimeout(() => {
+        import('@/lib/detect-tension')
+          .then(m => m.detectTensionsForProject(projectId))
+          .catch(err => console.warn('[detect-tension after speak] failed:', err));
+      }, 0);
+    }
+
     revalidatePath(`/projects/${projectId}`);
     revalidatePath('/');
 

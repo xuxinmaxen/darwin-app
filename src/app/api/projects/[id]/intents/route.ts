@@ -18,6 +18,7 @@ import { z } from 'zod';
 import { listIntentsByProject, createIntent } from '@/lib/intents';
 import { bumpToCollaborating, getProject } from '@/lib/projects';
 import { tryExtractIntent } from '@/lib/extract';
+import { detectTensionsForProject } from '@/lib/detect-tension';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -103,6 +104,17 @@ export async function POST(req: NextRequest, { params }: Params) {
       rationale: resolvedRationale,
     });
     await bumpToCollaborating(projectId).catch(() => {});
+
+    // 仅 must Intent 才会引发对立, 避免无谓的 LLM 调用
+    if (resolvedWeight === 'must') {
+      // fire-and-forget: 不阻塞用户响应
+      setTimeout(() => {
+        detectTensionsForProject(projectId).catch(err => {
+          console.warn('[detect-tension] failed:', err);
+        });
+      }, 0);
+    }
+
     revalidatePath('/');
     revalidatePath(`/projects/${projectId}`);
     return NextResponse.json(

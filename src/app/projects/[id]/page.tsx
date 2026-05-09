@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation';
 import { getProject, listCollaborators } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { getLatestVersion, countVersions } from '@/lib/versions';
+import { listActiveTensions } from '@/lib/tensions';
 import { describeLLM } from '@/lib/llm';
 import ProjectShell from '@/components/ProjectShell';
 
@@ -20,12 +21,14 @@ export default async function ProjectDetailPage({ params }: Params) {
   const project = await getProject(id);
   if (!project) notFound();
 
-  const [intents, initialVersion, versionsTotal, collaborators] = await Promise.all([
-    listIntentsByProject(id),
-    getLatestVersion(id),
-    countVersions(id),
-    listCollaborators(id),
-  ]);
+  const [intents, initialVersion, versionsTotal, collaborators, activeTensions] =
+    await Promise.all([
+      listIntentsByProject(id),
+      getLatestVersion(id),
+      countVersions(id),
+      listCollaborators(id),
+      listActiveTensions(id),
+    ]);
   const llm = describeLLM();
 
   return (
@@ -36,6 +39,7 @@ export default async function ProjectDetailPage({ params }: Params) {
       initialVersion={initialVersion}
       versionsTotal={versionsTotal}
       collaborators={collaborators}
+      activeTensions={activeTensions}
     />
   );
 }

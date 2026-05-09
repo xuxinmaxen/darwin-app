@@ -166,6 +166,15 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
       collaborators,
     });
 
+    // Agent 写的 must Intent 也可能引发 tension, 异步检测
+    if (intent.weight === 'must') {
+      setTimeout(() => {
+        import('./detect-tension')
+          .then(m => m.detectTensionsForProject(input.projectId))
+          .catch(err => console.warn('[detect-tension after react] failed:', err));
+      }, 0);
+    }
+
     return { ok: true, reaction: 'spoke', intent };
   } catch (err) {
     return {

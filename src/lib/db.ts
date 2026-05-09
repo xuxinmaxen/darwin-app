@@ -85,6 +85,22 @@ CREATE TABLE IF NOT EXISTS project_collaborators (
 
 CREATE INDEX IF NOT EXISTS idx_pc_project ON project_collaborators (project_id);
 CREATE INDEX IF NOT EXISTS idx_pc_employee ON project_collaborators (employee_id);
+
+CREATE TABLE IF NOT EXISTS tensions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  scope TEXT NOT NULL,
+  intent_ids TEXT NOT NULL,           -- JSON array
+  variant TEXT NOT NULL CHECK (variant IN ('human','agents')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','resolved')),
+  options TEXT NOT NULL,              -- JSON: [{key,title,desc}]
+  resolution TEXT,                    -- JSON: {selectedOptionKey,decidedBy[],decidedAt,threadId?}
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  resolved_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tensions_project_status
+  ON tensions (project_id, status, created_at DESC);
 `;
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
