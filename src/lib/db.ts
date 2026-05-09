@@ -128,6 +128,20 @@ CREATE TABLE IF NOT EXISTS thread_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON thread_messages (thread_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS team_prefs (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  icon_key TEXT NOT NULL,
+  category TEXT NOT NULL,
+  body TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_cls TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_prefs_owner ON team_prefs (owner_id, created_at ASC);
 `;
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';

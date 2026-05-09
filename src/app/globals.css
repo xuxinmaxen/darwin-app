@@ -2454,6 +2454,209 @@ body {
 .drawer-send:disabled { opacity: 0.55; cursor: not-allowed; background: var(--text-3); }
 
 /* ===================================================================
+ * Team Memory page (/memory)
+ * =================================================================== */
+.memory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+.mem-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 18px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  position: relative; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(20, 20, 30, 0.03);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+  min-height: 160px;
+}
+.mem-card:hover {
+  border-color: var(--line-2);
+  box-shadow: 0 8px 24px rgba(20, 20, 30, 0.06), 0 1px 3px rgba(20, 20, 30, 0.04);
+  transform: translateY(-1px);
+}
+.mem-card .card-actions {
+  position: absolute; top: 10px; right: 10px;
+  display: flex; gap: 4px;
+  opacity: 0; transform: translateY(-2px);
+  transition: opacity 0.15s, transform 0.15s;
+  z-index: 3;
+}
+.mem-card:hover .card-actions { opacity: 1; transform: translateY(0); }
+
+.mem-card-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px;
+}
+.mem-card-cat {
+  font-size: 11px; color: var(--text-3);
+  font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mem-card-body {
+  font-size: 13px; color: var(--text);
+  line-height: 1.6;
+  flex: 1;
+}
+.mem-card-body strong { color: var(--text); font-weight: 600; }
+.mem-card-source {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-3);
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.mem-card-source .avatar {
+  width: 18px; height: 18px; font-size: 9px; border: 0;
+}
+
+/* Agent learning card variant */
+.mem-card.agent-card { position: relative; }
+.mem-card.agent-card::before {
+  content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, #06B6D4, #A78BFA);
+}
+.agent-meta {
+  display: flex; gap: 11px; align-items: center;
+}
+.agent-meta .avatar {
+  width: 36px; height: 36px; font-size: 13px; border: 0;
+}
+.agent-info-name {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 8px;
+}
+.agent-twin-tag {
+  font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px;
+  color: #047857; background: rgba(16, 185, 129, 0.10);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.agent-info-role {
+  font-size: 11px; color: var(--text-3);
+  margin-top: 2px;
+}
+.agent-stats {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px 0;
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+}
+.agent-stat {
+  text-align: center;
+  font-size: 10.5px; color: var(--text-3);
+}
+.agent-stat-num {
+  display: block;
+  color: var(--text); font-size: 16px; font-weight: 700;
+  letter-spacing: -0.01em;
+  margin-bottom: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Timeline */
+.memory-timeline {
+  display: flex; flex-direction: column; gap: 10px;
+  position: relative;
+  padding-left: 14px;
+}
+.memory-timeline::before {
+  content: "";
+  position: absolute;
+  left: 6px; top: 6px; bottom: 6px;
+  width: 1px;
+  background: var(--line);
+}
+.mem-event {
+  display: flex; gap: 14px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  position: relative;
+  transition: border-color 0.15s;
+}
+.mem-event:hover { border-color: var(--line-2); }
+.mem-event-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: var(--text-3);
+  position: absolute;
+  left: -12px; top: 16px;
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 3px rgba(20, 20, 30, 0.04);
+}
+.mem-event-body { flex: 1; min-width: 0; }
+.mem-event-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 4px;
+}
+.mem-event-kind {
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.mem-event-date {
+  font-size: 10.5px; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.mem-event-text {
+  font-size: 12.5px; color: var(--text);
+  line-height: 1.55;
+}
+.mem-event-text strong { font-weight: 600; }
+.mem-event-meta {
+  font-size: 10.5px; color: var(--text-3);
+  margin-top: 4px;
+}
+
+/* Pref icon picker */
+.icon-picker {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.icon-opt {
+  padding: 10px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  transition: all 0.15s;
+}
+.icon-opt:hover {
+  border-color: var(--line-2); background: var(--panel-2);
+}
+.icon-opt.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.icon-opt-glyph {
+  font-size: 16px; color: var(--accent-text);
+}
+.icon-opt-label {
+  font-size: 10.5px; color: var(--text-2);
+  font-weight: 500;
+}
+.icon-opt.active .icon-opt-label { color: var(--accent-text); }
+
+.ws-link-btn {
+  background: transparent; border: 0;
+  color: var(--accent); cursor: pointer;
+  font-family: inherit; font-size: inherit;
+  padding: 0; text-decoration: underline;
+}
+.ws-link-btn:hover { color: var(--accent-2); }
+
+/* ===================================================================
  * Collaborators picker (新建项目模态)
  * =================================================================== */
 .collab-grid {

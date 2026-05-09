@@ -120,6 +120,50 @@ export type ThreadMessage = {
   createdAt: string;
 };
 
+// ─── Team Memory ───────────────────────────────────────────
+
+export type TeamPrefIconKey =
+  | 'pen'
+  | 'eye'
+  | 'graph'
+  | 'audience'
+  | 'flow'
+  | 'note';
+
+export type TeamPref = {
+  id: string;
+  iconKey: TeamPrefIconKey;
+  category: string;            // 文案风格 / 视觉风格 / 商业策略 / 目标受众 / 协作风格
+  body: string;                // 支持 markdown strong
+  source: string;              // 例: 徐鑫 / 团队默认 / hero 冲突 v2
+  sourceCls: string;           // 头像配色 class
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AgentLearning = {
+  agentId: string;
+  agentName: string;
+  agentRole: string;
+  agentCls: string;
+  agentShort: string;
+  isDigitalTwin: boolean;
+  projectsRead: number;
+  intentsContributed: number;
+  tensionsTouched: number;     // 卷入的冲突数
+};
+
+export type MemoryEventKind = 'consensus' | 'agent-event' | 'onboarding';
+
+export type MemoryEvent = {
+  id: string;
+  kind: MemoryEventKind;
+  body: string;                // 支持 markdown strong
+  meta: string;                // 上下文,如 "Human ⇄ Human · 项目X"
+  date: string;                // ISO
+  projectId?: string | null;
+};
+
 /** Claude 抽取的原始输出（写库前的中间形态）*/
 export type ExtractedIntent = Pick<
   Intent,
