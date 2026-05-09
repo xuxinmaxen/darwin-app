@@ -119,6 +119,20 @@ function ensureColumns(conn: Database.Database) {
     conn.exec(`ALTER TABLE intents ADD COLUMN trigger_intent_id TEXT`);
     conn.exec(`CREATE INDEX IF NOT EXISTS idx_intents_trigger ON intents(trigger_intent_id)`);
   }
+
+  const empCols = conn
+    .prepare(`PRAGMA table_info(employees)`)
+    .all() as { name: string }[];
+  if (!empCols.some(c => c.name === 'linked_human_id')) {
+    // 数字员工 (real human 的 AI 替身) 通过 linked_human_id 指回真人 employee
+    // null = 独立 Agent (Atlas/Lyra) 或真人本身
+    conn.exec(`ALTER TABLE employees ADD COLUMN linked_human_id TEXT`);
+    conn.exec(`CREATE INDEX IF NOT EXISTS idx_employees_linked_human ON employees(linked_human_id)`);
+  }
+  if (!empCols.some(c => c.name === 'is_online')) {
+    // 仅对真人有意义。Agent (含数字员工) 永远视作 online。
+    conn.exec(`ALTER TABLE employees ADD COLUMN is_online INTEGER NOT NULL DEFAULT 1`);
+  }
 }
 
 export function db(): Database.Database {

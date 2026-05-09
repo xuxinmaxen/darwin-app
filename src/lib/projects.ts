@@ -122,6 +122,8 @@ type EmployeeRow = {
   email: string | null;
   persona: string | null;
   cls: string;
+  linked_human_id: string | null;
+  is_online: number;
   owner_id: string;
   created_at: string;
   updated_at: string;
@@ -137,6 +139,8 @@ function rowToEmployee(row: EmployeeRow): Employee {
     email: row.email,
     persona: row.persona,
     cls: row.cls,
+    linkedHumanId: row.linked_human_id ?? null,
+    isOnline: row.is_online !== 0,
     ownerId: row.owner_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

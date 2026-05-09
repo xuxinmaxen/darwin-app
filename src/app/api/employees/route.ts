@@ -23,6 +23,10 @@ const Body = z.object({
   role: z.string().trim().min(1).max(20),
   email: z.string().trim().max(120).optional().nullable(),
   persona: z.string().trim().max(2000).optional().nullable(),
+  /** 仅 human: 同时创建 AI 替身 (kind=agent, linked_human_id=新真人id) */
+  withDigital: z.boolean().optional(),
+  /** 仅 human: 创建时是否在线, 默认 true */
+  isOnline: z.boolean().optional(),
 });
 
 export async function GET() {
@@ -56,16 +60,21 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const employee = await createEmployee({
+    const result = await createEmployee({
       ownerId: DEMO_OWNER_ID,
       kind: body.kind,
       name: body.name,
       role: body.role,
       email: body.email,
       persona: body.persona,
+      withDigital: body.kind === 'human' ? body.withDigital : false,
+      isOnline: body.isOnline,
     });
     revalidatePath('/employees');
-    return NextResponse.json({ ok: true, employee }, { status: 201 });
+    return NextResponse.json(
+      { ok: true, employee: result.employee, digital: result.digital },
+      { status: 201 }
+    );
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

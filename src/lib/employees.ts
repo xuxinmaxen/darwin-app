@@ -22,6 +22,10 @@ export type Employee = {
   email: string | null;
   persona: string | null;
   cls: string;
+  /** 数字员工: 指向其依附的真人 employee.id; null = 独立 Agent 或真人本身 */
+  linkedHumanId: string | null;
+  /** 仅对真人有意义; Agent 总视作 online */
+  isOnline: boolean;
   ownerId: string;
   createdAt: string;
   updatedAt: string;
@@ -36,6 +40,8 @@ type EmployeeRow = {
   email: string | null;
   persona: string | null;
   cls: string;
+  linked_human_id: string | null;
+  is_online: number;
   owner_id: string;
   created_at: string;
   updated_at: string;
@@ -62,10 +68,18 @@ function rowToEmployee(row: EmployeeRow): Employee {
     email: row.email,
     persona: row.persona,
     cls: row.cls,
+    linkedHumanId: row.linked_human_id ?? null,
+    // SQLite 0/1 → boolean
+    isOnline: row.is_online !== 0,
     ownerId: row.owner_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+/** 数字员工的默认 persona — 真人不在场时 AI 替身的发言基调。 */
+function defaultDigitalPersona(human: { name: string; role: string }): string {
+  return `${human.name} 的 AI 替身 (${human.role})。代 ${human.name} 出席项目协作:发言简洁、贴角色,只在 ${human.role} 视角真有补充时说话;最终决策仍由本人定。`;
 }
 
 /** Pick the first palette entry not already used by another employee of same kind. */
@@ -111,52 +125,157 @@ export type CreateEmployeeInput = {
   role: string;
   email?: string | null;     // human only
   persona?: string | null;   // agent only
+  /** 仅 human: true 时同时建一个数字员工 (AI 替身) */
+  withDigital?: boolean;
+  /** 仅 human: 创建时的 online 状态。默认 true */
+  isOnline?: boolean;
+  /** 内部用: 创建数字员工时指向真人 id */
+  linkedHumanId?: string | null;
+};
+
+export type CreateEmployeeResult = {
+  employee: Employee;
+  digital: Employee | null;
 };
 
 export async function createEmployee(
   input: CreateEmployeeInput
-): Promise<Employee> {
-  const id =
-    (input.kind === 'agent' ? 'a_' : 'e_') + newId().slice(0, 8);
-  const cls = pickAvatarClass(input.ownerId, input.kind);
-  const short = firstChar(input.name);
-  const now = nowISO();
-  const email = input.kind === 'human' ? (input.email?.trim() || null) : null;
-  const persona = input.kind === 'agent' ? (input.persona?.trim() || null) : null;
+): Promise<CreateEmployeeResult> {
+  const id = newId();
+  const conn = db();
 
+  const tx = conn.transaction(() => {
+    const cls = pickAvatarClass(input.ownerId, input.kind);
+    const short = firstChar(input.name);
+    const now = nowISO();
+    const email = input.kind === 'human' ? (input.email?.trim() || null) : null;
+    const persona = input.kind === 'agent' ? (input.persona?.trim() || null) : null;
+    const isOnline = input.kind === 'human' ? (input.isOnline !== false) : true;
+
+    conn
+      .prepare(
+        `INSERT INTO employees
+          (id, kind, name, short, role, email, persona, cls, linked_human_id, is_online, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        id,
+        input.kind,
+        input.name,
+        short,
+        input.role,
+        email,
+        persona,
+        cls,
+        input.linkedHumanId ?? null,
+        isOnline ? 1 : 0,
+        input.ownerId,
+        now,
+        now
+      );
+
+    let digital: Employee | null = null;
+
+    // human + withDigital → 同时建数字员工
+    if (input.kind === 'human' && input.withDigital) {
+      const digitalId = newId();
+      const digitalCls = pickAvatarClass(input.ownerId, 'agent');
+      const digitalName = `${input.name} AI`;
+      const digitalShort = firstChar(input.name);
+      const digitalPersona = defaultDigitalPersona({
+        name: input.name,
+        role: input.role,
+      });
+      conn
+        .prepare(
+          `INSERT INTO employees
+            (id, kind, name, short, role, email, persona, cls, linked_human_id, is_online, owner_id, created_at, updated_at)
+           VALUES (?, 'agent', ?, ?, ?, NULL, ?, ?, ?, 1, ?, ?, ?)`
+        )
+        .run(
+          digitalId,
+          digitalName,
+          digitalShort,
+          input.role,
+          digitalPersona,
+          digitalCls,
+          id,
+          input.ownerId,
+          now,
+          now
+        );
+      digital = {
+        id: digitalId,
+        kind: 'agent',
+        name: digitalName,
+        short: digitalShort,
+        role: input.role,
+        email: null,
+        persona: digitalPersona,
+        cls: digitalCls,
+        linkedHumanId: id,
+        isOnline: true,
+        ownerId: input.ownerId,
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+
+    return digital;
+  });
+
+  const digital = tx();
+  const created = await getEmployee(id);
+  if (!created) throw new Error('createEmployee: insert succeeded but read failed');
+  return { employee: created, digital };
+}
+
+export async function findDigitalForHuman(
+  humanId: string
+): Promise<Employee | null> {
+  const row = db()
+    .prepare(
+      `SELECT * FROM employees WHERE linked_human_id = ? LIMIT 1`
+    )
+    .get(humanId) as EmployeeRow | undefined;
+  return row ? rowToEmployee(row) : null;
+}
+
+/** 给已存在的真人补一个数字员工 (编辑场景: 之前没勾, 现在勾上)。 */
+export async function ensureDigitalForHuman(
+  humanId: string
+): Promise<Employee | null> {
+  const human = await getEmployee(humanId);
+  if (!human || human.kind !== 'human') return null;
+  const existing = await findDigitalForHuman(humanId);
+  if (existing) return existing;
+  const result = await createEmployee({
+    ownerId: human.ownerId,
+    kind: 'agent',
+    name: `${human.name} AI`,
+    role: human.role,
+    persona: defaultDigitalPersona({ name: human.name, role: human.role }),
+    linkedHumanId: humanId,
+  });
+  return result.employee;
+}
+
+export async function setOnline(
+  id: string,
+  isOnline: boolean
+): Promise<Employee | null> {
+  const existing = await getEmployee(id);
+  if (!existing) return null;
+  if (existing.kind !== 'human') {
+    // Agent 永远 online, 不允许调
+    return existing;
+  }
   db()
     .prepare(
-      `INSERT INTO employees
-        (id, kind, name, short, role, email, persona, cls, owner_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `UPDATE employees SET is_online = ?, updated_at = ? WHERE id = ?`
     )
-    .run(
-      id,
-      input.kind,
-      input.name,
-      short,
-      input.role,
-      email,
-      persona,
-      cls,
-      input.ownerId,
-      now,
-      now
-    );
-
-  return {
-    id,
-    kind: input.kind,
-    name: input.name,
-    short,
-    role: input.role,
-    email,
-    persona,
-    cls,
-    ownerId: input.ownerId,
-    createdAt: now,
-    updatedAt: now,
-  };
+    .run(isOnline ? 1 : 0, nowISO(), id);
+  return getEmployee(id);
 }
 
 export type UpdateEmployeeInput = {
