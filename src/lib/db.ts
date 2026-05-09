@@ -58,7 +58,37 @@ CREATE TABLE IF NOT EXISTS versions (
 
 CREATE INDEX IF NOT EXISTS idx_versions_project_created
   ON versions (project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS employees (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('human','agent')),
+  name TEXT NOT NULL,
+  short TEXT NOT NULL,
+  role TEXT NOT NULL,
+  email TEXT,
+  persona TEXT,
+  cls TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_employees_owner_created
+  ON employees (owner_id, created_at ASC);
 `;
+
+const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
+
+/** Seed the default human employee (徐鑫). Idempotent — re-runs are no-ops. */
+function seedDefaultEmployee(conn: Database.Database) {
+  conn
+    .prepare(
+      `INSERT OR IGNORE INTO employees
+        (id, kind, name, short, role, email, cls, owner_id)
+       VALUES (?, 'human', '徐鑫', '徐', 'PM', 'xuxin@deeplumen.com', 'xu', ?)`
+    )
+    .run(DEMO_OWNER_ID, DEMO_OWNER_ID);
+}
 
 /** Idempotent column migrations for already-existing tables. */
 function ensureColumns(conn: Database.Database) {
@@ -80,6 +110,7 @@ export function db(): Database.Database {
   conn.pragma('foreign_keys = ON');
   conn.exec(SCHEMA);
   ensureColumns(conn);
+  seedDefaultEmployee(conn);
   _db = conn;
   return conn;
 }
