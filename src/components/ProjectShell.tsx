@@ -27,6 +27,7 @@ import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 import ProjectCanvas from '@/components/ProjectCanvas';
 import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
+import CelebrationModal from '@/components/CelebrationModal';
 import type { Version } from '@/lib/versions';
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -66,6 +67,12 @@ export default function ProjectShell({
   const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
   const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [publishStatus, setPublishStatus] = useState<'draft' | 'published'>(
+    project.status === 'published' ? 'published' : 'draft'
+  );
+  const [celebrationOpen, setCelebrationOpen] = useState(false);
+  const [publishStats, setPublishStats] = useState<{ intents: number; versions: number } | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
 
   // ─── Version handlers ──────────────────────────────────
   const handleVersionCreated = (v: Version) => {
@@ -136,8 +143,36 @@ export default function ProjectShell({
   const anyHover = hoveredIntentId !== null || hoveredSectionScope !== null;
 
   const versionLabel = `v${versionsTotal}`;
-  const canPublish = versionsTotal > 0 && !publishing;
-  const isPublished = project.status === 'published';
+  const isPublished = publishStatus === 'published';
+  const canPublish = versionsTotal > 0 && !publishing && !isPublished;
+
+  const handlePublish = async () => {
+    if (!canPublish) return;
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setPublishError(json.error || `发布失败 (${res.status})`);
+        return;
+      }
+      setPublishStatus('published');
+      setPublishStats({
+        intents: json.stats?.intents ?? intents.length,
+        versions: versionsTotal,
+      });
+      setCelebrationOpen(true);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   return (
     <div className="view-project">
@@ -185,11 +220,7 @@ export default function ProjectShell({
           canPublish={canPublish}
           isPublished={isPublished}
           publishing={publishing}
-          onPublishClick={() => {
-            // stub: 下个 commit 接 POST /api/projects/[id]/publish
-            setPublishing(true);
-            setTimeout(() => setPublishing(false), 600);
-          }}
+          onPublishClick={handlePublish}
         />
 
         <ProjectActionsMenu project={project} />
@@ -293,6 +324,31 @@ export default function ProjectShell({
           <button type="button" onClick={() => setPreviewError(null)} aria-label="dismiss">×</button>
         </div>
       )}
+      {publishError && (
+        <div className="ver-preview-error" role="alert">
+          ⚠️ 发布失败：{publishError}
+          <button type="button" onClick={() => setPublishError(null)} aria-label="dismiss">×</button>
+        </div>
+      )}
+
+      <CelebrationModal
+        open={celebrationOpen}
+        title="恭喜，产物完成定稿"
+        sub={
+          <>
+            <strong>{publishStats?.intents ?? intents.length}</strong> 条 Intent 都活在了产物里——
+            <br />
+            这是 v1 的一份{TYPE_LABEL[project.type]}定稿。
+          </>
+        }
+        stats={[
+          { num: publishStats?.intents ?? intents.length, label: 'Intent 命中' },
+          { num: 1, label: '位贡献者' },
+          { num: 0, label: '次冲突共识' },
+          { num: `v${publishStats?.versions ?? versionsTotal}`, label: '产物版本' },
+        ]}
+        onClose={() => setCelebrationOpen(false)}
+      />
     </div>
   );
 }

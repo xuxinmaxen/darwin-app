@@ -14,6 +14,7 @@ export type Version = {
   content: string;
   intentIds: string[];
   createdAt: string;
+  publishedAt: string | null;
   source?: 'llm' | 'template';
 };
 
@@ -26,6 +27,7 @@ type VersionRow = {
   content: string;
   intent_ids: string;
   created_at: string;
+  published_at: string | null;
 };
 
 function rowToVersion(row: VersionRow): Version {
@@ -42,6 +44,7 @@ function rowToVersion(row: VersionRow): Version {
     content: row.content,
     intentIds,
     createdAt: row.created_at,
+    publishedAt: row.published_at ?? null,
   };
 }
 
@@ -76,7 +79,7 @@ export async function listVersionsMetadata(
 ): Promise<VersionMeta[]> {
   const rows = db()
     .prepare(
-      `SELECT id, project_id, format, intent_ids, created_at
+      `SELECT id, project_id, format, intent_ids, created_at, published_at
        FROM versions
        WHERE project_id = ?
        ORDER BY created_at ASC`
@@ -91,8 +94,47 @@ export async function listVersionsMetadata(
       format: row.format,
       intentIds,
       createdAt: row.created_at,
+      publishedAt: row.published_at ?? null,
     };
   });
+}
+
+/**
+ * 把指定 version 标记为已发布。
+ * 同一个项目同一时间只允许一个 published version (后发布的覆盖前一个)。
+ */
+export async function publishVersion(
+  projectId: string,
+  versionId: string
+): Promise<Version> {
+  const target = await getVersionById(versionId);
+  if (!target || target.projectId !== projectId) {
+    throw new Error('version not found');
+  }
+  const now = nowISO();
+  const tx = db().transaction(() => {
+    db()
+      .prepare(`UPDATE versions SET published_at = NULL WHERE project_id = ?`)
+      .run(projectId);
+    db()
+      .prepare(`UPDATE versions SET published_at = ? WHERE id = ?`)
+      .run(now, versionId);
+  });
+  tx();
+  return { ...target, publishedAt: now };
+}
+
+export async function getPublishedVersion(
+  projectId: string
+): Promise<Version | null> {
+  const row = db()
+    .prepare(
+      `SELECT * FROM versions
+       WHERE project_id = ? AND published_at IS NOT NULL
+       ORDER BY published_at DESC LIMIT 1`
+    )
+    .get(projectId) as VersionRow | undefined;
+  return row ? rowToVersion(row) : null;
 }
 
 export async function getVersionById(
@@ -164,5 +206,6 @@ export async function createVersion(
     content: input.content,
     intentIds: input.intentIds,
     createdAt: now,
+    publishedAt: null,
   };
 }

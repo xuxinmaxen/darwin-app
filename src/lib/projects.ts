@@ -149,3 +149,13 @@ export async function bumpToCollaborating(id: string): Promise<void> {
     )
     .run(nowISO(), id);
 }
+
+export async function markPublished(id: string): Promise<void> {
+  db()
+    .prepare(
+      `UPDATE projects
+       SET status = 'published', updated_at = ?
+       WHERE id = ?`
+    )
+    .run(nowISO(), id);
+}

@@ -52,12 +52,23 @@ CREATE TABLE IF NOT EXISTS versions (
   format TEXT NOT NULL,
   content TEXT NOT NULL,
   intent_ids TEXT NOT NULL,
+  published_at TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_versions_project_created
   ON versions (project_id, created_at DESC);
 `;
+
+/** Idempotent column migrations for already-existing tables. */
+function ensureColumns(conn: Database.Database) {
+  const cols = conn
+    .prepare(`PRAGMA table_info(versions)`)
+    .all() as { name: string }[];
+  if (!cols.some(c => c.name === 'published_at')) {
+    conn.exec(`ALTER TABLE versions ADD COLUMN published_at TEXT`);
+  }
+}
 
 export function db(): Database.Database {
   if (_db) return _db;
@@ -68,6 +79,7 @@ export function db(): Database.Database {
   conn.pragma('journal_mode = WAL');
   conn.pragma('foreign_keys = ON');
   conn.exec(SCHEMA);
+  ensureColumns(conn);
   _db = conn;
   return conn;
 }
