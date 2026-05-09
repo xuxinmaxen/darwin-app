@@ -21,16 +21,21 @@ function CollabCheck({
   checked,
   onToggle,
   disabled,
+  variant = 'normal',
+  hint,
 }: {
   emp: Employee;
   checked: boolean;
   onToggle: () => void;
   disabled: boolean;
+  variant?: 'normal' | 'twin' | 'twin-recommended';
+  hint?: string;
 }) {
+  const isTwin = variant === 'twin' || variant === 'twin-recommended';
   return (
     <button
       type="button"
-      className={`collab-row${checked ? ' is-checked' : ''}`}
+      className={`collab-row${checked ? ' is-checked' : ''}${isTwin ? ' is-twin' : ''}${variant === 'twin-recommended' ? ' is-twin-recommended' : ''}`}
       onClick={onToggle}
       disabled={disabled}
     >
@@ -38,8 +43,16 @@ function CollabCheck({
         {emp.short}
       </span>
       <span className="collab-text">
-        <span className="collab-name">{emp.name}</span>
-        <span className="collab-role">{emp.role}</span>
+        <span className="collab-name">
+          {emp.name}
+          {emp.kind === 'human' && !emp.isOnline && (
+            <span className="collab-offline-tag">离线</span>
+          )}
+        </span>
+        <span className="collab-role">
+          {emp.role}
+          {hint && <span className="collab-row-hint"> · {hint}</span>}
+        </span>
       </span>
       <span className={`collab-check${checked ? ' on' : ''}`} aria-hidden>
         {checked && (
@@ -69,7 +82,15 @@ export default function NewProjectButton({
   // owner 之外可勾选的员工 (owner 默认在,不渲染)
   const selectable = employees.filter(e => e.id !== OWNER_ID);
   const humans = selectable.filter(e => e.kind === 'human');
-  const agents = selectable.filter(e => e.kind === 'agent');
+  // 数字员工 (kind=agent + 有 linked_human_id) 不进 Agent 组,
+  // 而是缩进在它真人下面渲染。独立 Agent 才在 Agent 组。
+  const standaloneAgents = selectable.filter(
+    e => e.kind === 'agent' && !e.linkedHumanId
+  );
+  const twinByHumanId = new Map<string, Employee>();
+  for (const e of selectable) {
+    if (e.kind === 'agent' && e.linkedHumanId) twinByHumanId.set(e.linkedHumanId, e);
+  }
 
   function toggleCollab(id: string) {
     setCollaboratorIds(prev => {
@@ -222,21 +243,40 @@ export default function NewProjectButton({
                     {humans.length > 0 && (
                       <>
                         <div className="collab-group-label">真实员工</div>
-                        {humans.map(emp => (
-                          <CollabCheck
-                            key={emp.id}
-                            emp={emp}
-                            checked={collaboratorIds.has(emp.id)}
-                            onToggle={() => toggleCollab(emp.id)}
-                            disabled={isPending}
-                          />
-                        ))}
+                        {humans.map(emp => {
+                          const twin = twinByHumanId.get(emp.id) ?? null;
+                          const offlineRecommend = !emp.isOnline && !!twin;
+                          return (
+                            <div key={emp.id} className="collab-cluster">
+                              <CollabCheck
+                                emp={emp}
+                                checked={collaboratorIds.has(emp.id)}
+                                onToggle={() => toggleCollab(emp.id)}
+                                disabled={isPending}
+                              />
+                              {twin && (
+                                <CollabCheck
+                                  emp={twin}
+                                  checked={collaboratorIds.has(twin.id)}
+                                  onToggle={() => toggleCollab(twin.id)}
+                                  disabled={isPending}
+                                  variant={offlineRecommend ? 'twin-recommended' : 'twin'}
+                                  hint={
+                                    offlineRecommend
+                                      ? `${emp.name}离线,推荐让 AI 替身代为参与`
+                                      : `${emp.name} 的 AI 替身`
+                                  }
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </>
                     )}
-                    {agents.length > 0 && (
+                    {standaloneAgents.length > 0 && (
                       <>
                         <div className="collab-group-label">Agent 员工</div>
-                        {agents.map(emp => (
+                        {standaloneAgents.map(emp => (
                           <CollabCheck
                             key={emp.id}
                             emp={emp}

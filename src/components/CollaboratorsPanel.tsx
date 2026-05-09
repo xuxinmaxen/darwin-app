@@ -62,8 +62,16 @@ export default function CollaboratorsPanel({
 
   const grouped = useMemo(() => {
     const humans = allEmployees.filter(e => e.kind === 'human');
-    const agents = allEmployees.filter(e => e.kind === 'agent');
-    return { humans, agents };
+    const standaloneAgents = allEmployees.filter(
+      e => e.kind === 'agent' && !e.linkedHumanId
+    );
+    const twinByHumanId = new Map<string, Employee>();
+    for (const e of allEmployees) {
+      if (e.kind === 'agent' && e.linkedHumanId) {
+        twinByHumanId.set(e.linkedHumanId, e);
+      }
+    }
+    return { humans, standaloneAgents, twinByHumanId };
   }, [allEmployees]);
 
   if (!open) return null;
@@ -142,22 +150,41 @@ export default function CollaboratorsPanel({
               {grouped.humans.length > 0 && (
                 <>
                   <div className="collab-group-label">真实员工</div>
-                  {grouped.humans.map(emp => (
-                    <CollabRow
-                      key={emp.id}
-                      emp={emp}
-                      checked={selected.has(emp.id)}
-                      locked={emp.id === OWNER_ID}
-                      onToggle={() => toggle(emp.id)}
-                      disabled={saving}
-                    />
-                  ))}
+                  {grouped.humans.map(emp => {
+                    const twin = grouped.twinByHumanId.get(emp.id) ?? null;
+                    const offlineRecommend = !emp.isOnline && !!twin;
+                    return (
+                      <div key={emp.id} className="collab-cluster">
+                        <CollabRow
+                          emp={emp}
+                          checked={selected.has(emp.id)}
+                          locked={emp.id === OWNER_ID}
+                          onToggle={() => toggle(emp.id)}
+                          disabled={saving}
+                        />
+                        {twin && (
+                          <CollabRow
+                            emp={twin}
+                            checked={selected.has(twin.id)}
+                            onToggle={() => toggle(twin.id)}
+                            disabled={saving}
+                            variant={offlineRecommend ? 'twin-recommended' : 'twin'}
+                            hint={
+                              offlineRecommend
+                                ? `${emp.name}离线,推荐让 AI 替身代为参与`
+                                : `${emp.name} 的 AI 替身`
+                            }
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
                 </>
               )}
-              {grouped.agents.length > 0 && (
+              {grouped.standaloneAgents.length > 0 && (
                 <>
                   <div className="collab-group-label">Agent 员工</div>
-                  {grouped.agents.map(emp => (
+                  {grouped.standaloneAgents.map(emp => (
                     <CollabRow
                       key={emp.id}
                       emp={emp}
@@ -201,17 +228,22 @@ function CollabRow({
   locked = false,
   onToggle,
   disabled,
+  variant = 'normal',
+  hint,
 }: {
   emp: Employee;
   checked: boolean;
   locked?: boolean;
   onToggle: () => void;
   disabled: boolean;
+  variant?: 'normal' | 'twin' | 'twin-recommended';
+  hint?: string;
 }) {
+  const isTwin = variant === 'twin' || variant === 'twin-recommended';
   return (
     <button
       type="button"
-      className={`collab-row${checked ? ' is-checked' : ''}${locked ? ' is-locked' : ''}`}
+      className={`collab-row${checked ? ' is-checked' : ''}${locked ? ' is-locked' : ''}${isTwin ? ' is-twin' : ''}${variant === 'twin-recommended' ? ' is-twin-recommended' : ''}`}
       onClick={onToggle}
       disabled={disabled || locked}
       title={locked ? '项目所有者不可移除' : undefined}
@@ -223,10 +255,14 @@ function CollabRow({
         <span className="collab-name">
           {emp.name}
           {locked && <span className="collab-locked-tag">所有者</span>}
+          {emp.kind === 'human' && !emp.isOnline && (
+            <span className="collab-offline-tag">离线</span>
+          )}
         </span>
         <span className="collab-role">
           {emp.role}
-          {emp.kind === 'agent' && ' · Agent'}
+          {!isTwin && emp.kind === 'agent' && ' · Agent'}
+          {hint && <span className="collab-row-hint"> · {hint}</span>}
         </span>
       </span>
       <span className={`collab-check${checked ? ' on' : ''}`} aria-hidden>

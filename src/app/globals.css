@@ -2023,6 +2023,52 @@ body {
 }
 .collab-empty a { color: var(--accent); }
 
+/* 真人 + 数字员工 cluster (主项 + 缩进的 twin) */
+.collab-cluster {
+  grid-column: 1 / -1;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.collab-row.is-twin {
+  margin-left: 24px;
+  position: relative;
+}
+.collab-row.is-twin::before {
+  content: "";
+  position: absolute;
+  left: -14px; top: -4px;
+  width: 12px; height: calc(50% + 4px);
+  border-left: 1.5px solid var(--line);
+  border-bottom: 1.5px solid var(--line);
+  border-bottom-left-radius: 6px;
+}
+.collab-row.is-twin .avatar {
+  width: 22px; height: 22px; font-size: 9.5px;
+}
+.collab-row.is-twin-recommended {
+  border-color: rgba(6, 182, 212, 0.40);
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.06), rgba(167, 139, 250, 0.06));
+}
+.collab-row.is-twin-recommended:hover:not(:disabled) {
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.10), rgba(167, 139, 250, 0.10));
+}
+.collab-offline-tag {
+  margin-left: 8px;
+  font-size: 9.5px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px;
+  color: var(--text-3);
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+}
+.collab-row-hint {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.collab-row.is-twin-recommended .collab-row-hint {
+  color: #0E7490;
+  font-weight: 500;
+}
+
 /* ===================================================================
  * Project detail topbar — collaborators stack (替代单 ws-user avatar)
  * =================================================================== */
