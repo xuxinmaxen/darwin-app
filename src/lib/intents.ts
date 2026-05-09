@@ -90,6 +90,13 @@ export async function createIntent(input: CreateIntentInput): Promise<Intent> {
   return rowToIntent(row);
 }
 
+export async function getIntent(id: string): Promise<Intent | null> {
+  const row = db()
+    .prepare('SELECT * FROM intents WHERE id = ?')
+    .get(id) as IntentRow | undefined;
+  return row ? rowToIntent(row) : null;
+}
+
 export async function deleteIntent(
   id: string
 ): Promise<{ projectId: string } | null> {

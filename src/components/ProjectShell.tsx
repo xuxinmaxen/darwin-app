@@ -27,6 +27,7 @@ import AgentSpeakBar from '@/components/AgentSpeakBar';
 import ProjectCanvas from '@/components/ProjectCanvas';
 import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
+import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import CelebrationModal from '@/components/CelebrationModal';
 import type { Version } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
@@ -117,15 +118,17 @@ export default function ProjectShell({
     setVersionPanelOpen(false);
   };
 
-  // 协作者: lookup + 分组
+  // 协作者: 本地 state, 面板修改后即时反映
+  const [collaboratorsState, setCollaboratorsState] = useState<Employee[]>(collaborators);
+  const [collabPanelOpen, setCollabPanelOpen] = useState(false);
   const employeeById = useMemo(() => {
     const m = new Map<string, Employee>();
-    for (const e of collaborators) m.set(e.id, e);
+    for (const e of collaboratorsState) m.set(e.id, e);
     return m;
-  }, [collaborators]);
+  }, [collaboratorsState]);
   const agentCollaborators = useMemo(
-    () => collaborators.filter(e => e.kind === 'agent'),
-    [collaborators]
+    () => collaboratorsState.filter(e => e.kind === 'agent'),
+    [collaboratorsState]
   );
 
   // ─── Computed ──────────────────────────────────────────
@@ -229,8 +232,13 @@ export default function ProjectShell({
           onPublishClick={handlePublish}
         />
 
-        <div className="ws-user proj-collab proj-collab-topbar" title="项目协作者">
-          {collaborators.slice(0, MAX_TOPBAR_AVATARS).map(e => (
+        <button
+          type="button"
+          className="ws-user proj-collab proj-collab-topbar proj-collab-topbar-btn"
+          title="管理协作者"
+          onClick={() => setCollabPanelOpen(true)}
+        >
+          {collaboratorsState.slice(0, MAX_TOPBAR_AVATARS).map(e => (
             <span
               key={e.id}
               className={`avatar ${e.cls}${e.kind === 'agent' ? ' agent' : ''}`}
@@ -239,15 +247,15 @@ export default function ProjectShell({
               {e.short}
             </span>
           ))}
-          {collaborators.length > MAX_TOPBAR_AVATARS && (
+          {collaboratorsState.length > MAX_TOPBAR_AVATARS && (
             <span
               className="avatar avatar-more"
-              title={`还有 ${collaborators.length - MAX_TOPBAR_AVATARS} 位`}
+              title={`还有 ${collaboratorsState.length - MAX_TOPBAR_AVATARS} 位`}
             >
-              +{collaborators.length - MAX_TOPBAR_AVATARS}
+              +{collaboratorsState.length - MAX_TOPBAR_AVATARS}
             </span>
           )}
-        </div>
+        </button>
       </div>
 
       {/* MAIN GRID — V1: 2 cols (board + canvas). V2 加上讨论抽屉 */}
@@ -286,7 +294,7 @@ export default function ProjectShell({
           </div>
 
           <AgentSpeakBar projectId={project.id} agents={agentCollaborators} />
-          <IntentForm projectId={project.id} />
+          <IntentForm projectId={project.id} agents={agentCollaborators} />
         </aside>
 
         {/* CENTER: CANVAS */}
@@ -352,6 +360,17 @@ export default function ProjectShell({
           <button type="button" onClick={() => setPublishError(null)} aria-label="dismiss">×</button>
         </div>
       )}
+
+      <CollaboratorsPanel
+        open={collabPanelOpen}
+        projectId={project.id}
+        current={collaboratorsState}
+        onClose={() => setCollabPanelOpen(false)}
+        onSaved={next => {
+          setCollaboratorsState(next);
+          setCollabPanelOpen(false);
+        }}
+      />
 
       <CelebrationModal
         open={celebrationOpen}
