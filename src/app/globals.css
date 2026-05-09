@@ -1885,6 +1885,23 @@ body {
 .digital-toggle-sub {
   font-size: 11px; color: var(--text-3); line-height: 1.5;
 }
+.digital-toggle-distill {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 6px;
+  padding: 4px 8px; border-radius: 5px;
+  background: rgba(6, 182, 212, 0.06);
+  border: 1px solid rgba(6, 182, 212, 0.18);
+  color: #0E7490;
+  font-size: 10.5px; font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  align-self: flex-start;
+}
+.digital-toggle-distill svg {
+  width: 11px; height: 11px;
+  flex-shrink: 0;
+  color: #06B6D4;
+}
 
 .digital-preview {
   margin-top: 10px;
@@ -1914,27 +1931,37 @@ body {
   margin-left: auto;
 }
 
-/* 卡片在线点 (右下贴在头像上) */
-.emp .avatar { position: relative; overflow: visible; }
-.emp-online-dot {
-  position: absolute;
-  right: -2px; bottom: -2px;
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--panel);
+/* 在线/离线 tag (员工卡片 emp-head 内, kind pill 旁边) */
+.emp-online-tag {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text-3);
+  cursor: pointer; font-family: inherit;
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.02em;
+  margin-left: auto;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.emp-online-tag:hover {
+  border-color: var(--line-2);
+  color: var(--text-2);
+}
+.emp-online-tag .dot {
+  width: 6px; height: 6px; border-radius: 50%;
   background: var(--text-3);
-  cursor: pointer;
-  padding: 0;
   transition: background 0.15s, box-shadow 0.15s;
 }
-.emp-online-dot:hover {
-  box-shadow: 0 0 0 4px rgba(20, 20, 30, 0.06);
+.emp-online-tag.is-on {
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.30);
+  background: rgba(16, 185, 129, 0.06);
 }
-.emp-online-dot.is-on {
+.emp-online-tag.is-on .dot {
   background: #10B981;
-}
-.emp-online-dot.is-on:hover {
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.18);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
+  animation: online-pulse 2s ease-in-out infinite;
 }
 
 /* 卡片"含数字员工" */

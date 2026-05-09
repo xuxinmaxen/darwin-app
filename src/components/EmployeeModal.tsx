@@ -272,6 +272,12 @@ export default function EmployeeModal({
                     <span className="digital-toggle-sub">
                       TA 不在线时,数字分身可代为参与项目协作。
                     </span>
+                    <span className="digital-toggle-distill">
+                      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                        <path d="M6 1.5L7 4l2.5 1L7 6l-1 2.5L5 6l-2.5-1L5 4z" strokeLinejoin="round" />
+                      </svg>
+                      数字分身会自动蒸馏员工的过往对话记录、飞书文档、会议信息
+                    </span>
                   </span>
                 </button>
 

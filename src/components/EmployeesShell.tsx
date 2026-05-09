@@ -229,18 +229,6 @@ export default function EmployeesShell({
                         className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}
                       >
                         {emp.short}
-                        {emp.kind === 'human' && (
-                          <button
-                            type="button"
-                            className={`emp-online-dot${emp.isOnline ? ' is-on' : ''}`}
-                            onClick={ev => {
-                              ev.stopPropagation();
-                              toggleOnline(emp);
-                            }}
-                            title={emp.isOnline ? '在线 · 点击切到离线' : '离线 · 点击切到在线'}
-                            aria-label={emp.isOnline ? '在线' : '离线'}
-                          />
-                        )}
                       </span>
                       <span className={`emp-kind ${emp.kind}`}>
                         <span className="dot" />
@@ -250,6 +238,18 @@ export default function EmployeesShell({
                             ? 'AGENT'
                             : 'HUMAN'}
                       </span>
+                      {emp.kind === 'human' && (
+                        <button
+                          type="button"
+                          className={`emp-online-tag${emp.isOnline ? ' is-on' : ''}`}
+                          onClick={() => toggleOnline(emp)}
+                          aria-pressed={emp.isOnline}
+                          title={emp.isOnline ? '点击切到离线' : '点击切到在线'}
+                        >
+                          <span className="dot" />
+                          {emp.isOnline ? '在线' : '离线'}
+                        </button>
+                      )}
                     </div>
                     <div className="emp-name">
                       {emp.name}
