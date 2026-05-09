@@ -1149,3 +1149,85 @@ body {
   font-weight: 450;
   letter-spacing: -0.005em;
 }
+
+/* ===================================================================
+ * Topbar controls: 溯源 / 版本 / 发布
+ * (对应 v0 demo 的 .ctrl 系列)
+ * =================================================================== */
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 8px;
+}
+.ctrl {
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+  box-shadow: 0 1px 2px rgba(20, 20, 30, 0.03);
+}
+.ctrl:hover:not(:disabled) {
+  background: var(--panel-2);
+  color: var(--text);
+  border-color: var(--line-2);
+}
+.ctrl:active:not(:disabled) { transform: translateY(0.5px); }
+.ctrl:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+.ctrl svg { width: 12px; height: 12px; }
+.ctrl.toggle.active,
+.ctrl.active {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  border-color: var(--accent-soft-2);
+}
+.ctrl-version-label {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.ctrl.publish:not(:disabled) {
+  background: linear-gradient(135deg, #10B981, #047857);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.30), 0 0 0 0 rgba(16, 185, 129, 0.4);
+  animation: publishReady 2.4s ease-in-out infinite;
+}
+.ctrl.publish:not(:disabled):hover {
+  background: linear-gradient(135deg, #059669, #065F46);
+  color: #fff;
+  animation: none;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.40);
+}
+.ctrl.publish.is-published {
+  background: linear-gradient(135deg, #047857, #065F46);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgba(5, 150, 105, 0.30);
+  animation: none;
+  cursor: default;
+}
+@keyframes publishReady {
+  0%, 100% { box-shadow: 0 1px 2px rgba(5, 150, 105, 0.30), 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50%      { box-shadow: 0 1px 2px rgba(5, 150, 105, 0.30), 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+.ctrl-spinner {
+  width: 10px; height: 10px;
+  border: 1.5px solid rgba(255, 255, 255, 0.42);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: ctrl-spin 0.7s linear infinite;
+}
+@keyframes ctrl-spin {
+  to { transform: rotate(360deg); }
+}

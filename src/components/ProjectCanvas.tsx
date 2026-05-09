@@ -23,14 +23,41 @@ import { TYPE_LABEL } from '@/lib/type-meta';
 const AUTO_SYNC_DEBOUNCE_MS = 1500;
 
 const HIGHLIGHT_STYLE = `
+  [data-scope] {
+    transition: outline-color 0.15s, box-shadow 0.15s;
+  }
   [data-scope].darwin-hl {
     outline: 2px solid #4F46E5;
     outline-offset: -2px;
     box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.18);
-    transition: outline-color 0.15s, box-shadow 0.15s;
   }
-  [data-scope] {
-    transition: outline-color 0.15s, box-shadow 0.15s;
+  [data-scope].darwin-trace {
+    outline: 1px dashed rgba(79, 70, 229, 0.45);
+    outline-offset: -1px;
+    position: relative;
+  }
+  [data-scope].darwin-trace > .darwin-trace-pill {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 9999;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #4F46E5;
+    color: #fff;
+    font: 600 11px/1 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+    letter-spacing: 0;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35);
+    pointer-events: none;
+    user-select: none;
+  }
+  [data-scope].darwin-trace > .darwin-trace-pill::before {
+    content: "";
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.9);
   }
 `;
 
@@ -49,6 +76,9 @@ export default function ProjectCanvas({
   claudeReady,
   highlightScopes,
   onSectionHover,
+  traceMode,
+  intentScopeCounts,
+  onVersionCreated,
 }: {
   project: Project;
   intents: Intent[];
@@ -56,6 +86,9 @@ export default function ProjectCanvas({
   claudeReady: boolean;
   highlightScopes?: ReadonlySet<string>;
   onSectionHover?: (scope: string | null) => void;
+  traceMode?: boolean;
+  intentScopeCounts?: ReadonlyMap<string, number>;
+  onVersionCreated?: () => void;
 }) {
   const [version, setVersion] = useState<Version | null>(initialVersion);
   const [synthSource, setSynthSource] = useState<
@@ -125,6 +158,47 @@ export default function ProjectCanvas({
     });
   }, [iframeReady, highlightScopes]);
 
+  // 溯源 toggle: traceMode true → 全部 [data-scope] 加 .darwin-trace 和 pill
+  useEffect(() => {
+    if (!iframeReady) return;
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    const nodes = doc.querySelectorAll<HTMLElement>('[data-scope]');
+    nodes.forEach(n => {
+      const scope = n.dataset.scope || '';
+      const existing = n.querySelector<HTMLElement>(':scope > .darwin-trace-pill');
+      if (traceMode) {
+        n.classList.add('darwin-trace');
+        const direct = intentScopeCounts?.get(scope) ?? 0;
+        const wildcard = intentScopeCounts?.get('*') ?? 0;
+        const total = direct + wildcard;
+        const label = total > 0 ? `${total} · Intent` : '0 · Intent';
+        if (existing) {
+          existing.textContent = label;
+        } else {
+          const pill = doc.createElement('div');
+          pill.className = 'darwin-trace-pill';
+          pill.textContent = label;
+          n.appendChild(pill);
+        }
+      } else {
+        n.classList.remove('darwin-trace');
+        if (existing) existing.remove();
+      }
+    });
+    return () => {
+      // 解绑时也把 pill 清掉,避免 stale 节点
+      const cleanupDoc = iframeRef.current?.contentDocument;
+      if (!cleanupDoc) return;
+      cleanupDoc
+        .querySelectorAll<HTMLElement>('[data-scope] > .darwin-trace-pill')
+        .forEach(p => p.remove());
+      cleanupDoc
+        .querySelectorAll<HTMLElement>('[data-scope].darwin-trace')
+        .forEach(n => n.classList.remove('darwin-trace'));
+    };
+  }, [iframeReady, traceMode, intentScopeCounts]);
+
   // ─── 自动重合成 ──────────────────────────────────────────
   useEffect(() => {
     if (!version) return; // 首次还没合成,需要手动点 CTA
@@ -157,6 +231,7 @@ export default function ProjectCanvas({
       setVersion(json.version);
       setSynthSource(json.source);
       lastSyncedHashRef.current = intentHash;
+      onVersionCreated?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -179,6 +254,7 @@ export default function ProjectCanvas({
         setVersion(json.version);
         setSynthSource(json.source);
         lastSyncedHashRef.current = hashIntents(intents);
+        onVersionCreated?.();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }

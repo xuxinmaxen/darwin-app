@@ -7,7 +7,7 @@
 import { notFound } from 'next/navigation';
 import { getProject } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
-import { getLatestVersion } from '@/lib/versions';
+import { getLatestVersion, countVersions } from '@/lib/versions';
 import { describeLLM } from '@/lib/llm';
 import ProjectShell from '@/components/ProjectShell';
 
@@ -20,9 +20,10 @@ export default async function ProjectDetailPage({ params }: Params) {
   const project = await getProject(id);
   if (!project) notFound();
 
-  const [intents, initialVersion] = await Promise.all([
+  const [intents, initialVersion, versionsTotal] = await Promise.all([
     listIntentsByProject(id),
     getLatestVersion(id),
+    countVersions(id),
   ]);
   const llm = describeLLM();
 
@@ -32,6 +33,7 @@ export default async function ProjectDetailPage({ params }: Params) {
       intents={intents}
       claudeReady={llm.hasKey}
       initialVersion={initialVersion}
+      versionsTotal={versionsTotal}
     />
   );
 }

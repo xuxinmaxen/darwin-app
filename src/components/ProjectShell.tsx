@@ -3,10 +3,15 @@
 /**
  * 项目详情视图 — Client Component
  *
- * V1: 左侧 Intent 看板 + 中间画布 + 双向 provenance 联动。
- * 讨论抽屉是 V2 才上线的能力,V1 直接不渲染。
+ * V1: 左侧 Intent 看板 + 中间画布 + 顶栏 (溯源 / 版本 / 发布) + 双向 provenance 联动。
+ * 讨论抽屉是 V2 才上线的能力,V1 不渲染。
  *
- * Provenance 联动 (双向):
+ * 顶栏控制:
+ *   - 溯源 toggle:  开了之后 traceMode=true,产物每个 section 加 outline + pill
+ *   - 版本面板:    本阶段先 stub (按钮存在,面板下个 commit 实现)
+ *   - 发布:        本阶段先 stub (按钮存在,POST 路径下个 commit 实现)
+ *
+ * Provenance 联动 (双向, 见 v1 step 14):
  *   - hover 一条 Intent 卡片 → iframe 内对应 scope 的 section 加 outline
  *   - hover iframe 内一个 section → 影响该 scope 的 Intent 卡片高亮、其余变灰
  *   - global scope 的 Intent 跟所有 section 联动 (用 '*' 表示)
@@ -20,6 +25,7 @@ import IntentCard from '@/components/IntentCard';
 import IntentForm from '@/components/IntentForm';
 import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 import ProjectCanvas from '@/components/ProjectCanvas';
+import TopbarControls from '@/components/TopbarControls';
 import type { Version } from '@/lib/versions';
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -41,14 +47,32 @@ export default function ProjectShell({
   intents,
   claudeReady,
   initialVersion,
+  versionsTotal: initialVersionsTotal,
 }: {
   project: Project;
   intents: Intent[];
   claudeReady: boolean;
   initialVersion: Version | null;
+  versionsTotal: number;
 }) {
+  // ─── State ─────────────────────────────────────────────
   const [hoveredIntentId, setHoveredIntentId] = useState<string | null>(null);
   const [hoveredSectionScope, setHoveredSectionScope] = useState<string | null>(null);
+  const [traceMode, setTraceMode] = useState(false);
+  const [versionPanelOpen, setVersionPanelOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [versionsTotal, setVersionsTotal] = useState(initialVersionsTotal);
+
+  // ─── Computed ──────────────────────────────────────────
+  // 每个 scope 关键字 → 对应 Intent 数量 (溯源模式下 pill 显示这个数)
+  const intentScopeCounts = useMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    for (const i of intents) {
+      const key = i.scope === 'global' ? '*' : i.scope.split('.')[0];
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  }, [intents]);
 
   // canvas 高亮的 scope 集合: hover Intent 卡片驱动
   const highlightScopes = useMemo<ReadonlySet<string>>(() => {
@@ -68,6 +92,10 @@ export default function ProjectShell({
   }, [hoveredSectionScope, intents]);
 
   const anyHover = hoveredIntentId !== null || hoveredSectionScope !== null;
+
+  const versionLabel = `v${versionsTotal}`;
+  const canPublish = versionsTotal > 0 && !publishing;
+  const isPublished = project.status === 'published';
 
   return (
     <div className="view-project">
@@ -104,6 +132,23 @@ export default function ProjectShell({
         </div>
 
         <div className="topbar-spacer" />
+
+        <TopbarControls
+          traceMode={traceMode}
+          onTraceToggle={() => setTraceMode(v => !v)}
+          versionLabel={versionLabel}
+          versionsTotal={versionsTotal}
+          versionPanelOpen={versionPanelOpen}
+          onVersionsToggle={() => setVersionPanelOpen(v => !v)}
+          canPublish={canPublish}
+          isPublished={isPublished}
+          publishing={publishing}
+          onPublishClick={() => {
+            // stub: 下个 commit 接 POST /api/projects/[id]/publish
+            setPublishing(true);
+            setTimeout(() => setPublishing(false), 600);
+          }}
+        />
 
         <ProjectActionsMenu project={project} />
         <div className="ws-user">
@@ -158,7 +203,10 @@ export default function ProjectShell({
               ) : initialVersion ? (
                 <>
                   已合成 · <strong>{intents.length}</strong> 条 Intent · {TYPE_LABEL[project.type]}
-                  <span className="prov-hint"> · hover 卡片看产物联动</span>
+                  <span className="prov-hint">
+                    {' · '}
+                    {traceMode ? '溯源中,每块标记来源数' : 'hover 卡片看产物联动'}
+                  </span>
                 </>
               ) : (
                 <>
@@ -176,6 +224,9 @@ export default function ProjectShell({
               claudeReady={claudeReady}
               highlightScopes={highlightScopes}
               onSectionHover={setHoveredSectionScope}
+              traceMode={traceMode}
+              intentScopeCounts={intentScopeCounts}
+              onVersionCreated={() => setVersionsTotal(n => n + 1)}
             />
           </div>
         </section>
