@@ -27,7 +27,7 @@ const Patch = z.object({
   persona: z.string().trim().max(2000).nullable().optional(),
   /** 仅 human: 切换在线状态 */
   isOnline: z.boolean().optional(),
-  /** 仅 human: 给真人补一个数字员工 (true 时若已有则 no-op) */
+  /** 仅 human: 给真人补一个数字分身 (true 时若已有则 no-op) */
   withDigital: z.boolean().optional(),
 });
 
@@ -71,7 +71,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     await setOnline(id, patch.isOnline);
   }
 
-  // 补数字员工 (仅 human + withDigital=true)
+  // 补数字分身 (仅 human + withDigital=true)
   let digital = null;
   if (updated.kind === 'human' && patch.withDigital === true) {
     digital = await ensureDigitalForHuman(id);

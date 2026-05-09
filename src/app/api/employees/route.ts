@@ -23,7 +23,7 @@ const Body = z.object({
   role: z.string().trim().min(1).max(20),
   email: z.string().trim().max(120).optional().nullable(),
   persona: z.string().trim().max(2000).optional().nullable(),
-  /** 仅 human: 同时创建 AI 替身 (kind=agent, linked_human_id=新真人id) */
+  /** 仅 human: 同时创建数字分身 (kind=agent, linked_human_id=新真人id) */
   withDigital: z.boolean().optional(),
   /** 仅 human: 创建时是否在线, 默认 true */
   isOnline: z.boolean().optional(),

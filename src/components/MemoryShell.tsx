@@ -237,7 +237,7 @@ export default function MemoryShell({
             {agents.length === 0 ? (
               <div className="proj-empty">
                 <strong>团队还没有 Agent</strong>
-                去 <Link href="/employees">员工管理</Link> 新增 Agent 或为真人配置数字员工。
+                去 <Link href="/employees">员工管理</Link> 新增 Agent 或为真人配置数字分身。
               </div>
             ) : (
               <div className="memory-grid">
@@ -248,7 +248,7 @@ export default function MemoryShell({
                       <div>
                         <div className="agent-info-name">
                           {a.agentName}
-                          {a.isDigitalTwin && <span className="agent-twin-tag">数字员工</span>}
+                          {a.isDigitalTwin && <span className="agent-twin-tag">数字分身</span>}
                         </div>
                         <div className="agent-info-role">{a.agentRole}</div>
                       </div>

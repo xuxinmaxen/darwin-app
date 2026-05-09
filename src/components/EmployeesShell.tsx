@@ -40,7 +40,7 @@ export default function EmployeesShell({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 真人 → 它对应的数字员工 (linked_human_id)
+  // 真人 → 它对应的数字分身 (linked_human_id)
   const digitalByHumanId = useMemo(() => {
     const m = new Map<string, Employee>();
     for (const e of employees) {
@@ -48,6 +48,13 @@ export default function EmployeesShell({
     }
     return m;
   }, [employees]);
+
+  // 主网格只显示真人 + 独立 Agent。数字分身藏在真人卡里 (⚡ AI 标签),
+  // 通过编辑真人来管理 (创建/解绑/persona 同步)。
+  const visibleEmployees = useMemo(
+    () => employees.filter(e => !(e.kind === 'agent' && e.linkedHumanId)),
+    [employees]
+  );
 
   function openNew() {
     setEditing(null);
@@ -186,7 +193,7 @@ export default function EmployeesShell({
             )}
 
             <div className="ws-employees">
-              {employees.map(emp => {
+              {visibleEmployees.map(emp => {
                 const isDefault = emp.id === DEMO_OWNER_ID;
                 const linkedDigital =
                   emp.kind === 'human' ? digitalByHumanId.get(emp.id) ?? null : null;
@@ -238,7 +245,7 @@ export default function EmployeesShell({
                       <span className={`emp-kind ${emp.kind}`}>
                         <span className="dot" />
                         {isDigitalTwin
-                          ? '数字员工'
+                          ? '数字分身'
                           : emp.kind === 'agent'
                             ? 'AGENT'
                             : 'HUMAN'}
@@ -249,9 +256,9 @@ export default function EmployeesShell({
                       {linkedDigital && (
                         <span
                           className="emp-has-digital"
-                          title={`已配置数字员工: ${linkedDigital.name}`}
+                          title={`已配置数字分身: ${linkedDigital.name}`}
                         >
-                          ⚡ AI
+                          ⚡ 数字分身
                         </span>
                       )}
                     </div>
@@ -315,11 +322,11 @@ export default function EmployeesShell({
             >
               <header className="modal-head">
                 <h2 className="modal-title">
-                  删除{isTwin ? '数字员工' : '员工'}「{confirmDeleteEmp.name}」？
+                  删除{isTwin ? '数字分身' : '员工'}「{confirmDeleteEmp.name}」？
                 </h2>
                 <p className="modal-sub">
                   {isTwin
-                    ? '该数字员工会从员工列表和它参与的项目协作者中移除。它已留下的 Intent 不受影响。'
+                    ? '该数字分身会从员工列表和它参与的项目协作者中移除。它已留下的 Intent 不受影响。'
                     : confirmDeleteEmp.kind === 'agent'
                       ? '这个 Agent 会从员工列表和它参与的项目协作者中移除。已留下的 Intent 不受影响。'
                       : '这个真人会从员工列表和参与的项目协作者中移除。已留下的 Intent 不受影响。'}
@@ -329,7 +336,7 @@ export default function EmployeesShell({
                 <div className="modal-cascade-warn">
                   <span className="modal-cascade-warn-icon" aria-hidden>⚠</span>
                   <div>
-                    <strong>同时会删除：</strong>它的数字员工{' '}
+                    <strong>同时会删除：</strong>TA 的数字分身{' '}
                     <span className="modal-cascade-twin">
                       <span className={`avatar ${cascadedTwin.cls} agent`}>
                         {cascadedTwin.short}
@@ -337,7 +344,7 @@ export default function EmployeesShell({
                       {cascadedTwin.name}
                     </span>
                     <div className="modal-cascade-warn-sub">
-                      数字员工依附真人存在,真人删了后没有"代为参与"的对象。
+                      数字分身依附真人存在,真人删了后没有"代为参与"的对象。
                     </div>
                   </div>
                 </div>

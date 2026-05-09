@@ -22,7 +22,7 @@ export type Employee = {
   email: string | null;
   persona: string | null;
   cls: string;
-  /** 数字员工: 指向其依附的真人 employee.id; null = 独立 Agent 或真人本身 */
+  /** 数字分身: 指向其依附的真人 employee.id; null = 独立 Agent 或真人本身 */
   linkedHumanId: string | null;
   /** 仅对真人有意义; Agent 总视作 online */
   isOnline: boolean;
@@ -77,9 +77,9 @@ function rowToEmployee(row: EmployeeRow): Employee {
   };
 }
 
-/** 数字员工的默认 persona — 真人不在场时 AI 替身的发言基调。 */
+/** 数字分身的默认 persona — 真人不在场时由分身代为发言的基调。 */
 function defaultDigitalPersona(human: { name: string; role: string }): string {
-  return `${human.name} 的 AI 替身 (${human.role})。代 ${human.name} 出席项目协作:发言简洁、贴角色,只在 ${human.role} 视角真有补充时说话;最终决策仍由本人定。`;
+  return `${human.name} 的数字分身 (${human.role})。代 ${human.name} 出席项目协作:发言简洁、贴角色,只在 ${human.role} 视角真有补充时说话;最终决策仍由本人定。`;
 }
 
 /** Pick the first palette entry not already used by another employee of same kind. */
@@ -125,11 +125,11 @@ export type CreateEmployeeInput = {
   role: string;
   email?: string | null;     // human only
   persona?: string | null;   // agent only
-  /** 仅 human: true 时同时建一个数字员工 (AI 替身) */
+  /** 仅 human: true 时同时建一个数字分身 */
   withDigital?: boolean;
   /** 仅 human: 创建时的 online 状态。默认 true */
   isOnline?: boolean;
-  /** 内部用: 创建数字员工时指向真人 id */
+  /** 内部用: 创建数字分身时指向真人 id */
   linkedHumanId?: string | null;
 };
 

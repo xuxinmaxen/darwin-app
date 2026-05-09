@@ -176,7 +176,7 @@ export function prefsToMarkdown(prefs: TeamPref[]): string {
 export async function listAgentLearning(
   ownerId: string
 ): Promise<AgentLearning[]> {
-  // 取所有 agent 员工 (含数字员工)
+  // 取所有 agent 员工 (含数字分身)
   const agents = db()
     .prepare(
       `SELECT id, name, role, cls, short, linked_human_id
@@ -306,7 +306,7 @@ export async function listMemoryTimeline(
       id: `emp:${e.id}`,
       kind: 'onboarding',
       body: isDigital
-        ? `数字员工 **${e.name}** 入职团队`
+        ? `数字分身 **${e.name}** 入职团队`
         : `Agent **${e.name}** 入职团队`,
       meta: '员工管理 · 新增 Agent',
       date: e.created_at,

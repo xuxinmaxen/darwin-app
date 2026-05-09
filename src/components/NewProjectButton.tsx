@@ -82,7 +82,7 @@ export default function NewProjectButton({
   // owner 之外可勾选的员工 (owner 默认在,不渲染)
   const selectable = employees.filter(e => e.id !== OWNER_ID);
   const humans = selectable.filter(e => e.kind === 'human');
-  // 数字员工 (kind=agent + 有 linked_human_id) 不进 Agent 组,
+  // 数字分身 (kind=agent + 有 linked_human_id) 不进 Agent 组,
   // 而是缩进在它真人下面渲染。独立 Agent 才在 Agent 组。
   const standaloneAgents = selectable.filter(
     e => e.kind === 'agent' && !e.linkedHumanId
@@ -263,8 +263,8 @@ export default function NewProjectButton({
                                   variant={offlineRecommend ? 'twin-recommended' : 'twin'}
                                   hint={
                                     offlineRecommend
-                                      ? `${emp.name}离线,推荐让 AI 替身代为参与`
-                                      : `${emp.name} 的 AI 替身`
+                                      ? `${emp.name}离线,推荐让数字分身代为参与`
+                                      : `${emp.name} 的数字分身`
                                   }
                                 />
                               )}

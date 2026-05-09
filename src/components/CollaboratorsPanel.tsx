@@ -171,8 +171,8 @@ export default function CollaboratorsPanel({
                             variant={offlineRecommend ? 'twin-recommended' : 'twin'}
                             hint={
                               offlineRecommend
-                                ? `${emp.name}离线,推荐让 AI 替身代为参与`
-                                : `${emp.name} 的 AI 替身`
+                                ? `${emp.name}离线,推荐让数字分身代为参与`
+                                : `${emp.name} 的数字分身`
                             }
                           />
                         )}
