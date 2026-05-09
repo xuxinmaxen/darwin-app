@@ -36,6 +36,7 @@ export default function EmployeeModal({
   onSaved,
 }: Props) {
   const isEdit = !!initial;
+  const isDigitalTwin = !!initial && initial.kind === 'agent' && !!initial.linkedHumanId;
   const [kind, setKind] = useState<EmployeeKind>(initial?.kind ?? 'human');
   const [name, setName] = useState(initial?.name ?? '');
   const [role, setRole] = useState(initial?.role ?? 'PM');
@@ -193,6 +194,12 @@ export default function EmployeeModal({
           <div className="field">
             <label className="field-label" htmlFor="emp-name">
               员工名称
+              {isDigitalTwin && (
+                <span className="field-hint">— 由真人决定,不可单独改</span>
+              )}
+              {isEdit && initial?.kind === 'human' && initialDigital && (
+                <span className="field-hint">— 改名会同步到 {initialDigital.name}</span>
+              )}
             </label>
             <input
               id="emp-name"
@@ -201,8 +208,8 @@ export default function EmployeeModal({
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="例如:陈飞 / Atlas"
-              disabled={saving}
-              autoFocus
+              disabled={saving || isDigitalTwin}
+              autoFocus={!isDigitalTwin}
             />
           </div>
 

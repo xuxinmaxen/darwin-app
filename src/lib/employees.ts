@@ -292,7 +292,12 @@ export async function updateEmployee(
   const existing = await getEmployee(id);
   if (!existing) return null;
 
-  const name = patch.name !== undefined ? patch.name : existing.name;
+  // 数字员工 (kind=agent + linkedHumanId) 的 name 不接受外部修改 —
+  // 它必须保持 "<真人> AI" 格式, 由真人 name 决定。
+  const isDigitalTwin = existing.kind === 'agent' && !!existing.linkedHumanId;
+  const name = isDigitalTwin
+    ? existing.name
+    : patch.name !== undefined ? patch.name : existing.name;
   const short = firstChar(name);
   const role = patch.role !== undefined ? patch.role : existing.role;
   // kind 不可改; email 只对 human, persona 只对 agent
@@ -306,20 +311,73 @@ export async function updateEmployee(
       : null;
   const now = nowISO();
 
-  db()
-    .prepare(
-      `UPDATE employees
-       SET name = ?, short = ?, role = ?, email = ?, persona = ?, updated_at = ?
-       WHERE id = ?`
-    )
-    .run(name, short, role, email, persona, now, id);
+  const conn = db();
+  const tx = conn.transaction(() => {
+    conn
+      .prepare(
+        `UPDATE employees
+         SET name = ?, short = ?, role = ?, email = ?, persona = ?, updated_at = ?
+         WHERE id = ?`
+      )
+      .run(name, short, role, email, persona, now, id);
+
+    // 真人改名 → 同步它的数字员工: name 跟随 "<真人> AI", short 跟真人, role 也跟
+    if (existing.kind === 'human') {
+      const renamed = patch.name !== undefined && patch.name !== existing.name;
+      const reroled = patch.role !== undefined && patch.role !== existing.role;
+      if (renamed || reroled) {
+        const twinRow = conn
+          .prepare(`SELECT id, persona FROM employees WHERE linked_human_id = ?`)
+          .get(id) as { id: string; persona: string | null } | undefined;
+        if (twinRow) {
+          const twinName = `${name} AI`;
+          const twinShort = firstChar(name);
+          // persona 跟着 role 重写为默认值; 如果用户编辑过 persona, 这里会覆盖。
+          // 取舍: 改名/角色变了, 旧 persona 大概率失语境; 用户能在 twin 卡上重写。
+          const twinPersona = reroled
+            ? defaultDigitalPersona({ name, role })
+            : twinRow.persona;
+          conn
+            .prepare(
+              `UPDATE employees
+               SET name = ?, short = ?, role = ?, persona = ?, updated_at = ?
+               WHERE id = ?`
+            )
+            .run(twinName, twinShort, role, twinPersona, now, twinRow.id);
+        }
+      }
+    }
+  });
+  tx();
 
   return getEmployee(id);
 }
 
-export async function deleteEmployee(id: string): Promise<boolean> {
-  const result = db()
-    .prepare(`DELETE FROM employees WHERE id = ?`)
-    .run(id);
-  return result.changes > 0;
+export type DeleteEmployeeResult = {
+  ok: boolean;
+  /** 一并被级联删除的数字员工 (如果有), 用于前端反馈 */
+  cascadedTwin: Employee | null;
+};
+
+export async function deleteEmployee(id: string): Promise<DeleteEmployeeResult> {
+  const existing = await getEmployee(id);
+  if (!existing) return { ok: false, cascadedTwin: null };
+
+  let cascadedTwin: Employee | null = null;
+
+  // 真人被删 → 同事务里删它的数字员工 (项目协作者由 FK ON DELETE CASCADE 自动清)
+  if (existing.kind === 'human') {
+    cascadedTwin = await findDigitalForHuman(id);
+  }
+
+  const conn = db();
+  const tx = conn.transaction(() => {
+    if (cascadedTwin) {
+      conn.prepare(`DELETE FROM employees WHERE id = ?`).run(cascadedTwin.id);
+    }
+    conn.prepare(`DELETE FROM employees WHERE id = ?`).run(id);
+  });
+  tx();
+
+  return { ok: true, cascadedTwin };
 }

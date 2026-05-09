@@ -112,7 +112,10 @@ export default function EmployeesShell({
         setError(json.error || `删除失败 (${res.status})`);
         return;
       }
-      setEmployees(prev => prev.filter(e => e.id !== id));
+      // 删除目标 + 服务端级联删的 twin (如果有) 都从本地 state 移除
+      const removedIds = new Set<string>([id]);
+      if (json.cascadedTwin?.id) removedIds.add(json.cascadedTwin.id);
+      setEmployees(prev => prev.filter(e => !removedIds.has(e.id)));
       setConfirmDeleteId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -294,47 +297,75 @@ export default function EmployeesShell({
         onSaved={handleSaved}
       />
 
-      {confirmDeleteEmp && (
-        <div
-          className="modal-backdrop"
-          onClick={() => deletingId === null && setConfirmDeleteId(null)}
-        >
+      {confirmDeleteEmp && (() => {
+        const cascadedTwin =
+          confirmDeleteEmp.kind === 'human'
+            ? digitalByHumanId.get(confirmDeleteEmp.id) ?? null
+            : null;
+        const isTwin = !!confirmDeleteEmp.linkedHumanId;
+        return (
           <div
-            className="modal-panel"
-            onClick={e => e.stopPropagation()}
-            role="alertdialog"
+            className="modal-backdrop"
+            onClick={() => deletingId === null && setConfirmDeleteId(null)}
           >
-            <header className="modal-head">
-              <h2 className="modal-title">
-                删除员工「{confirmDeleteEmp.name}」？
-              </h2>
-              <p className="modal-sub">
-                {confirmDeleteEmp.kind === 'agent'
-                  ? '这个 Agent 会从公司员工列表移除。已经留下的 Intent 不受影响。'
-                  : '这个真人会从公司员工列表移除。已经留下的 Intent 不受影响。'}
-              </p>
-            </header>
-            <footer className="modal-foot">
-              <button
-                type="button"
-                className="ws-btn ws-btn-ghost"
-                onClick={() => setConfirmDeleteId(null)}
-                disabled={deletingId !== null}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="ws-btn ws-btn-danger-solid"
-                onClick={() => handleConfirmDelete(confirmDeleteEmp.id)}
-                disabled={deletingId !== null}
-              >
-                {deletingId !== null ? '删除中…' : '确认删除'}
-              </button>
-            </footer>
+            <div
+              className="modal-panel"
+              onClick={e => e.stopPropagation()}
+              role="alertdialog"
+            >
+              <header className="modal-head">
+                <h2 className="modal-title">
+                  删除{isTwin ? '数字员工' : '员工'}「{confirmDeleteEmp.name}」？
+                </h2>
+                <p className="modal-sub">
+                  {isTwin
+                    ? '该数字员工会从员工列表和它参与的项目协作者中移除。它已留下的 Intent 不受影响。'
+                    : confirmDeleteEmp.kind === 'agent'
+                      ? '这个 Agent 会从员工列表和它参与的项目协作者中移除。已留下的 Intent 不受影响。'
+                      : '这个真人会从员工列表和参与的项目协作者中移除。已留下的 Intent 不受影响。'}
+                </p>
+              </header>
+              {cascadedTwin && (
+                <div className="modal-cascade-warn">
+                  <span className="modal-cascade-warn-icon" aria-hidden>⚠</span>
+                  <div>
+                    <strong>同时会删除：</strong>它的数字员工{' '}
+                    <span className="modal-cascade-twin">
+                      <span className={`avatar ${cascadedTwin.cls} agent`}>
+                        {cascadedTwin.short}
+                      </span>
+                      {cascadedTwin.name}
+                    </span>
+                    <div className="modal-cascade-warn-sub">
+                      数字员工依附真人存在,真人删了后没有"代为参与"的对象。
+                    </div>
+                  </div>
+                </div>
+              )}
+              <footer className="modal-foot">
+                <button
+                  type="button"
+                  className="ws-btn ws-btn-ghost"
+                  onClick={() => setConfirmDeleteId(null)}
+                  disabled={deletingId !== null}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="ws-btn ws-btn-danger-solid"
+                  onClick={() => handleConfirmDelete(confirmDeleteEmp.id)}
+                  disabled={deletingId !== null}
+                >
+                  {deletingId !== null
+                    ? '删除中…'
+                    : cascadedTwin ? '一并删除' : '确认删除'}
+                </button>
+              </footer>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

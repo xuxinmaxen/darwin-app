@@ -93,13 +93,16 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
       { status: 400 }
     );
   }
-  const ok = await deleteEmployee(id);
-  if (!ok) {
+  const result = await deleteEmployee(id);
+  if (!result.ok) {
     return NextResponse.json(
       { ok: false, error: 'employee not found' },
       { status: 404 }
     );
   }
   revalidatePath('/employees');
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    cascadedTwin: result.cascadedTwin,
+  });
 }

@@ -1955,6 +1955,43 @@ body {
   background: linear-gradient(90deg, #06B6D4, #34D399);
 }
 
+/* Delete-confirm 级联警告 (要删真人时, 它的数字员工会一起没) */
+.modal-cascade-warn {
+  margin: 0 24px 14px;
+  padding: 12px 14px;
+  background: linear-gradient(90deg, rgba(245, 165, 36, 0.10), rgba(245, 165, 36, 0.04));
+  border: 1px solid rgba(245, 165, 36, 0.30);
+  border-radius: 10px;
+  display: flex; align-items: flex-start; gap: 11px;
+  font-size: 12.5px; color: var(--text);
+  line-height: 1.6;
+}
+.modal-cascade-warn-icon {
+  font-size: 16px; line-height: 1;
+  color: #B45309;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.modal-cascade-warn strong {
+  color: var(--text); font-weight: 600;
+}
+.modal-cascade-twin {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px 2px 4px; border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  margin-left: 4px;
+  font-weight: 500;
+}
+.modal-cascade-twin .avatar {
+  width: 18px; height: 18px; font-size: 9px; border: 0;
+}
+.modal-cascade-warn-sub {
+  font-size: 11px; color: var(--text-3);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
 /* ===================================================================
  * Collaborators picker (新建项目模态)
  * =================================================================== */
