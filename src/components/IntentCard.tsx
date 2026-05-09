@@ -10,11 +10,11 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Intent } from '@/lib/types';
+import type { Employee } from '@/lib/employees';
 
-const AUTHOR_AVATAR_CLS = 'xu';
-const AUTHOR_SHORT = '徐';
-const AUTHOR_NAME = '徐鑫';
-const AUTHOR_ROLE = '产品';
+// 历史/未知 author 兜底
+const FALLBACK_HUMAN = { cls: 'xu', short: '徐', name: '徐鑫', role: '产品' };
+const FALLBACK_AGENT = { cls: 'agent-blue', short: 'A', name: 'Agent', role: 'AI' };
 
 function formatTime(iso: string) {
   const t = new Date(iso).getTime();
@@ -30,12 +30,15 @@ function formatTime(iso: string) {
 
 export default function IntentCard({
   intent,
+  author,
   isHovered = false,
   isDimmed = false,
   onMouseEnter,
   onMouseLeave,
 }: {
   intent: Intent;
+  /** lookup 出的作者; 找不到时按 authorKind fallback */
+  author?: Employee | null;
   isHovered?: boolean;
   isDimmed?: boolean;
   onMouseEnter?: () => void;
@@ -67,10 +70,15 @@ export default function IntentCard({
   }
 
   const isAgent = intent.authorKind === 'agent';
-  const avatarCls = isAgent ? 'agent' : AUTHOR_AVATAR_CLS;
-  const short = isAgent ? 'A' : AUTHOR_SHORT;
-  const name = isAgent ? 'Agent' : AUTHOR_NAME;
-  const role = isAgent ? 'AI' : AUTHOR_ROLE;
+  const fallback = isAgent ? FALLBACK_AGENT : FALLBACK_HUMAN;
+  const avatarCls = author?.cls
+    ? `${author.cls}${isAgent ? ' agent' : ''}`
+    : isAgent
+      ? `${fallback.cls} agent`
+      : fallback.cls;
+  const short = author?.short ?? fallback.short;
+  const name = author?.name ?? fallback.name;
+  const role = author?.role ?? fallback.role;
 
   return (
     <div

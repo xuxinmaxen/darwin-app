@@ -23,11 +23,15 @@ import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
 import IntentForm from '@/components/IntentForm';
+import AgentSpeakBar from '@/components/AgentSpeakBar';
 import ProjectCanvas from '@/components/ProjectCanvas';
 import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
 import CelebrationModal from '@/components/CelebrationModal';
 import type { Version } from '@/lib/versions';
+import type { Employee } from '@/lib/employees';
+
+const MAX_TOPBAR_AVATARS = 5;
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
 
@@ -49,12 +53,14 @@ export default function ProjectShell({
   claudeReady,
   initialVersion,
   versionsTotal: initialVersionsTotal,
+  collaborators,
 }: {
   project: Project;
   intents: Intent[];
   claudeReady: boolean;
   initialVersion: Version | null;
   versionsTotal: number;
+  collaborators: Employee[];
 }) {
   // ─── State ─────────────────────────────────────────────
   const [hoveredIntentId, setHoveredIntentId] = useState<string | null>(null);
@@ -110,6 +116,17 @@ export default function ProjectShell({
     setPreviewVersion(null);
     setVersionPanelOpen(false);
   };
+
+  // 协作者: lookup + 分组
+  const employeeById = useMemo(() => {
+    const m = new Map<string, Employee>();
+    for (const e of collaborators) m.set(e.id, e);
+    return m;
+  }, [collaborators]);
+  const agentCollaborators = useMemo(
+    () => collaborators.filter(e => e.kind === 'agent'),
+    [collaborators]
+  );
 
   // ─── Computed ──────────────────────────────────────────
   // canvas 高亮的 scope 集合: hover Intent 卡片驱动
@@ -212,8 +229,24 @@ export default function ProjectShell({
           onPublishClick={handlePublish}
         />
 
-        <div className="ws-user">
-          <div className="avatar xu" title="徐鑫">徐</div>
+        <div className="ws-user proj-collab proj-collab-topbar" title="项目协作者">
+          {collaborators.slice(0, MAX_TOPBAR_AVATARS).map(e => (
+            <span
+              key={e.id}
+              className={`avatar ${e.cls}${e.kind === 'agent' ? ' agent' : ''}`}
+              title={`${e.name} · ${e.role}${e.kind === 'agent' ? '（Agent）' : ''}`}
+            >
+              {e.short}
+            </span>
+          ))}
+          {collaborators.length > MAX_TOPBAR_AVATARS && (
+            <span
+              className="avatar avatar-more"
+              title={`还有 ${collaborators.length - MAX_TOPBAR_AVATARS} 位`}
+            >
+              +{collaborators.length - MAX_TOPBAR_AVATARS}
+            </span>
+          )}
         </div>
       </div>
 
@@ -242,6 +275,7 @@ export default function ProjectShell({
                 <IntentCard
                   key={i.id}
                   intent={i}
+                  author={employeeById.get(i.authorId) ?? null}
                   isHovered={hoveredIntentId === i.id || intentHighlightSet.has(i.id)}
                   isDimmed={anyHover && !(hoveredIntentId === i.id || intentHighlightSet.has(i.id))}
                   onMouseEnter={() => setHoveredIntentId(i.id)}
@@ -251,6 +285,7 @@ export default function ProjectShell({
             )}
           </div>
 
+          <AgentSpeakBar projectId={project.id} agents={agentCollaborators} />
           <IntentForm projectId={project.id} />
         </aside>
 
