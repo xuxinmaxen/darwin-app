@@ -3,16 +3,19 @@
 /**
  * 项目画布 — Client Component
  *
- * 状态:
- *   1. 0 条 Intent:           空态插画 + 引导
- *   2. ≥1 条 Intent + 没合成过:  「开始合成」CTA (用户必须点一次,确认要开始)
- *   3. 合成完毕:                iframe 渲染 + 底部状态条
+ * version 状态由 ProjectShell 控制 (回滚/合成都从父组件下来),
+ * 这里只负责: 触发合成、渲染 iframe、注入 provenance/trace 高亮。
  *
- * 行为:
- *   - 首次合成必须用户点 (避免误触 + 烧 token)
- *   - 之后每次 intents 变化 (新增/删除),debounce 1.5s 自动重合成
- *   - 期间底部状态条显示「AI 正在合成…」脉冲指示
- *   - 失败时显示错误 + 「重试」小按钮
+ * 状态:
+ *   1. 0 条 Intent + 没合成过:    空态插画
+ *   2. ≥1 条 Intent + 没合成过:   「开始合成」CTA (用户必须点一次,确认要开始)
+ *   3. 有 currentVersion:        iframe 渲染 + 底部状态条
+ *
+ * 预览:
+ *   - previewVersion 不为 null 时,iframe srcDoc 用 previewVersion.content,
+ *     当前版本仍然在 currentVersion 里 — 退出预览即恢复
+ *   - 预览中不阻塞自动重合成 (合成结果会更新 currentVersion,但 iframe 仍显示
+ *     preview。退出预览后会看到新版本)
  */
 
 import { useState, useTransition, useEffect, useRef, useCallback } from 'react';
@@ -62,7 +65,6 @@ const HIGHLIGHT_STYLE = `
 `;
 
 function hashIds(ids: string[]): string {
-  // ID + length 双重指纹,删/加都能检测到
   return ids.slice().sort().join(',') + '|' + ids.length;
 }
 function hashIntents(intents: Intent[]): string {
@@ -72,40 +74,44 @@ function hashIntents(intents: Intent[]): string {
 export default function ProjectCanvas({
   project,
   intents,
-  initialVersion,
+  currentVersion,
+  previewVersion,
   claudeReady,
   highlightScopes,
   onSectionHover,
   traceMode,
   intentScopeCounts,
   onVersionCreated,
+  onExitPreview,
 }: {
   project: Project;
   intents: Intent[];
-  initialVersion: Version | null;
+  currentVersion: Version | null;
+  previewVersion: Version | null;
   claudeReady: boolean;
   highlightScopes?: ReadonlySet<string>;
   onSectionHover?: (scope: string | null) => void;
   traceMode?: boolean;
   intentScopeCounts?: ReadonlyMap<string, number>;
-  onVersionCreated?: () => void;
+  onVersionCreated: (v: Version) => void;
+  onExitPreview?: () => void;
 }) {
-  const [version, setVersion] = useState<Version | null>(initialVersion);
-  const [synthSource, setSynthSource] = useState<
-    'llm' | 'template' | undefined
-  >(initialVersion?.source);
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 上一次合成时的 intent 指纹。从 version 自带的 intentIds 初始化,
-  // 这样进页面就能识别"版本是否落后于当前 intents"。
+  // 上一次合成时的 intent 指纹 — 跟 currentVersion 一起更新
   const lastSyncedHashRef = useRef<string | null>(
-    initialVersion ? hashIds(initialVersion.intentIds) : null
+    currentVersion ? hashIds(currentVersion.intentIds) : null
   );
+  useEffect(() => {
+    if (currentVersion) {
+      lastSyncedHashRef.current = hashIds(currentVersion.intentIds);
+    }
+  }, [currentVersion]);
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [iframeReady, setIframeReady] = useState(0); // bump 触发 effect 重跑
+  const [iframeReady, setIframeReady] = useState(0);
 
   // ─── Provenance: iframe 同源 DOM 注入 (无需 allow-scripts) ───
   const handleIframeLoad = useCallback(() => {
@@ -187,7 +193,6 @@ export default function ProjectCanvas({
       }
     });
     return () => {
-      // 解绑时也把 pill 清掉,避免 stale 节点
       const cleanupDoc = iframeRef.current?.contentDocument;
       if (!cleanupDoc) return;
       cleanupDoc
@@ -201,9 +206,9 @@ export default function ProjectCanvas({
 
   // ─── 自动重合成 ──────────────────────────────────────────
   useEffect(() => {
-    if (!version) return; // 首次还没合成,需要手动点 CTA
-    if (intents.length === 0) return; // 全删光保留最后一版
-    if (autoSyncing) return; // 当前正在合成,等完了再重检
+    if (!currentVersion) return;
+    if (intents.length === 0) return;
+    if (autoSyncing) return;
 
     const currentHash = hashIntents(intents);
     if (currentHash === lastSyncedHashRef.current) return;
@@ -214,7 +219,7 @@ export default function ProjectCanvas({
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intents, version, project.id, autoSyncing]);
+  }, [intents, currentVersion, project.id, autoSyncing]);
 
   async function runSynthesis(intentHash: string) {
     setAutoSyncing(true);
@@ -228,10 +233,8 @@ export default function ProjectCanvas({
         setError(json.error || `请求失败 (${res.status})`);
         return;
       }
-      setVersion(json.version);
-      setSynthSource(json.source);
       lastSyncedHashRef.current = intentHash;
-      onVersionCreated?.();
+      onVersionCreated(json.version);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -251,10 +254,8 @@ export default function ProjectCanvas({
           setError(json.error || `请求失败 (${res.status})`);
           return;
         }
-        setVersion(json.version);
-        setSynthSource(json.source);
         lastSyncedHashRef.current = hashIntents(intents);
-        onVersionCreated?.();
+        onVersionCreated(json.version);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -262,7 +263,7 @@ export default function ProjectCanvas({
   }
 
   // ─── State 1: 没有 Intent ────────────────────────────────
-  if (intents.length === 0 && !version) {
+  if (intents.length === 0 && !currentVersion) {
     return (
       <div className="canvas-empty">
         <div className="canvas-empty-illu">
@@ -281,7 +282,7 @@ export default function ProjectCanvas({
   }
 
   // ─── State 2: 有 Intent,首次没合成 ───────────────────────
-  if (!version) {
+  if (!currentVersion) {
     return (
       <div className="canvas-cta">
         <div className="canvas-cta-illu">
@@ -330,25 +331,49 @@ export default function ProjectCanvas({
     );
   }
 
-  // ─── State 3: 有版本 (含全删后保留最后一版) ──────────────
+  // ─── State 3: 有版本 ──────────────────────────────────────
   const isStale =
     intents.length > 0 &&
     hashIntents(intents) !== lastSyncedHashRef.current &&
     !autoSyncing;
 
+  // 实际渲染的 version: 预览中走 preview,否则走当前
+  const displayVersion = previewVersion ?? currentVersion;
+  const displayContent = displayVersion.content;
+  const displaySource = displayVersion.source;
+  const isPreviewing = previewVersion !== null;
+
   return (
     <div className="canvas-result">
+      {isPreviewing && (
+        <div className="canvas-preview-banner">
+          <span className="ver-preview-badge">预览</span>
+          <span>正在预览旧版本,主版本未受影响</span>
+          {onExitPreview && (
+            <button
+              type="button"
+              className="canvas-preview-exit"
+              onClick={onExitPreview}
+            >
+              退出预览
+            </button>
+          )}
+        </div>
+      )}
+
       {project.type === 'html' ? (
         <iframe
+          // key 让 iframe 在 displayVersion 切换时彻底重 load
+          key={displayVersion.id}
           ref={iframeRef}
           onLoad={handleIframeLoad}
           className="canvas-frame"
-          srcDoc={version.content}
+          srcDoc={displayContent}
           title={`${project.name} · synthesized preview`}
           sandbox="allow-same-origin"
         />
       ) : (
-        <pre className="canvas-md">{version.content}</pre>
+        <pre className="canvas-md">{displayContent}</pre>
       )}
 
       <div className="canvas-result-foot">
@@ -377,21 +402,21 @@ export default function ProjectCanvas({
           ) : (
             <>
               <span
-                className={`canvas-source-pill canvas-source-${synthSource || 'template'}`}
+                className={`canvas-source-pill canvas-source-${displaySource || 'template'}`}
                 title={
-                  synthSource === 'llm'
+                  displaySource === 'llm'
                     ? 'LLM 直出'
                     : '本地模板（LLM 不可用时回退）'
                 }
               >
-                {synthSource === 'llm' ? '🤖 LLM' : '⚙️ 模板'}
+                {displaySource === 'llm' ? '🤖 LLM' : '⚙️ 模板'}
               </span>
-              <span>已同步</span>
+              <span>{isPreviewing ? '预览历史版本' : '已同步'}</span>
               <span>·</span>
               <span>{intents.length} 条 Intent</span>
               <span>·</span>
               <span>
-                {new Date(version.createdAt).toLocaleString('zh-CN', {
+                {new Date(displayVersion.createdAt).toLocaleString('zh-CN', {
                   hour: '2-digit',
                   minute: '2-digit',
                 })}
@@ -400,7 +425,7 @@ export default function ProjectCanvas({
           )}
         </div>
 
-        {intents.length === 0 && (
+        {intents.length === 0 && !isPreviewing && (
           <span className="canvas-no-intents">所有 Intent 已删,保留最后一版</span>
         )}
       </div>

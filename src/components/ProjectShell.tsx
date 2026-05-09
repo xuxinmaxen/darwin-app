@@ -26,6 +26,7 @@ import IntentForm from '@/components/IntentForm';
 import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 import ProjectCanvas from '@/components/ProjectCanvas';
 import TopbarControls from '@/components/TopbarControls';
+import VersionsPanel from '@/components/VersionsPanel';
 import type { Version } from '@/lib/versions';
 
 const EMPTY_SET: ReadonlySet<string> = new Set();
@@ -62,6 +63,47 @@ export default function ProjectShell({
   const [versionPanelOpen, setVersionPanelOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [versionsTotal, setVersionsTotal] = useState(initialVersionsTotal);
+  const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
+  const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // ─── Version handlers ──────────────────────────────────
+  const handleVersionCreated = (v: Version) => {
+    setCurrentVersion(v);
+    setVersionsTotal(n => n + 1);
+  };
+
+  const handlePreview = async (versionId: string) => {
+    setPreviewError(null);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/versions/${versionId}`);
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setPreviewError(json.error || `加载版本失败 (${res.status})`);
+        return;
+      }
+      setPreviewVersion(json.version);
+    } catch (err) {
+      setPreviewError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleExitPreview = () => setPreviewVersion(null);
+
+  const handleRollbacked = () => {
+    // rollback 写了一条新 version → 让 ProjectCanvas 重新拉最新当前版本
+    fetch(`/api/projects/${project.id}/synthesize`, { method: 'GET' })
+      .then(r => r.json())
+      .then(j => {
+        if (j.ok && j.version) {
+          setCurrentVersion(j.version);
+          setVersionsTotal(n => n + 1);
+        }
+      })
+      .catch(() => {/* swallow */});
+    setPreviewVersion(null);
+    setVersionPanelOpen(false);
+  };
 
   // ─── Computed ──────────────────────────────────────────
   // 每个 scope 关键字 → 对应 Intent 数量 (溯源模式下 pill 显示这个数)
@@ -196,11 +238,11 @@ export default function ProjectShell({
         {/* CENTER: CANVAS */}
         <section className="canvas-wrap">
           <div className="statusbar">
-            <span className={`status-icon ${intents.length === 0 ? 'idle' : initialVersion ? 'done' : ''}`} />
+            <span className={`status-icon ${intents.length === 0 ? 'idle' : currentVersion ? 'done' : ''}`} />
             <span className="status-text">
               {intents.length === 0 ? (
                 <>等待输入。所有人到齐后，AI 会把意图合成为产物。</>
-              ) : initialVersion ? (
+              ) : currentVersion ? (
                 <>
                   已合成 · <strong>{intents.length}</strong> 条 Intent · {TYPE_LABEL[project.type]}
                   <span className="prov-hint">
@@ -220,17 +262,37 @@ export default function ProjectShell({
             <ProjectCanvas
               project={project}
               intents={intents}
-              initialVersion={initialVersion}
+              currentVersion={currentVersion}
+              previewVersion={previewVersion}
               claudeReady={claudeReady}
               highlightScopes={highlightScopes}
               onSectionHover={setHoveredSectionScope}
               traceMode={traceMode}
               intentScopeCounts={intentScopeCounts}
-              onVersionCreated={() => setVersionsTotal(n => n + 1)}
+              onVersionCreated={handleVersionCreated}
+              onExitPreview={handleExitPreview}
             />
           </div>
         </section>
       </div>
+
+      {versionPanelOpen && (
+        <VersionsPanel
+          projectId={project.id}
+          currentVersionId={currentVersion?.id ?? null}
+          previewVersionId={previewVersion?.id ?? null}
+          onClose={() => setVersionPanelOpen(false)}
+          onPreview={handlePreview}
+          onExitPreview={handleExitPreview}
+          onRollbacked={handleRollbacked}
+        />
+      )}
+      {previewError && (
+        <div className="ver-preview-error" role="alert">
+          {previewError}
+          <button type="button" onClick={() => setPreviewError(null)} aria-label="dismiss">×</button>
+        </div>
+      )}
     </div>
   );
 }
