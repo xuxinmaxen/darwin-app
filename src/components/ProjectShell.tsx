@@ -73,17 +73,11 @@ export default function ProjectShell({
     <div className="view-project">
       {/* TOP BAR */}
       <div className="topbar">
-        <Link href="/" className="back-link" title="返回工作台">
-          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <path d="M7.5 2.5L4 6l3.5 3.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          工作台
-        </Link>
-        <div className="vsep" />
         <Link
           href="/"
           className="brand"
           style={{ textDecoration: 'none', color: 'inherit' }}
+          title="返回工作台"
         >
           <div className="brand-logo" aria-hidden />
           <span className="brand-name">Darwin</span>

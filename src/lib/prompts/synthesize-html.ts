@@ -26,6 +26,13 @@ Rules:
 6. Style = clean, professional, light theme by default (background #FAF9F5, text #1A1A1C). Match the demo aesthetic at https://anthropic.com / https://linear.app — generous whitespace, readable type, subtle gradients on hero. Avoid SaaS template feel.
 7. Do not write Lorem Ipsum or generic placeholder copy. Pull real text from the intent statements when possible.
 8. The page must be self-contained, < 50KB, render correctly inside an iframe with srcDoc.
+8a. THIS IS A PUBLIC-FACING MARKETING LANDING PAGE, not a dashboard, admin console, or workspace UI. STRICT prohibitions:
+   - No left sidebar / vertical nav rail listing pages like "项目管理 / 团队记忆 / 员工管理 / 工作空间".
+   - No admin-style content lists (project cards grid, "+ 新建项目" buttons, "最近项目" section, Cmd+K search bars in the body).
+   - No internal-tool jargon: "工作空间", "项目管理", "团队记忆", "新建项目", "已上线 / dev / staging" status pills as page CHROME (a status badge inside a hero mockup is fine, but NEVER as the page's own UI).
+   - The page describes a PRODUCT to a PROSPECTIVE USER. It does not let the visitor manage anything.
+   - If the project name is opaque (e.g. "111", "test", "demo"), invent a plausible product story from the intents — but the page must still look like a landing page (hero → features → pricing → cta), never like a SaaS dashboard.
+   - A product-screenshot mockup in the hero is allowed, but it must clearly look like an embedded screenshot (chrome bar, drop shadow, max-width), not the page's own chrome.
 9. If two intents conflict (e.g. "技术专业感" + "活泼俏皮"), surface BOTH visually — e.g. professional structure with one playful accent — rather than picking a side. The job is synthesis, not arbitration.
 10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
 
