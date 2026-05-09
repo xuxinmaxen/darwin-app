@@ -28,7 +28,19 @@ function formatTime(iso: string) {
   });
 }
 
-export default function IntentCard({ intent }: { intent: Intent }) {
+export default function IntentCard({
+  intent,
+  isHovered = false,
+  isDimmed = false,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  intent: Intent;
+  isHovered?: boolean;
+  isDimmed?: boolean;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
@@ -61,7 +73,11 @@ export default function IntentCard({ intent }: { intent: Intent }) {
   const role = isAgent ? 'AI' : AUTHOR_ROLE;
 
   return (
-    <div className={`intent${confirming ? ' intent-confirming' : ''}`}>
+    <div
+      className={`intent${confirming ? ' intent-confirming' : ''}${isHovered ? ' is-prov-hover' : ''}${isDimmed ? ' is-prov-dim' : ''}`}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       <div className="intent-head">
         <span className={`avatar ${avatarCls}`}>{short}</span>
         <span className="intent-author">{name}</span>

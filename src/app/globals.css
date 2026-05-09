@@ -1128,3 +1128,24 @@ body {
   .modal-backdrop { padding: 12px; align-items: flex-end; }
   .modal-panel { max-width: 100%; }
 }
+
+/* ===================================================================
+ * Provenance: Intent ↔ section 双向高亮 (V1 step 14)
+ * =================================================================== */
+.intent {
+  transition: border-color 0.2s, box-shadow 0.2s, opacity 0.18s, transform 0.18s;
+}
+.intent.is-prov-hover {
+  border-color: #4F46E5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.18), var(--shadow-2);
+  transform: translateY(-1px);
+}
+.intent.is-prov-dim {
+  opacity: 0.42;
+}
+.prov-hint {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 450;
+  letter-spacing: -0.005em;
+}

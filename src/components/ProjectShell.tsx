@@ -3,11 +3,17 @@
 /**
  * 项目详情视图 — Client Component
  *
- * V1: 左侧 Intent 看板 (真实数据 + 输入框) + 中间画布 (等 Claude 解锁的占位)。
- * 讨论抽屉是 V2 才上线的能力,V1 直接不渲染,避免按了之后只能看到「即将上线」。
+ * V1: 左侧 Intent 看板 + 中间画布 + 双向 provenance 联动。
+ * 讨论抽屉是 V2 才上线的能力,V1 直接不渲染。
+ *
+ * Provenance 联动 (双向):
+ *   - hover 一条 Intent 卡片 → iframe 内对应 scope 的 section 加 outline
+ *   - hover iframe 内一个 section → 影响该 scope 的 Intent 卡片高亮、其余变灰
+ *   - global scope 的 Intent 跟所有 section 联动 (用 '*' 表示)
  */
 
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
@@ -15,6 +21,20 @@ import IntentForm from '@/components/IntentForm';
 import ProjectActionsMenu from '@/components/ProjectActionsMenu';
 import ProjectCanvas from '@/components/ProjectCanvas';
 import type { Version } from '@/lib/versions';
+
+const EMPTY_SET: ReadonlySet<string> = new Set();
+
+function scopesForIntent(intent: Intent): ReadonlySet<string> {
+  if (intent.scope === 'global') return new Set(['*']);
+  // 'pricing.team' → match section data-scope='pricing'
+  const head = intent.scope.split('.')[0];
+  return new Set([head]);
+}
+
+function intentMatchesSectionScope(intent: Intent, sectionScope: string): boolean {
+  if (intent.scope === 'global') return true;
+  return intent.scope === sectionScope || intent.scope.startsWith(sectionScope + '.');
+}
 
 export default function ProjectShell({
   project,
@@ -27,6 +47,28 @@ export default function ProjectShell({
   claudeReady: boolean;
   initialVersion: Version | null;
 }) {
+  const [hoveredIntentId, setHoveredIntentId] = useState<string | null>(null);
+  const [hoveredSectionScope, setHoveredSectionScope] = useState<string | null>(null);
+
+  // canvas 高亮的 scope 集合: hover Intent 卡片驱动
+  const highlightScopes = useMemo<ReadonlySet<string>>(() => {
+    if (!hoveredIntentId) return EMPTY_SET;
+    const intent = intents.find(i => i.id === hoveredIntentId);
+    if (!intent) return EMPTY_SET;
+    return scopesForIntent(intent);
+  }, [hoveredIntentId, intents]);
+
+  // 哪些 IntentCard 应该高亮: 由 hover section 驱动
+  const intentHighlightSet = useMemo<ReadonlySet<string>>(() => {
+    if (!hoveredSectionScope) return EMPTY_SET;
+    const ids = intents
+      .filter(i => intentMatchesSectionScope(i, hoveredSectionScope))
+      .map(i => i.id);
+    return new Set(ids);
+  }, [hoveredSectionScope, intents]);
+
+  const anyHover = hoveredIntentId !== null || hoveredSectionScope !== null;
+
   return (
     <div className="view-project">
       {/* TOP BAR */}
@@ -87,7 +129,7 @@ export default function ProjectShell({
             <span className="board-count">{intents.length}</span>
           </div>
 
-          <div className="board-list">
+          <div className={`board-list ${anyHover ? 'is-prov-active' : ''}`}>
             {intents.length === 0 ? (
               <div className="board-empty">
                 <strong>大家各抒己见</strong>
@@ -96,7 +138,16 @@ export default function ProjectShell({
                 信息足够时自动开始合成
               </div>
             ) : (
-              intents.map(i => <IntentCard key={i.id} intent={i} />)
+              intents.map(i => (
+                <IntentCard
+                  key={i.id}
+                  intent={i}
+                  isHovered={hoveredIntentId === i.id || intentHighlightSet.has(i.id)}
+                  isDimmed={anyHover && !(hoveredIntentId === i.id || intentHighlightSet.has(i.id))}
+                  onMouseEnter={() => setHoveredIntentId(i.id)}
+                  onMouseLeave={() => setHoveredIntentId(null)}
+                />
+              ))
             )}
           </div>
 
@@ -113,6 +164,7 @@ export default function ProjectShell({
               ) : initialVersion ? (
                 <>
                   已合成 · <strong>{intents.length}</strong> 条 Intent · {TYPE_LABEL[project.type]}
+                  <span className="prov-hint"> · hover 卡片看产物联动</span>
                 </>
               ) : (
                 <>
@@ -128,6 +180,8 @@ export default function ProjectShell({
               intents={intents}
               initialVersion={initialVersion}
               claudeReady={claudeReady}
+              highlightScopes={highlightScopes}
+              onSectionHover={setHoveredSectionScope}
             />
           </div>
         </section>

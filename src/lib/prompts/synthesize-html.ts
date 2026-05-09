@@ -27,6 +27,7 @@ Rules:
 7. Do not write Lorem Ipsum or generic placeholder copy. Pull real text from the intent statements when possible.
 8. The page must be self-contained, < 50KB, render correctly inside an iframe with srcDoc.
 9. If two intents conflict (e.g. "技术专业感" + "活泼俏皮"), surface BOTH visually — e.g. professional structure with one playful accent — rather than picking a side. The job is synthesis, not arbitration.
+10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
 
 Output:
 - ONLY the HTML document. No prose before or after. No markdown fences.

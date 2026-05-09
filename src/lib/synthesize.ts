@@ -184,7 +184,7 @@ function renderHtml(project: Project, intents: Intent[]): string {
 </head>
 <body>
   <div class="frame">
-    <section class="hero">
+    <section class="hero" data-scope="hero">
       <div class="eyebrow">${escapeHtml(project.name)}</div>
       <h1>${escapeHtml(heroTitle)}</h1>
       <p class="sub">${escapeHtml(heroSub)}</p>
@@ -195,20 +195,20 @@ function renderHtml(project: Project, intents: Intent[]): string {
     </section>
     ${
       featureCards
-        ? `<section class="features"><div class="section-eyebrow">核心能力</div><div class="features-grid">${featureCards}</div></section>`
+        ? `<section class="features" data-scope="features"><div class="section-eyebrow">核心能力</div><div class="features-grid">${featureCards}</div></section>`
         : ''
     }
     ${
       promiseList
-        ? `<section class="promises"><h2>我们的承诺</h2><ul>${promiseList}</ul></section>`
+        ? `<section class="promises" data-scope="footer"><h2>我们的承诺</h2><ul>${promiseList}</ul></section>`
         : ''
     }
     ${
       prefList
-        ? `<section class="prefs"><h2>设计偏好</h2><ul>${prefList}</ul></section>`
+        ? `<section class="prefs" data-scope="features"><h2>设计偏好</h2><ul>${prefList}</ul></section>`
         : ''
     }
-    <section class="cta">
+    <section class="cta" data-scope="cta">
       <h2>准备好开始了吗？</h2>
       <p class="cta-sub">由 ${intents.length} 条 Intent 合成 · ${generatedAt}</p>
       <button class="btn btn-p">免费开始 →</button>

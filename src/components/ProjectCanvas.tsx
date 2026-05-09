@@ -15,12 +15,24 @@
  *   - 失败时显示错误 + 「重试」小按钮
  */
 
-import { useState, useTransition, useEffect, useRef } from 'react';
+import { useState, useTransition, useEffect, useRef, useCallback } from 'react';
 import type { Project, Intent } from '@/lib/types';
 import type { Version } from '@/lib/versions';
 import { TYPE_LABEL } from '@/lib/type-meta';
 
 const AUTO_SYNC_DEBOUNCE_MS = 1500;
+
+const HIGHLIGHT_STYLE = `
+  [data-scope].darwin-hl {
+    outline: 2px solid #4F46E5;
+    outline-offset: -2px;
+    box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.18);
+    transition: outline-color 0.15s, box-shadow 0.15s;
+  }
+  [data-scope] {
+    transition: outline-color 0.15s, box-shadow 0.15s;
+  }
+`;
 
 function hashIds(ids: string[]): string {
   // ID + length 双重指纹,删/加都能检测到
@@ -35,11 +47,15 @@ export default function ProjectCanvas({
   intents,
   initialVersion,
   claudeReady,
+  highlightScopes,
+  onSectionHover,
 }: {
   project: Project;
   intents: Intent[];
   initialVersion: Version | null;
   claudeReady: boolean;
+  highlightScopes?: ReadonlySet<string>;
+  onSectionHover?: (scope: string | null) => void;
 }) {
   const [version, setVersion] = useState<Version | null>(initialVersion);
   const [synthSource, setSynthSource] = useState<
@@ -54,6 +70,60 @@ export default function ProjectCanvas({
   const lastSyncedHashRef = useRef<string | null>(
     initialVersion ? hashIds(initialVersion.intentIds) : null
   );
+
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [iframeReady, setIframeReady] = useState(0); // bump 触发 effect 重跑
+
+  // ─── Provenance: iframe 同源 DOM 注入 (无需 allow-scripts) ───
+  const handleIframeLoad = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    if (!doc.getElementById('darwin-hl-style')) {
+      const style = doc.createElement('style');
+      style.id = 'darwin-hl-style';
+      style.textContent = HIGHLIGHT_STYLE;
+      doc.head.appendChild(style);
+    }
+    setIframeReady(n => n + 1);
+  }, []);
+
+  // 反向: hover iframe 内 section → 通知父组件高亮对应 IntentCard
+  useEffect(() => {
+    if (!iframeReady) return;
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc || !onSectionHover) return;
+    const nodes = doc.querySelectorAll<HTMLElement>('[data-scope]');
+    const enter = (e: Event) => {
+      const scope = (e.currentTarget as HTMLElement).dataset.scope || null;
+      onSectionHover(scope);
+    };
+    const leave = () => onSectionHover(null);
+    nodes.forEach(n => {
+      n.addEventListener('mouseenter', enter);
+      n.addEventListener('mouseleave', leave);
+    });
+    return () => {
+      nodes.forEach(n => {
+        n.removeEventListener('mouseenter', enter);
+        n.removeEventListener('mouseleave', leave);
+      });
+    };
+  }, [iframeReady, onSectionHover]);
+
+  // 正向: highlightScopes 变化 → 给 iframe 内对应 section 加 .darwin-hl
+  useEffect(() => {
+    if (!iframeReady) return;
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    const nodes = doc.querySelectorAll<HTMLElement>('[data-scope]');
+    nodes.forEach(n => {
+      const scope = n.dataset.scope || '';
+      const hit =
+        !!highlightScopes &&
+        (highlightScopes.has(scope) || highlightScopes.has('*'));
+      n.classList.toggle('darwin-hl', hit);
+    });
+  }, [iframeReady, highlightScopes]);
 
   // ─── 自动重合成 ──────────────────────────────────────────
   useEffect(() => {
@@ -194,6 +264,8 @@ export default function ProjectCanvas({
     <div className="canvas-result">
       {project.type === 'html' ? (
         <iframe
+          ref={iframeRef}
+          onLoad={handleIframeLoad}
           className="canvas-frame"
           srcDoc={version.content}
           title={`${project.name} · synthesized preview`}
