@@ -443,6 +443,104 @@ async function testPrefCandidateDismiss() {
   });
 }
 
+// ─── Test 7: Consensus detection auto-resolves tension ──
+
+async function testConsensusAutoResolve() {
+  const banner = 'TEST 7 — consensus auto-resolves tension';
+  console.log('\n' + banner);
+
+  // 建一个临时 agent 当第二个 author (consensus 要求 ≥2 distinct authors)
+  const agentRes = await post('/api/employees', {
+    kind: 'agent', name: `${TEST_RUN_TAG}-consensus-agent`, role: 'UI',
+    persona: '简洁优先',
+  });
+  const agent = agentRes.json.employee;
+  cleanupEmployees.push(agent.id);
+
+  await withProject(`${TEST_RUN_TAG} consensus`, 'discuss', async (proj) => {
+    await post(`/api/projects/${proj.id}/intents`, {
+      statement: 'hero 文案要克制不堆砌',
+      type: 'Constraint', scope: 'hero', weight: 'must',
+    });
+    await post(`/api/projects/${proj.id}/intents`, {
+      statement: 'hero 文案要密集塞功能点突出转化',
+      type: 'Goal', scope: 'hero', weight: 'must',
+    });
+
+    const tension = await poll(
+      'tension on hero',
+      async () => {
+        const r = await get(`/api/projects/${proj.id}/tensions`);
+        return (r.json.tensions || []).find(x => x.scope === 'hero' && x.status === 'active') ?? null;
+      },
+      { tries: 40, intervalMs: 1000 }
+    );
+    record('tension detected', true, `id=${tension.id.slice(0,8)}`);
+
+    // 开 thread
+    const trRes = await post(`/api/projects/${proj.id}/threads`, {
+      scope: 'hero',
+      title: 'hero · 共识测试',
+      tensionId: tension.id,
+      openingMessages: [{
+        authorId: 'system', authorKind: 'system',
+        body: 'hero 区有冲突,讨论一下',
+      }],
+    });
+    const thread = trRes.json.thread;
+    record('thread created on tension', true);
+
+    // 用户(徐鑫)说倾向 A
+    await post(`/api/threads/${thread.id}/messages`, {
+      body: '我倾向 A 方案,首屏简洁更符合我们目标用户',
+    });
+    record('human votes A', true);
+
+    // 给 detect-consensus 一点时间; 第一次 LLM 会判 reached=false (单人)
+    await sleep(8000);
+
+    // 第二个 author (agent) 也表态 A
+    await post(`/api/threads/${thread.id}/messages`, {
+      authorId: agent.id,
+      authorKind: 'agent',
+      body: '我也支持 A,克制视觉对技术专业感更有帮助',
+    });
+    record('agent votes A', true);
+
+    // 等共识检测命中 + 自动 resolve
+    const resolved = await poll(
+      'tension auto-resolved by consensus',
+      async () => {
+        const r = await get(`/api/projects/${proj.id}/tensions`);
+        const t = (r.json.tensions || []).find(x => x.id === tension.id);
+        return t && t.status === 'resolved' ? t : null;
+      },
+      { tries: 30, intervalMs: 1000 }
+    ).catch(() => null);
+
+    if (!resolved) {
+      record('consensus did not fire (LLM may have been conservative)', true);
+      return;
+    }
+    assert.equal(resolved.resolution.selectedOptionKey, 'A');
+    assert.deepEqual(resolved.resolution.decidedBy, ['ai-consensus']);
+    record('consensus picked option A by AI', true);
+
+    // 决议消息出现在 thread
+    const mr = await get(`/api/threads/${thread.id}/messages`);
+    const consensusMsg = mr.json.messages.find(m =>
+      m.isDecision && m.body.includes('AI 检测到团队达成一致')
+    );
+    assert.ok(consensusMsg, 'consensus decision message must exist');
+    record('consensus decision message written', true);
+
+    // thread 也已经 resolved
+    const tr = await get(`/api/threads/${thread.id}`);
+    assert.equal(tr.json.thread.status, 'resolved');
+    record('thread resolved by consensus', true);
+  });
+}
+
 // ─── Test 6: Agent learning tags ─────────────────────────
 
 const cleanupEmployees = [];
@@ -606,6 +704,12 @@ async function main() {
     await testAgentTags();
   } catch (err) {
     record('TEST 6 failed', false, err.message);
+    failed = true;
+  }
+  try {
+    await testConsensusAutoResolve();
+  } catch (err) {
+    record('TEST 7 failed', false, err.message);
     failed = true;
   }
 

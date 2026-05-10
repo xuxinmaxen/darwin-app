@@ -109,10 +109,10 @@ export default function IntentForm({
             value={statement}
             onChange={e => setStatement(e.target.value)}
             disabled={isPending}
-            placeholder="说说你想要什么，可以尽情表达…"
+            placeholder="说说你想要什么，可以尽情表达… (Enter 提交 / Shift+Enter 换行)"
             rows={2}
             onKeyDown={e => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 submit();
               }
@@ -121,9 +121,12 @@ export default function IntentForm({
         </div>
         <div className="quickbar-foot">
           <span className="quickbar-hint">
-            <span className="kbd">⌘</span>
             <span className="kbd">↵</span>
             提交
+            <span className="quickbar-hint-sep">·</span>
+            <span className="kbd">⇧</span>
+            <span className="kbd">↵</span>
+            换行
           </span>
           <button
             type="button"

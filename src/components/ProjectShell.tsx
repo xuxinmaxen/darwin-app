@@ -145,6 +145,9 @@ export default function ProjectShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeThread, setActiveThread] = useState<Thread | null>(null);
   const [activeMessages, setActiveMessages] = useState<ThreadMessage[]>([]);
+  const [agentsThinkingInThread, setAgentsThinkingInThread] = useState<Set<string>>(
+    new Set()
+  );
 
   // 关联当前 thread 的 tension (内联仲裁需要)
   const activeThreadTension = useMemo(() => {
@@ -156,6 +159,25 @@ export default function ProjectShell({
     const res = await fetch(`/api/threads/${threadId}/messages`);
     const json = await res.json();
     if (json.ok) setActiveMessages(json.messages);
+  }
+
+  // tension 涉及的 agent 们各自 fire-and-forget 发一条 thread 消息;
+  // 全部落地后再统一 reload 一次消息列表。
+  function triggerAgentsInThread(threadId: string, agentIds: string[]) {
+    if (agentIds.length === 0) return;
+    setAgentsThinkingInThread(new Set(agentIds));
+    const inflight = agentIds.map(id =>
+      fetch(`/api/threads/${threadId}/agent-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentEmployeeId: id }),
+      }).catch(() => undefined)
+    );
+    Promise.allSettled(inflight).finally(() => {
+      setAgentsThinkingInThread(new Set());
+      // 拿最新消息 (含 agent 的发言)
+      void loadThreadMessages(threadId);
+    });
   }
 
   async function openDiscussion(args: {
@@ -245,6 +267,18 @@ export default function ProjectShell({
       setActiveThread(json.thread);
       setDrawerOpen(true);
       await loadThreadMessages(json.thread.id);
+
+      // tension 双方有 agent → fire-and-forget 让它在 thread 里发言
+      const involvedAgentIds = new Set<string>();
+      for (const intentId of tension.intentIds) {
+        const intent = intentById.get(intentId);
+        if (intent && intent.authorKind === 'agent') {
+          involvedAgentIds.add(intent.authorId);
+        }
+      }
+      if (involvedAgentIds.size > 0) {
+        triggerAgentsInThread(json.thread.id, Array.from(involvedAgentIds));
+      }
     } catch {
       // 静默
     }
@@ -344,6 +378,37 @@ export default function ProjectShell({
     poll(12000);
     return () => { cancelled = true; };
   }, [intents.length, project.id]);
+
+  // 抽屉打开 + thread 关联 active tension 时, 轮询 thread 状态:
+  // 因为 AI 共识检测可能在用户不点 A/B/C 的情况下自动 resolve,
+  // 客户端需要看到 thread.status 切到 resolved + 新 system 决议消息出现。
+  useEffect(() => {
+    if (!drawerOpen || !activeThread) return;
+    if (activeThread.status !== 'active' || !activeThread.tensionId) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const [tRes, mRes] = await Promise.all([
+          fetch(`/api/threads/${activeThread.id}`),
+          fetch(`/api/threads/${activeThread.id}/messages`),
+        ]);
+        const tJson = await tRes.json();
+        const mJson = await mRes.json();
+        if (cancelled) return;
+        if (mJson.ok) setActiveMessages(mJson.messages);
+        if (tJson.ok && tJson.thread.status === 'resolved') {
+          setActiveThread(tJson.thread);
+          // tension 也已经 resolve 了, 从 active list 摘掉
+          if (activeThread.tensionId) {
+            setActiveTensions(prev => prev.filter(t => t.id !== activeThread.tensionId));
+          }
+        }
+      } catch { /* 静默 */ }
+    };
+    const iv = setInterval(tick, 4000);
+    return () => { cancelled = true; clearInterval(iv); };
+  }, [drawerOpen, activeThread]);
 
   // 拉团队共识候选 (tension resolve 后 LLM 异步抽出, 5-15s 内会出现)
   useEffect(() => {
@@ -564,7 +629,7 @@ export default function ProjectShell({
               {activeTensions.length > 0 ? (
                 <>
                   检测到 <strong>{activeTensions.length}</strong> 个未决冲突 ·
-                  AI 已提议调和方案,等待团队仲裁
+                  AI 已提议调和方案,等待项目 Owner 拍板
                 </>
               ) : intents.length === 0 ? (
                 <>等待输入。所有人到齐后，AI 会把意图合成为产物。</>
@@ -624,6 +689,7 @@ export default function ProjectShell({
             messages={activeMessages}
             tension={activeThreadTension}
             employeeMap={employeeById}
+            agentsThinkingIds={agentsThinkingInThread}
             onClose={() => setDrawerOpen(false)}
             onSend={handleSendMessage}
             onResolveTension={handleDrawerResolveTension}

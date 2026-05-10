@@ -2257,22 +2257,36 @@ body {
   gap: 12px;
 }
 .tension-discuss-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 5px 10px; border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--text-2);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border-radius: 8px;
+  border: 1px solid var(--accent, #4F46E5);
+  background: var(--accent, #4F46E5);
+  color: #fff;
   cursor: pointer; font-family: inherit;
-  font-size: 11.5px; font-weight: 500;
+  font-size: 13px; font-weight: 600;
+  letter-spacing: -0.005em;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.20);
   transition: all 0.15s;
 }
 .tension-discuss-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent-text);
-  background: var(--accent-soft);
+  background: var(--accent-2, #4338CA);
+  border-color: var(--accent-2, #4338CA);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.30);
+  transform: translateY(-0.5px);
 }
+.tension-discuss-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .tension-discuss-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-.tension-discuss-btn svg { width: 11px; height: 11px; }
+.tension-discuss-btn svg { width: 14px; height: 14px; }
+.tension-card.agents .tension-discuss-btn {
+  border-color: #06B6D4;
+  background: #06B6D4;
+  box-shadow: 0 1px 2px rgba(6, 182, 212, 0.25);
+}
+.tension-card.agents .tension-discuss-btn:hover:not(:disabled) {
+  background: #0891B2;
+  border-color: #0891B2;
+  box-shadow: 0 2px 6px rgba(6, 182, 212, 0.35);
+}
 .tension-foot-hint {
   font-size: 10.5px; color: var(--text-3);
   font-style: italic;
@@ -2994,6 +3008,25 @@ body {
   background: transparent; border: 0; cursor: pointer;
   color: inherit; font-size: 14px; line-height: 1;
 }
+
+/* Drawer thinking — agent 在 thread 里思考要不要发言 */
+.drawer-thinking {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(6, 182, 212, 0.06), rgba(167, 139, 250, 0.06));
+  border: 1px dashed rgba(6, 182, 212, 0.30);
+  font-size: 11.5px; color: var(--text-2);
+  align-self: flex-start;
+  font-style: italic;
+}
+.drawer-thinking-pulse {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #06B6D4;
+  animation: thinking-pulse 1.4s ease-in-out infinite;
+}
+.drawer-thinking-text { letter-spacing: -0.005em; }
 
 /* Quickbar thinking 指示 — Agent 收到 trigger 在判断要不要接话 */
 .quickbar-thinking {

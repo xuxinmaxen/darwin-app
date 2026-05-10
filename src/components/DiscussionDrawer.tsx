@@ -27,6 +27,8 @@ type Props = {
   /** 该 thread 关联的 tension (如果有), 用于内联 A/B/C 仲裁 */
   tension?: Tension | null;
   employeeMap: Map<string, Employee>;
+  /** 当前正在 LLM 思考、即将在 thread 里发言的 agent.id 集合 */
+  agentsThinkingIds?: Set<string>;
   onClose: () => void;
   onSend: (body: string) => Promise<void>;
   onResolveTension: (selectedOptionKey: string) => Promise<void>;
@@ -40,6 +42,7 @@ export default function DiscussionDrawer({
   messages,
   tension,
   employeeMap,
+  agentsThinkingIds,
   onClose,
   onSend,
   onResolveTension,
@@ -158,12 +161,23 @@ export default function DiscussionDrawer({
             <MessageBubble key={m.id} message={m} employeeMap={employeeMap} />
           ))
         )}
+        {agentsThinkingIds && agentsThinkingIds.size > 0 && (
+          <div className="drawer-thinking">
+            <span className="drawer-thinking-pulse" />
+            <span className="drawer-thinking-text">
+              {Array.from(agentsThinkingIds)
+                .map(id => employeeMap.get(id)?.name ?? 'Agent')
+                .join(' / ')}{' '}
+              在看你们的讨论…
+            </span>
+          </div>
+        )}
       </div>
 
       {showTensionInlineOptions && tension && (
         <div className="drawer-options">
           <div className="drawer-options-label">
-            选一个方案直接定: AI 是调和者, 你是仲裁者
+            选一个方案直接定: AI 是调和者, 项目 Owner 拍板
           </div>
           <div className="drawer-options-grid">
             {tension.options.map(opt => (
@@ -200,11 +214,11 @@ export default function DiscussionDrawer({
           <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            placeholder="加入讨论…"
+            placeholder="加入讨论… (Enter 发送 / Shift+Enter 换行)"
             rows={2}
             disabled={sending}
             onKeyDown={e => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 handleSend();
               }

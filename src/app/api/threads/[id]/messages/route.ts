@@ -62,6 +62,21 @@ export async function POST(req: NextRequest, { params }: Params) {
       body: body.body,
       isDecision: body.isDecision,
     });
+
+    // fire-and-forget: 让 LLM 看 thread 是否已达成一致 (有 tension 才有意义)
+    if (thread.status === 'active' && thread.tensionId && !body.isDecision) {
+      setTimeout(() => {
+        import('@/lib/detect-consensus')
+          .then(m => m.detectConsensusForThread(threadId))
+          .then(r => {
+            if (r.ok && r.reached) {
+              console.info(`[consensus] thread ${threadId} → ${r.selectedKey}`);
+            }
+          })
+          .catch(err => console.warn('[consensus] failed:', err));
+      }, 0);
+    }
+
     revalidatePath(`/projects/${thread.projectId}`);
     return NextResponse.json({ ok: true, message }, { status: 201 });
   } catch (err) {

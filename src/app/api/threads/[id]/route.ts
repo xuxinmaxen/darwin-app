@@ -14,6 +14,15 @@ import { getThread, resolveThread, createMessage } from '@/lib/threads';
 
 type Params = { params: Promise<{ id: string }> };
 
+export async function GET(_req: NextRequest, { params }: Params) {
+  const { id } = await params;
+  const thread = await getThread(id);
+  if (!thread) {
+    return NextResponse.json({ ok: false, error: 'thread not found' }, { status: 404 });
+  }
+  return NextResponse.json({ ok: true, thread });
+}
+
 const Body = z.object({
   status: z.enum(['resolved']),
   closingNote: z.string().max(500).optional(),

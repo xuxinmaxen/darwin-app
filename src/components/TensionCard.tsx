@@ -205,7 +205,7 @@ export default function TensionCard({
           )}
         </button>
         <span className="tension-foot-hint">
-          AI 是调和者,人是仲裁者。决议会写入团队记忆。
+          AI 是调和者,项目 Owner 是决策者。决议会写入团队记忆。
         </span>
       </div>
     </div>

@@ -245,7 +245,9 @@ export default function NewProjectButton({
                         <div className="collab-group-label">真实员工</div>
                         {humans.map(emp => {
                           const twin = twinByHumanId.get(emp.id) ?? null;
-                          const offlineRecommend = !emp.isOnline && !!twin;
+                          // 真人在线 → 不显示数字分身入口 (本人就能参与, 别让用户多做选择)
+                          // 真人离线且有分身 → 显示并强推 (本人不在场, 让分身代为参与)
+                          const showTwin = !!twin && !emp.isOnline;
                           return (
                             <div key={emp.id} className="collab-cluster">
                               <CollabCheck
@@ -254,18 +256,14 @@ export default function NewProjectButton({
                                 onToggle={() => toggleCollab(emp.id)}
                                 disabled={isPending}
                               />
-                              {twin && (
+                              {showTwin && twin && (
                                 <CollabCheck
                                   emp={twin}
                                   checked={collaboratorIds.has(twin.id)}
                                   onToggle={() => toggleCollab(twin.id)}
                                   disabled={isPending}
-                                  variant={offlineRecommend ? 'twin-recommended' : 'twin'}
-                                  hint={
-                                    offlineRecommend
-                                      ? `${emp.name}离线,推荐让数字分身代为参与`
-                                      : `${emp.name} 的数字分身`
-                                  }
+                                  variant="twin-recommended"
+                                  hint={`${emp.name}离线,推荐让数字分身代为参与`}
                                 />
                               )}
                             </div>
