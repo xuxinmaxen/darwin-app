@@ -139,14 +139,100 @@ export async function getIntent(id: string): Promise<Intent | null> {
 
 export async function deleteIntent(
   id: string
-): Promise<{ projectId: string } | null> {
+): Promise<{ projectId: string; staleTensionIds: string[] } | null> {
   const conn = db();
   const row = conn
     .prepare('SELECT project_id FROM intents WHERE id = ?')
     .get(id) as { project_id: string } | undefined;
   if (!row) return null;
-  conn.prepare('DELETE FROM intents WHERE id = ?').run(id);
-  return { projectId: row.project_id };
+
+  // 找到所有引用该 intent 的 active tension (它们要随之撤销, 否则 UI 显 "?",
+  // arbitrate 跑挂)。删之前找,删之后处理 — 一并放在事务里。
+  const staleTensionIds: string[] = [];
+  const tx = conn.transaction(() => {
+    const tensionRows = conn
+      .prepare(
+        `SELECT id, intent_ids FROM tensions
+         WHERE project_id = ? AND status = 'active'`
+      )
+      .all(row.project_id) as { id: string; intent_ids: string }[];
+    for (const t of tensionRows) {
+      let ids: string[] = [];
+      try { ids = JSON.parse(t.intent_ids); } catch { /* ignore */ }
+      if (!ids.includes(id)) continue;
+      staleTensionIds.push(t.id);
+    }
+
+    // 删 intent
+    conn.prepare('DELETE FROM intents WHERE id = ?').run(id);
+
+    // 撤销受影响的 tension: status=resolved + 特殊 selectedOptionKey 'stale'
+    const now = nowISO();
+    for (const tid of staleTensionIds) {
+      conn
+        .prepare(
+          `UPDATE tensions
+           SET status = 'resolved',
+               resolution = ?,
+               resolved_at = ?
+           WHERE id = ?`
+        )
+        .run(
+          JSON.stringify({
+            selectedOptionKey: 'stale',
+            decidedBy: ['system'],
+            decidedAt: now,
+            threadId: null,
+          }),
+          now,
+          tid
+        );
+
+      // 关联 active thread 写撤销消息 + resolve
+      const threadRow = conn
+        .prepare(
+          `SELECT id FROM threads WHERE tension_id = ? AND status = 'active' LIMIT 1`
+        )
+        .get(tid) as { id: string } | undefined;
+      if (threadRow) {
+        conn
+          .prepare(
+            `INSERT INTO thread_messages
+              (id, thread_id, author_id, author_kind, body, is_decision, created_at)
+             VALUES (?, ?, 'system', 'system', ?, 1, ?)`
+          )
+          .run(
+            newId(),
+            threadRow.id,
+            '⚠️ 关联 Intent 已删除,冲突自动撤销。',
+            now
+          );
+        conn
+          .prepare(`UPDATE threads SET status='resolved', resolved_at=? WHERE id=?`)
+          .run(now, threadRow.id);
+      }
+    }
+
+    // 项目可能已无 active tension → 状态推回 collaborating
+    if (staleTensionIds.length > 0) {
+      const stillActive = conn
+        .prepare(
+          `SELECT COUNT(*) AS n FROM tensions WHERE project_id = ? AND status = 'active'`
+        )
+        .get(row.project_id) as { n: number };
+      if (stillActive.n === 0) {
+        conn
+          .prepare(
+            `UPDATE projects SET status = 'collaborating', updated_at = ?
+             WHERE id = ? AND status = 'tension'`
+          )
+          .run(now, row.project_id);
+      }
+    }
+  });
+  tx();
+
+  return { projectId: row.project_id, staleTensionIds };
 }
 
 /**

@@ -16,7 +16,11 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     const removed = await deleteIntent(id);
     revalidatePath('/');
     if (removed) revalidatePath(`/projects/${removed.projectId}`);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      // 客户端可据此 toast "X 个关联冲突已自动撤销"
+      staleTensionIds: removed?.staleTensionIds ?? [],
+    });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },

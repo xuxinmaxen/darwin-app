@@ -53,6 +53,14 @@ export async function POST(req: NextRequest, { params }: Params) {
       { status: 404 }
     );
   }
+  // 已收敛的 thread 不再续话 — 维持决议时间线干净。
+  // 想继续讨论可以开新 thread 或 (后续支持) reopen。
+  if (thread.status === 'resolved') {
+    return NextResponse.json(
+      { ok: false, error: '讨论已收敛,无法再发送新消息' },
+      { status: 409 }
+    );
+  }
 
   try {
     const message = await createMessage({
