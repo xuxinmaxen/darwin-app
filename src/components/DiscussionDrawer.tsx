@@ -30,6 +30,8 @@ type Props = {
   onClose: () => void;
   onSend: (body: string) => Promise<void>;
   onResolveTension: (selectedOptionKey: string) => Promise<void>;
+  /** 用户主动开的 thread (无 tension) 可以显式收敛。Tension thread 不走这条。 */
+  onResolveUserThread?: () => Promise<void>;
 };
 
 export default function DiscussionDrawer({
@@ -41,10 +43,12 @@ export default function DiscussionDrawer({
   onClose,
   onSend,
   onResolveTension,
+  onResolveUserThread,
 }: Props) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [resolving, setResolving] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,6 +92,24 @@ export default function DiscussionDrawer({
   const showTensionInlineOptions =
     tension && tension.status === 'active' && thread?.status === 'active';
   const isResolved = thread?.status === 'resolved';
+  const showUserThreadResolveButton =
+    !!onResolveUserThread &&
+    thread &&
+    thread.status === 'active' &&
+    !thread.tensionId;
+
+  async function handleResolveUserThread() {
+    if (!onResolveUserThread || closing) return;
+    setClosing(true);
+    setError(null);
+    try {
+      await onResolveUserThread();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setClosing(false);
+    }
+  }
 
   return (
     <aside className="thread-pane">
@@ -101,16 +123,29 @@ export default function DiscussionDrawer({
             {thread?.scope ? `scope · ${thread.scope}` : '团队讨论'}
           </div>
         </div>
-        <button
-          type="button"
-          className="drawer-close"
-          onClick={onClose}
-          title="关闭抽屉"
-        >
-          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" strokeLinecap="round" />
-          </svg>
-        </button>
+        <div className="drawer-head-actions">
+          {showUserThreadResolveButton && (
+            <button
+              type="button"
+              className="drawer-resolve-btn"
+              onClick={handleResolveUserThread}
+              disabled={closing}
+              title="标记此讨论已收敛"
+            >
+              {closing ? '收敛中…' : '标记已收敛'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="drawer-close"
+            onClick={onClose}
+            title="关闭抽屉"
+          >
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       <div className="drawer-list" ref={listRef}>

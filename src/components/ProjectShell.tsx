@@ -265,6 +265,21 @@ export default function ProjectShell({
     }
   }
 
+  async function handleResolveUserThread() {
+    if (!activeThread || activeThread.tensionId) return;
+    const res = await fetch(`/api/threads/${activeThread.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'resolved' }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || '收敛失败');
+    }
+    setActiveThread(prev => (prev ? { ...prev, status: 'resolved' } : prev));
+    await loadThreadMessages(activeThread.id);
+  }
+
   async function handleDrawerResolveTension(selectedOptionKey: string) {
     if (!activeThread?.tensionId) return;
     const res = await fetch(
@@ -612,6 +627,7 @@ export default function ProjectShell({
             onClose={() => setDrawerOpen(false)}
             onSend={handleSendMessage}
             onResolveTension={handleDrawerResolveTension}
+            onResolveUserThread={handleResolveUserThread}
           />
         )}
       </div>

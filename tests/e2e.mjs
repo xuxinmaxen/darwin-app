@@ -260,6 +260,40 @@ async function testUserInitiatedThread() {
     const r3 = await get(`/api/threads/${r1.json.thread.id}/messages`);
     assert.equal(r3.json.messages.length, 2);
     record('thread carries opening + user msg', true);
+
+    // 标记已收敛 (PATCH /threads/[id])
+    const r4 = await patch(`/api/threads/${r1.json.thread.id}`, {
+      status: 'resolved',
+      closingNote: '团队对齐: 三档定价',
+    });
+    assert.equal(r4.json.ok, true);
+    assert.equal(r4.json.thread.status, 'resolved');
+    record('PATCH user thread → resolved', true);
+
+    // 收敛后写入了 system 决议消息
+    const r5 = await get(`/api/threads/${r1.json.thread.id}/messages`);
+    const closing = r5.json.messages.find(m => m.isDecision);
+    assert.ok(closing, 'closing message must exist');
+    assert.equal(closing.body, '团队对齐: 三档定价');
+    record('closing note written as decision message', true);
+
+    // 已 resolved 再 PATCH → alreadyResolved = true
+    const r6 = await patch(`/api/threads/${r1.json.thread.id}`, { status: 'resolved' });
+    assert.equal(r6.json.alreadyResolved, true);
+    record('PATCH idempotent on resolved thread', true);
+
+    // 关联 tension 的 thread 不能走这条 — 用之前的 testAIArbitrate 已验证;
+    // 这里再加一个明确的边界: 创建带 tensionId (虚假 id 即可) 的 thread, 再 PATCH 应 400
+    const r7 = await post(`/api/projects/${proj.id}/threads`, {
+      scope: 'cta',
+      title: 'cta · tension-bound',
+      tensionId: 'fake-tension-id',
+      openingMessages: [{ authorId: 'system', authorKind: 'system', body: 'opener' }],
+    });
+    assert.equal(r7.json.ok, true);
+    const r8 = await patch(`/api/threads/${r7.json.thread.id}`, { status: 'resolved' });
+    assert.equal(r8.status, 400);
+    record('tension-bound thread rejects /threads PATCH (must use /resolve)', true);
   });
 }
 
