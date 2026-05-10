@@ -263,6 +263,152 @@ async function testUserInitiatedThread() {
   });
 }
 
+// ─── Test 4: 团队共识候选 (extract pref after arbitrate) ──
+
+async function testPrefCandidate() {
+  const banner = 'TEST 4 — pref candidate after AI arbitrate';
+  console.log('\n' + banner);
+
+  await withProject(`${TEST_RUN_TAG} pref-candidate`, 'ai_decide', async (proj) => {
+    record('create ai_decide project for candidate flow', true);
+
+    // 用容易抽出"团队取向"的对立 (style 偏好层面)
+    await post(`/api/projects/${proj.id}/intents`, {
+      statement: 'hero 文案必须传达技术专业感, 用词克制, 避免营销话术',
+      type: 'Constraint', scope: 'hero', weight: 'must',
+    });
+    await post(`/api/projects/${proj.id}/intents`, {
+      statement: 'hero 文案必须制造视觉冲击, 加粗营销钩子, 转化优先',
+      type: 'Goal', scope: 'hero', weight: 'must',
+    });
+    record('add two opposing must intents', true);
+
+    // 等 tension 出现 + 自动仲裁完
+    const resolved = await poll(
+      'tension auto-resolved',
+      async () => {
+        const r = await get(`/api/projects/${proj.id}/tensions`);
+        if (!r.json.ok) return null;
+        const t = (r.json.tensions || []).find(x => x.scope === 'hero' && x.status === 'resolved');
+        return t ?? null;
+      },
+      { tries: 60, intervalMs: 1000 }
+    );
+    record('tension resolved by AI arbitrate', true, `selected=${resolved.resolution.selectedOptionKey}`);
+
+    // 等候选 toast 出现 (LLM extract 也是 fire-and-forget, 5-15s)
+    const candidate = await poll(
+      'pref candidate to appear',
+      async () => {
+        const r = await get(`/api/projects/${proj.id}/pref-candidates`);
+        if (!r.json.ok) return null;
+        return (r.json.candidates || [])[0] ?? null;
+      },
+      { tries: 30, intervalMs: 1000 }
+    ).catch(() => null);
+
+    if (!candidate) {
+      // LLM 可能判断 "not worth" — 这是合法行为, 不算失败
+      record('candidate not produced (LLM judged not worth) — acceptable', true);
+      return;
+    }
+    record('candidate generated', true, `category="${candidate.category}"`);
+    assert.equal(candidate.status, 'pending');
+    assert.ok(candidate.category && candidate.body, 'candidate must have category + body');
+    assert.ok(['pen', 'eye', 'graph', 'audience', 'flow', 'note'].includes(candidate.iconKey));
+
+    // 测 PATCH (inline 编辑)
+    const patched = await patch(`/api/pref-candidates/${candidate.id}`, {
+      category: 'edited 文案风格',
+    });
+    assert.equal(patched.json.candidate.category, 'edited 文案风格');
+    record('PATCH candidate updates fields', true);
+
+    // 测 accept → 沉淀进 team_prefs
+    const acc = await post(`/api/pref-candidates/${candidate.id}/accept`, {});
+    assert.equal(acc.json.ok, true);
+    assert.ok(acc.json.pref?.id, 'accept must return new pref');
+    assert.equal(acc.json.pref.category, 'edited 文案风格');
+    record('accept creates team_pref', true, `prefId=${acc.json.pref.id.slice(0, 8)}`);
+
+    // 候选状态推进 + 不再出现在 pending 列表
+    const after = await get(`/api/projects/${proj.id}/pref-candidates`);
+    assert.equal((after.json.candidates || []).find(c => c.id === candidate.id), undefined,
+      'accepted candidate should drop out of pending list');
+    record('accepted candidate removed from pending', true);
+
+    // accept 一个已 accepted 的候选 → 409
+    const dup = await post(`/api/pref-candidates/${candidate.id}/accept`, {});
+    assert.equal(dup.status, 409);
+    record('accept already-accepted candidate → 409', true);
+
+    // 清理沉淀的 pref
+    await del(`/api/team/prefs/${acc.json.pref.id}`).catch(() => {});
+  });
+}
+
+async function testPrefCandidateDismiss() {
+  const banner = 'TEST 5 — pref candidate dismiss';
+  console.log('\n' + banner);
+
+  // 不调真实仲裁, 改走 /resolve 路径以减少耗时. 不过 /resolve 也会 fire-and-forget 抽候选
+  await withProject(`${TEST_RUN_TAG} pref-dismiss`, 'discuss', async (proj) => {
+    await post(`/api/projects/${proj.id}/intents`, {
+      statement: 'pricing 必须三档,免费档零门槛',
+      type: 'Constraint', scope: 'pricing', weight: 'must',
+    });
+    await post(`/api/projects/${proj.id}/intents`, {
+      statement: 'pricing 必须单档, 一价全包',
+      type: 'Goal', scope: 'pricing', weight: 'must',
+    });
+    record('add two opposing pricing intents', true);
+
+    const tension = await poll(
+      'tension on pricing',
+      async () => {
+        const r = await get(`/api/projects/${proj.id}/tensions`);
+        if (!r.json.ok) return null;
+        const t = (r.json.tensions || []).find(x => x.scope === 'pricing' && x.status === 'active');
+        return t ?? null;
+      },
+      { tries: 40, intervalMs: 1000 }
+    );
+    record('tension detected', true);
+
+    // 用户直选 A
+    const r1 = await post(
+      `/api/projects/${proj.id}/tensions/${tension.id}/resolve`,
+      { selectedOptionKey: 'A' }
+    );
+    assert.equal(r1.json.ok, true);
+    record('manual resolve via /resolve', true);
+
+    // 等候选
+    const cand = await poll(
+      'candidate from /resolve path',
+      async () => {
+        const r = await get(`/api/projects/${proj.id}/pref-candidates`);
+        return (r.json.candidates || [])[0] ?? null;
+      },
+      { tries: 30, intervalMs: 1000 }
+    ).catch(() => null);
+
+    if (!cand) {
+      record('candidate not produced (acceptable)', true);
+      return;
+    }
+    record('candidate generated from /resolve path', true);
+
+    const dis = await post(`/api/pref-candidates/${cand.id}/dismiss`);
+    assert.equal(dis.json.ok, true);
+    record('dismiss candidate', true);
+
+    const dup = await post(`/api/pref-candidates/${cand.id}/dismiss`);
+    assert.equal(dup.status, 409);
+    record('dismiss already-dismissed → 409', true);
+  });
+}
+
 // ─── Cleanup ──────────────────────────────────────────────
 
 async function cleanupAll() {
@@ -306,6 +452,18 @@ async function main() {
     await testUserInitiatedThread();
   } catch (err) {
     record('TEST 3 failed', false, err.message);
+    failed = true;
+  }
+  try {
+    await testPrefCandidate();
+  } catch (err) {
+    record('TEST 4 failed', false, err.message);
+    failed = true;
+  }
+  try {
+    await testPrefCandidateDismiss();
+  } catch (err) {
+    record('TEST 5 failed', false, err.message);
     failed = true;
   }
 

@@ -141,6 +141,24 @@ export type TeamPref = {
   updatedAt: string;
 };
 
+export type PrefCandidateStatus = 'pending' | 'accepted' | 'dismissed';
+
+export type PrefCandidate = {
+  id: string;
+  ownerId: string;
+  projectId: string;
+  tensionId?: string | null;
+  threadId?: string | null;
+  iconKey: TeamPrefIconKey;
+  category: string;
+  body: string;
+  sourceHint?: string | null;
+  status: PrefCandidateStatus;
+  acceptedPrefId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AgentLearning = {
   agentId: string;
   agentName: string;

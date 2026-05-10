@@ -32,6 +32,8 @@ import CelebrationModal from '@/components/CelebrationModal';
 import TensionCard from '@/components/TensionCard';
 import DiscussionDrawer from '@/components/DiscussionDrawer';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
+import PrefCandidateToast from '@/components/PrefCandidateToast';
+import type { PrefCandidate } from '@/lib/types';
 import type { Version } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
 import type { Tension, Thread, ThreadMessage } from '@/lib/types';
@@ -134,6 +136,7 @@ export default function ProjectShell({
   const [collabPanelOpen, setCollabPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [conflictMode, setConflictMode] = useState(project.conflictMode);
+  const [prefCandidates, setPrefCandidates] = useState<PrefCandidate[]>([]);
 
   // Tensions: 本地 state, 解决/检测出新的会更新
   const [activeTensions, setActiveTensions] = useState<Tension[]>(initialActiveTensions);
@@ -297,7 +300,7 @@ export default function ProjectShell({
       // Tension 解决后让 ProjectCanvas 检测到 intents 没变但需要重合成 — 现状是
       // canvas 自动合成基于 intent hash, tension 解决不变 hash。简化做法:
       // 直接 location.reload 让所有数据 (含 versions count) 都刷新一遍。
-      // 后续可优化为单独 trigger 一次 synthesize。
+      // 重载后 ProjectShell mount 会自动拉候选 (5s/12s/22s 三次轮询)
       window.location.reload();
     }
   };
@@ -326,6 +329,26 @@ export default function ProjectShell({
     poll(12000);
     return () => { cancelled = true; };
   }, [intents.length, project.id]);
+
+  // 拉团队共识候选 (tension resolve 后 LLM 异步抽出, 5-15s 内会出现)
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async (delayMs: number) => {
+      if (delayMs > 0) await new Promise(r => setTimeout(r, delayMs));
+      if (cancelled) return;
+      try {
+        const res = await fetch(`/api/projects/${project.id}/pref-candidates`);
+        const json = await res.json();
+        if (!cancelled && json.ok) setPrefCandidates(json.candidates);
+      } catch { /* 静默 */ }
+    };
+    // 立刻一次, 再 5s/12s/22s 各拉一次, 兜住 LLM 抽取的延迟窗口
+    tick(0);
+    tick(5_000);
+    tick(12_000);
+    tick(22_000);
+    return () => { cancelled = true; };
+  }, [project.id]);
   const employeeById = useMemo(() => {
     const m = new Map<string, Employee>();
     for (const e of collaboratorsState) m.set(e.id, e);
@@ -627,6 +650,23 @@ export default function ProjectShell({
           setCollabPanelOpen(false);
         }}
       />
+
+      {prefCandidates.length > 0 && (
+        <div className="pref-toast-stack">
+          {prefCandidates.map(c => (
+            <PrefCandidateToast
+              key={c.id}
+              candidate={c}
+              onAccepted={id =>
+                setPrefCandidates(prev => prev.filter(x => x.id !== id))
+              }
+              onDismissed={id =>
+                setPrefCandidates(prev => prev.filter(x => x.id !== id))
+              }
+            />
+          ))}
+        </div>
+      )}
 
       <ProjectSettingsPanel
         open={settingsOpen}

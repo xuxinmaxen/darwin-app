@@ -96,6 +96,16 @@ export async function POST(req: NextRequest, { params }: Params) {
       await resolveThread(threadId);
     }
 
+    // fire-and-forget: 让 LLM 看决议+讨论, 决定要不要弹"沉淀为团队共识"候选
+    setTimeout(() => {
+      import('@/lib/extract-pref-candidate')
+        .then(m => m.extractPrefCandidateForTension(tensionId))
+        .then(r => {
+          if (!r.ok) console.warn('[extract-pref] failed:', r.error);
+        })
+        .catch(err => console.warn('[extract-pref] threw:', err));
+    }, 0);
+
     revalidatePath(`/projects/${projectId}`);
     revalidatePath('/');
     return NextResponse.json({ ok: true, tension: resolved, threadId });

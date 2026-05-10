@@ -142,6 +142,27 @@ CREATE TABLE IF NOT EXISTS team_prefs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_team_prefs_owner ON team_prefs (owner_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS pref_candidates (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  tension_id TEXT,                 -- 软关联,tension 删了仍保留候选历史
+  thread_id TEXT,
+  icon_key TEXT NOT NULL,
+  category TEXT NOT NULL,
+  body TEXT NOT NULL,
+  source_hint TEXT,                -- e.g. "hero 冲突 v3 · AI 仲裁"
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','dismissed')),
+  accepted_pref_id TEXT,           -- 接受后写到 team_prefs.id, 反向追溯
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_pref_candidates_project_status
+  ON pref_candidates (project_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pref_candidates_tension
+  ON pref_candidates (tension_id);
 `;
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
