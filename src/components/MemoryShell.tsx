@@ -73,10 +73,13 @@ export default function MemoryShell({
   // Agent 学习画像 tag — 服务端渲染过来的可能是 stale 或 null;
   // 在 client 上对每个"intent 数量 > 上次抽取数量"或"tags===null"的 agent
   // fire-and-forget 触发一次 recompute, 拿到结果后局部 patch。
+  // 只对至少有 2 条 intent 的 agent 触发: <2 条根本不会出 tag, 不浪费 LLM。
   const [agentsState, setAgentsState] = useState<AgentLearning[]>(agents);
   useEffect(() => {
     const stale = agentsState.filter(
-      a => a.tags === null || a.intentsContributed !== a.tagsIntentCount
+      a =>
+        a.intentsContributed >= 2 &&
+        (a.tags === null || a.intentsContributed !== a.tagsIntentCount)
     );
     if (stale.length === 0) return;
     let cancelled = false;
@@ -292,7 +295,11 @@ export default function MemoryShell({
                         <div className="agent-info-role">{a.agentRole}</div>
                       </div>
                     </div>
-                    {a.tags === null ? (
+                    {a.intentsContributed < 2 ? (
+                      <div className="agent-tags agent-tags-empty">
+                        贡献 ≥2 条 Intent 后开始学习
+                      </div>
+                    ) : a.tags === null ? (
                       <div className="agent-tags agent-tags-loading">
                         <span className="agent-tag-skel" />
                         <span className="agent-tag-skel" />
@@ -304,13 +311,9 @@ export default function MemoryShell({
                           <span key={tag} className="agent-tag">{tag}</span>
                         ))}
                       </div>
-                    ) : a.intentsContributed >= 2 ? (
-                      <div className="agent-tags agent-tags-empty">
-                        暂未抽出稳定取向
-                      </div>
                     ) : (
                       <div className="agent-tags agent-tags-empty">
-                        贡献 ≥2 条 Intent 后开始学习
+                        暂未抽出稳定取向
                       </div>
                     )}
                     <div className="agent-stats">
