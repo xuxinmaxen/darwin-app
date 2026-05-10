@@ -636,6 +636,21 @@ body {
   margin-left: auto;
 }
 .intent-del-cancel:hover { background: var(--panel-2); color: var(--text); }
+.intent-discuss {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10.5px; color: var(--text-3);
+  background: transparent; border: 0; cursor: pointer;
+  padding: 2px 6px; border-radius: 5px;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.intent-discuss + .intent-del { margin-left: 0; }
+.intent-discuss:hover {
+  background: var(--accent-soft, rgba(79, 70, 229, 0.08));
+  color: var(--accent-text, #4F46E5);
+}
+.intent-discuss svg { width: 10px; height: 10px; }
 .intent.intent-confirming {
   border-color: #FECACA;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
@@ -2944,4 +2959,48 @@ body {
     box-shadow: 0 0 0 6px rgba(6, 182, 212, 0);
     opacity: 0.65;
   }
+}
+
+/* ── Project settings (顶栏齿轮 + 模态) ───────────────────── */
+.proj-settings-btn {
+  padding: 0 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.proj-settings-btn svg { width: 13px; height: 13px; }
+
+.proj-settings-panel { max-width: 460px; }
+.conflict-mode-picker {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+.cmode-opt {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer; font-family: inherit;
+  text-align: left;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.cmode-opt:hover:not(:disabled) {
+  border-color: var(--accent, #4F46E5);
+  background: var(--accent-soft, rgba(79, 70, 229, 0.05));
+}
+.cmode-opt.active {
+  border-color: var(--accent, #4F46E5);
+  background: var(--accent-soft, rgba(79, 70, 229, 0.06));
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.10);
+}
+.cmode-opt:disabled { opacity: 0.55; cursor: not-allowed; }
+.cmode-opt-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.cmode-opt-head svg { width: 13px; height: 13px; }
+.cmode-opt.active .cmode-opt-head { color: var(--accent-text, #4F46E5); }
+.cmode-opt-desc {
+  font-size: 11.5px; color: var(--text-2);
+  line-height: 1.55;
 }

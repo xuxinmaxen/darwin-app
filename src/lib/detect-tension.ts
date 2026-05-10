@@ -73,6 +73,7 @@ export async function detectTensionsForProject(
       },
       scope,
       intents: scopedIntents,
+      conflictMode: project.conflictMode,
     });
     if (ok) created += 1;
   }
@@ -95,6 +96,7 @@ async function detectScopeTension(args: {
   project: { name: string; type: 'html' | 'ppt' | 'doc' | 'design'; background: string | null };
   scope: string;
   intents: Intent[];
+  conflictMode: 'discuss' | 'ai_decide';
 }): Promise<boolean> {
   try {
     const out = await Promise.race([
@@ -123,13 +125,29 @@ async function detectScopeTension(args: {
         ? 'agents'
         : 'human';
 
-    await createTension({
+    const created = await createTension({
       projectId: args.intents[0].projectId,
       scope: args.scope,
       intentIds: [out.partyAIntentId, out.partyBIntentId],
       variant,
       options: out.options,
     });
+
+    // ai_decide 模式: 检测出 tension 后立刻 fire-and-forget 让 AI 仲裁
+    if (args.conflictMode === 'ai_decide') {
+      // 动态 import 避免 detect → arbitrate → detect 的循环引用风险
+      setTimeout(() => {
+        import('./arbitrate-tension')
+          .then(m => m.arbitrateTension(created.id))
+          .then(r => {
+            if (!r.ok) {
+              console.warn('[arbitrate-tension] auto run failed:', r.error);
+            }
+          })
+          .catch(err => console.warn('[arbitrate-tension] threw:', err));
+      }, 0);
+    }
+
     return true;
   } catch (err) {
     console.warn('[detect-tension] LLM path failed:', err);

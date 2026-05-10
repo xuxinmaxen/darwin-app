@@ -35,6 +35,7 @@ export default function IntentCard({
   isDimmed = false,
   onMouseEnter,
   onMouseLeave,
+  onDiscuss,
 }: {
   intent: Intent;
   /** lookup 出的作者; 找不到时按 authorKind fallback */
@@ -43,6 +44,8 @@ export default function IntentCard({
   isDimmed?: boolean;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  /** 围绕这条 Intent 发起讨论 (无 tension 关联) */
+  onDiscuss?: (intent: Intent) => void;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -107,6 +110,19 @@ export default function IntentCard({
             onClick={() => setConfirming(false)}
           >
             取消
+          </button>
+        )}
+        {onDiscuss && !confirming && (
+          <button
+            type="button"
+            className="intent-discuss"
+            onClick={() => onDiscuss(intent)}
+            title="围绕这条 Intent 发起讨论"
+          >
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5}>
+              <path d="M2 4.5a2.5 2.5 0 0 1 2.5-2.5h3A2.5 2.5 0 0 1 10 4.5v2A2.5 2.5 0 0 1 7.5 9H5L3 10.5V9a2.5 2.5 0 0 1-1-2v-2.5z" strokeLinejoin="round" />
+            </svg>
+            讨论
           </button>
         )}
         <button

@@ -31,6 +31,7 @@ import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import CelebrationModal from '@/components/CelebrationModal';
 import TensionCard from '@/components/TensionCard';
 import DiscussionDrawer from '@/components/DiscussionDrawer';
+import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 import type { Version } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
 import type { Tension, Thread, ThreadMessage } from '@/lib/types';
@@ -131,6 +132,8 @@ export default function ProjectShell({
   // 协作者: 本地 state, 面板修改后即时反映
   const [collaboratorsState, setCollaboratorsState] = useState<Employee[]>(collaborators);
   const [collabPanelOpen, setCollabPanelOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [conflictMode, setConflictMode] = useState(project.conflictMode);
 
   // Tensions: 本地 state, 解决/检测出新的会更新
   const [activeTensions, setActiveTensions] = useState<Tension[]>(initialActiveTensions);
@@ -150,6 +153,55 @@ export default function ProjectShell({
     const res = await fetch(`/api/threads/${threadId}/messages`);
     const json = await res.json();
     if (json.ok) setActiveMessages(json.messages);
+  }
+
+  async function openDiscussion(args: {
+    scope: string;
+    title: string;
+    tensionId?: string | null;
+    opening: string;
+  }) {
+    try {
+      const res = await fetch(`/api/projects/${project.id}/threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scope: args.scope,
+          title: args.title,
+          tensionId: args.tensionId ?? null,
+          openingMessages: [
+            {
+              authorId: 'system',
+              authorKind: 'system',
+              body: args.opening,
+            },
+          ],
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) return;
+      setActiveThread(json.thread);
+      setDrawerOpen(true);
+      await loadThreadMessages(json.thread.id);
+    } catch {
+      // 静默
+    }
+  }
+
+  function handleDiscussIntent(intent: Intent) {
+    const author = employeeById.get(intent.authorId);
+    const authorName = author?.name ?? '匿名';
+    const scopeHead = intent.scope.split('.')[0];
+    const opening = [
+      `**徐鑫** 在 **${intent.scope}** 区块发起讨论`,
+      '',
+      `围绕 **${authorName}** 的 Intent: ${intent.statement}`,
+    ].join('\n');
+    void openDiscussion({
+      scope: scopeHead === 'global' ? 'global' : scopeHead,
+      title: `${intent.scope} · 围绕 Intent 讨论`,
+      opening,
+    });
   }
 
   async function handleDiscussTension(tension: Tension) {
@@ -390,6 +442,18 @@ export default function ProjectShell({
 
         <button
           type="button"
+          className="ctrl proj-settings-btn"
+          title={`项目设置 · 冲突默认 ${conflictMode === 'ai_decide' ? 'AI 评分决策' : '开讨论'}`}
+          onClick={() => setSettingsOpen(true)}
+        >
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden>
+            <circle cx="7" cy="7" r="2.2" />
+            <path d="M7 1.4v1.4M7 11.2v1.4M1.4 7h1.4M11.2 7h1.4M3 3l1 1M10 10l1 1M3 11l1-1M10 4l1-1" strokeLinecap="round" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
           className="ws-user proj-collab proj-collab-topbar proj-collab-topbar-btn"
           title="管理协作者"
           onClick={() => setCollabPanelOpen(true)}
@@ -444,6 +508,7 @@ export default function ProjectShell({
                   isDimmed={anyHover && !(hoveredIntentId === i.id || intentHighlightSet.has(i.id))}
                   onMouseEnter={() => setHoveredIntentId(i.id)}
                   onMouseLeave={() => setHoveredIntentId(null)}
+                  onDiscuss={handleDiscussIntent}
                 />
               ))
             )}
@@ -490,7 +555,7 @@ export default function ProjectShell({
                   tension={t}
                   intentMap={intentById}
                   employeeMap={employeeById}
-                  conflictMode={project.conflictMode}
+                  conflictMode={conflictMode}
                   onResolved={handleTensionResolved}
                   onDiscuss={handleDiscussTension}
                 />
@@ -560,6 +625,18 @@ export default function ProjectShell({
         onSaved={next => {
           setCollaboratorsState(next);
           setCollabPanelOpen(false);
+        }}
+      />
+
+      <ProjectSettingsPanel
+        open={settingsOpen}
+        projectId={project.id}
+        projectName={project.name}
+        initialMode={conflictMode}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={mode => {
+          setConflictMode(mode);
+          setSettingsOpen(false);
         }}
       />
 

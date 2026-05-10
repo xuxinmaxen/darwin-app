@@ -6,9 +6,13 @@
  * 设计意图:
  *   - 不弹模态 (会盖住产物), 用 absolute 浮在画布右上方
  *   - 有 active tension 时常驻; 解决后消失
- *   - 用户可: 点 A/B/C 直接仲裁 / 开讨论 (v2 stage 2) / 让 AI 决策 (v2 stage 2)
+ *   - 用户可: 点 A/B/C 直接仲裁 / 开讨论 / 让 AI 仲裁 (取决于 conflictMode)
  *
- * 当前 v2 stage 1: 只支持直接选项 (开讨论/AI 决策需要讨论抽屉, 下个 commit)。
+ * conflictMode:
+ *   - 'discuss'    底栏 CTA = 开讨论 → 触发 onDiscuss (打开讨论抽屉)
+ *   - 'ai_decide'  底栏 CTA = 让 AI 评分决策 → 调 arbitrate endpoint
+ *                  ai_decide 模式下 detect-tension 也会 fire-and-forget 自动仲裁,
+ *                  这个按钮主要用作"自动仲裁失败/慢"的人工补救。
  */
 
 import { useState } from 'react';
@@ -22,8 +26,6 @@ type Props = {
   tension: Tension;
   intentMap: Map<string, Intent>;
   employeeMap: Map<string, Employee>;
-  /** 决定底部 CTA 是 "开讨论" (discuss) 还是 "AI 决策" (ai_decide)。本地未实现 ai_decide
-   *  时仍走开讨论流程, 但按钮文案匹配项目设置, 不让用户感觉设置无效。 */
   conflictMode: 'discuss' | 'ai_decide';
   onResolved: (tensionId: string) => void;
   onDiscuss: (tension: Tension) => void;
@@ -39,6 +41,7 @@ export default function TensionCard({
   onDiscuss,
 }: Props) {
   const [selecting, setSelecting] = useState<string | null>(null);
+  const [arbitrating, setArbitrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 双方信息 (从 intentMap 反查作者)
@@ -46,6 +49,8 @@ export default function TensionCard({
   const partyBIntent = intentMap.get(tension.intentIds[1]);
   const partyA = partyAIntent ? employeeMap.get(partyAIntent.authorId) : null;
   const partyB = partyBIntent ? employeeMap.get(partyBIntent.authorId) : null;
+
+  const isBusy = selecting !== null || arbitrating;
 
   async function chooseOption(optionKey: string) {
     setSelecting(optionKey);
@@ -69,6 +74,31 @@ export default function TensionCard({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSelecting(null);
+    }
+  }
+
+  async function handleFooterClick() {
+    if (conflictMode !== 'ai_decide') {
+      onDiscuss(tension);
+      return;
+    }
+    setArbitrating(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/projects/${projectId}/tensions/${tension.id}/arbitrate`,
+        { method: 'POST' }
+      );
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.error || `AI 仲裁失败 (${res.status})`);
+        return;
+      }
+      onResolved(tension.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setArbitrating(false);
     }
   }
 
@@ -129,7 +159,7 @@ export default function TensionCard({
               type="button"
               className="topt"
               onClick={() => chooseOption(opt.key)}
-              disabled={selecting !== null}
+              disabled={isBusy}
             >
               <span className="topt-key">{KEY_LABELS[i] ?? opt.key}</span>
               <span className="topt-body">
@@ -148,16 +178,23 @@ export default function TensionCard({
         <button
           type="button"
           className="tension-discuss-btn"
-          onClick={() => onDiscuss(tension)}
-          disabled={selecting !== null}
+          onClick={handleFooterClick}
+          disabled={isBusy}
         >
           {conflictMode === 'ai_decide' ? (
-            <>
-              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                <path d="M7 1.5L8.5 5l3.5 1.2-3.5 1.2L7 11l-1.5-3.5L2 6.2l3.5-1.2z" strokeLinejoin="round" />
-              </svg>
-              让 AI 评分决策
-            </>
+            arbitrating ? (
+              <>
+                <span className="topt-spinner" style={{ position: 'static', transform: 'none', borderTopColor: 'currentColor' }} />
+                AI 仲裁中…
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <path d="M7 1.5L8.5 5l3.5 1.2-3.5 1.2L7 11l-1.5-3.5L2 6.2l3.5-1.2z" strokeLinejoin="round" />
+                </svg>
+                让 AI 评分决策
+              </>
+            )
           ) : (
             <>
               <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
