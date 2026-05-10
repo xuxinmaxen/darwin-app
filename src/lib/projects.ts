@@ -124,12 +124,21 @@ type EmployeeRow = {
   cls: string;
   linked_human_id: string | null;
   is_online: number;
+  tags_json: string | null;
+  tags_intent_count: number;
   owner_id: string;
   created_at: string;
   updated_at: string;
 };
 
 function rowToEmployee(row: EmployeeRow): Employee {
+  let tags: string[] | null = null;
+  if (row.tags_json) {
+    try {
+      const parsed = JSON.parse(row.tags_json);
+      if (Array.isArray(parsed)) tags = parsed.filter(s => typeof s === 'string');
+    } catch { /* ignore */ }
+  }
   return {
     id: row.id,
     kind: row.kind,
@@ -141,6 +150,8 @@ function rowToEmployee(row: EmployeeRow): Employee {
     cls: row.cls,
     linkedHumanId: row.linked_human_id ?? null,
     isOnline: row.is_online !== 0,
+    tags,
+    tagsIntentCount: row.tags_intent_count ?? 0,
     ownerId: row.owner_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

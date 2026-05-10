@@ -10,7 +10,7 @@
  */
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sidebar } from '@/components/WorkspaceShell';
 import type {
   TeamPref,
@@ -69,6 +69,36 @@ export default function MemoryShell({
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Agent 学习画像 tag — 服务端渲染过来的可能是 stale 或 null;
+  // 在 client 上对每个"intent 数量 > 上次抽取数量"或"tags===null"的 agent
+  // fire-and-forget 触发一次 recompute, 拿到结果后局部 patch。
+  const [agentsState, setAgentsState] = useState<AgentLearning[]>(agents);
+  useEffect(() => {
+    const stale = agentsState.filter(
+      a => a.tags === null || a.intentsContributed !== a.tagsIntentCount
+    );
+    if (stale.length === 0) return;
+    let cancelled = false;
+    for (const a of stale) {
+      fetch(`/api/employees/${a.agentId}/recompute-tags`, { method: 'POST' })
+        .then(r => r.json())
+        .then(json => {
+          if (cancelled || !json.ok) return;
+          setAgentsState(prev =>
+            prev.map(x =>
+              x.agentId === a.agentId
+                ? { ...x, tags: json.tags, tagsIntentCount: json.intentCount }
+                : x
+            )
+          );
+        })
+        .catch(() => { /* 静默 */ });
+    }
+    return () => { cancelled = true; };
+    // 故意只在挂载 / agentsState 长度变化时跑, 避免 patch 自己触发死循环
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentsState.length]);
 
   function openNew() {
     setEditing(null);
@@ -243,14 +273,14 @@ export default function MemoryShell({
               </div>
             </div>
 
-            {agents.length === 0 ? (
+            {agentsState.length === 0 ? (
               <div className="proj-empty">
                 <strong>团队还没有 Agent</strong>
                 去 <Link href="/employees">员工管理</Link> 新增 Agent 或为真人配置数字分身。
               </div>
             ) : (
               <div className="memory-grid">
-                {agents.map(a => (
+                {agentsState.map(a => (
                   <div key={a.agentId} className="mem-card agent-card">
                     <div className="agent-meta">
                       <span className={`avatar ${a.agentCls} agent`}>{a.agentShort}</span>
@@ -262,6 +292,27 @@ export default function MemoryShell({
                         <div className="agent-info-role">{a.agentRole}</div>
                       </div>
                     </div>
+                    {a.tags === null ? (
+                      <div className="agent-tags agent-tags-loading">
+                        <span className="agent-tag-skel" />
+                        <span className="agent-tag-skel" />
+                        <span className="agent-tag-loading-text">学习画像计算中…</span>
+                      </div>
+                    ) : a.tags.length > 0 ? (
+                      <div className="agent-tags">
+                        {a.tags.map(tag => (
+                          <span key={tag} className="agent-tag">{tag}</span>
+                        ))}
+                      </div>
+                    ) : a.intentsContributed >= 2 ? (
+                      <div className="agent-tags agent-tags-empty">
+                        暂未抽出稳定取向
+                      </div>
+                    ) : (
+                      <div className="agent-tags agent-tags-empty">
+                        贡献 ≥2 条 Intent 后开始学习
+                      </div>
+                    )}
                     <div className="agent-stats">
                       <div className="agent-stat">
                         <span className="agent-stat-num">{a.projectsRead}</span>

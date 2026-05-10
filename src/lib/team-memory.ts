@@ -179,7 +179,7 @@ export async function listAgentLearning(
   // 取所有 agent 员工 (含数字分身)
   const agents = db()
     .prepare(
-      `SELECT id, name, role, cls, short, linked_human_id
+      `SELECT id, name, role, cls, short, linked_human_id, tags_json, tags_intent_count
        FROM employees
        WHERE owner_id = ? AND kind = 'agent'
        ORDER BY created_at ASC`
@@ -191,6 +191,8 @@ export async function listAgentLearning(
       cls: string;
       short: string;
       linked_human_id: string | null;
+      tags_json: string | null;
+      tags_intent_count: number | null;
     }[];
 
   const results: AgentLearning[] = [];
@@ -218,6 +220,15 @@ export async function listAgentLearning(
       )
       .get(a.id, a.id) as { n: number };
 
+    let tags: string[] | null = null;
+    if (a.tags_json) {
+      try {
+        const parsed = JSON.parse(a.tags_json);
+        if (Array.isArray(parsed)) {
+          tags = parsed.filter((s: unknown) => typeof s === 'string');
+        }
+      } catch { /* ignore */ }
+    }
     results.push({
       agentId: a.id,
       agentName: a.name,
@@ -228,6 +239,8 @@ export async function listAgentLearning(
       projectsRead: projects.n,
       intentsContributed: intents.n,
       tensionsTouched: tensions.n,
+      tags,
+      tagsIntentCount: a.tags_intent_count ?? 0,
     });
   }
   return results;

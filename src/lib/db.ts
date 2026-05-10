@@ -211,6 +211,16 @@ function ensureColumns(conn: Database.Database) {
     // 仅对真人有意义。Agent (含数字员工) 永远视作 online。
     conn.exec(`ALTER TABLE employees ADD COLUMN is_online INTEGER NOT NULL DEFAULT 1`);
   }
+  if (!empCols.some(c => c.name === 'tags_json')) {
+    // Agent 学习画像 — LLM 从它写过的 intent 抽出来的 ≤3 个短 tag,
+    // 例: ["视觉敏感", "数据驱动"]. JSON.stringify(string[]).
+    // 只对 agent 类有意义; human 行恒为 NULL。
+    conn.exec(`ALTER TABLE employees ADD COLUMN tags_json TEXT`);
+  }
+  if (!empCols.some(c => c.name === 'tags_intent_count')) {
+    // 上次抽 tags 时这个 agent 的 intent 数量, 用于判断是否需要重抽。
+    conn.exec(`ALTER TABLE employees ADD COLUMN tags_intent_count INTEGER NOT NULL DEFAULT 0`);
+  }
 }
 
 export function db(): Database.Database {

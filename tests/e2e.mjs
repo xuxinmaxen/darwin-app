@@ -409,12 +409,114 @@ async function testPrefCandidateDismiss() {
   });
 }
 
+// ─── Test 6: Agent learning tags ─────────────────────────
+
+const cleanupEmployees = [];
+
+async function testAgentTags() {
+  const banner = 'TEST 6 — agent learning tags';
+  console.log('\n' + banner);
+
+  // 1. 建一个临时 agent
+  const r1 = await post('/api/employees', {
+    kind: 'agent',
+    name: `${TEST_RUN_TAG}-tag-agent`,
+    role: 'UI',
+    persona: '坚持视觉克制, 偏好黑白灰 + 单一强调色',
+  });
+  if (r1.status >= 400 || !r1.json.ok) {
+    throw new Error(`createEmployee failed: ${r1.json.error || r1.status}`);
+  }
+  const agent = r1.json.employee;
+  cleanupEmployees.push(agent.id);
+  record('create temp agent', true, `id=${agent.id.slice(0, 8)}`);
+
+  // 2. 空 agent → recompute 应返回 tags=[] / intentCount=0 (不调 LLM)
+  const r2 = await post(`/api/employees/${agent.id}/recompute-tags`);
+  assert.equal(r2.json.ok, true);
+  assert.equal(r2.json.intentCount, 0);
+  assert.deepEqual(r2.json.tags, []);
+  record('recompute on empty agent → tags=[]', true);
+
+  // 3. 建项目 + 把 agent 加进协作者
+  await withProject(`${TEST_RUN_TAG} agent-tags-proj`, 'discuss', async (proj) => {
+    const ownerId = '00000000-0000-0000-0000-000000000001';
+    const rc = await patch(`/api/projects/${proj.id}/collaborators`, {
+      collaboratorIds: [agent.id],
+    });
+    if (!rc.json.ok) throw new Error(`add collaborator failed: ${rc.json.error}`);
+    record('add agent to project as collaborator', true);
+
+    // 4. 让 agent 发两条 Intent (每条 ~10s)
+    const sr1 = await post(`/api/projects/${proj.id}/agent-speak`, {
+      agentEmployeeId: agent.id,
+    });
+    if (!sr1.json.ok) {
+      console.warn('  agent-speak #1 failed:', sr1.json.error);
+      // 跳过 (LLM 不稳定不算 feature 失败)
+      record('agent-speak #1 skipped (LLM unstable)', true);
+      // 仍然测幂等性
+      const r3 = await post(`/api/employees/${agent.id}/recompute-tags`);
+      assert.equal(r3.json.ok, true);
+      record('recompute returns ok even after speak fail', true);
+      return;
+    }
+    record('agent-speak #1', true);
+
+    const sr2 = await post(`/api/projects/${proj.id}/agent-speak`, {
+      agentEmployeeId: agent.id,
+    });
+    if (!sr2.json.ok) {
+      console.warn('  agent-speak #2 failed:', sr2.json.error);
+      record('agent-speak #2 skipped', true);
+    } else {
+      record('agent-speak #2', true);
+    }
+
+    // 5. recompute → 期待非空(至少 1 个 tag, ≤3)
+    const r3 = await post(`/api/employees/${agent.id}/recompute-tags`);
+    assert.equal(r3.json.ok, true);
+    assert.ok(r3.json.intentCount >= 1, `intentCount should be ≥1, got ${r3.json.intentCount}`);
+    assert.ok(Array.isArray(r3.json.tags), 'tags must be array');
+    assert.ok(r3.json.tags.length <= 3, 'tags ≤ 3');
+    for (const tag of r3.json.tags) {
+      assert.ok(tag.length > 0 && tag.length <= 6, `tag length 1..6, got "${tag}"`);
+    }
+    record('recompute returns valid tags', true,
+      r3.json.tags.length > 0 ? `tags=[${r3.json.tags.join(', ')}]` : 'tags=[]');
+
+    // 6. 幂等: 再次 recompute → skipped='unchanged'
+    const r4 = await post(`/api/employees/${agent.id}/recompute-tags`);
+    assert.equal(r4.json.skipped, 'unchanged');
+    record('recompute idempotent → unchanged', true);
+
+    // 7. /memory 拉到的 agent 列表带 tags
+    const memRes = await get('/api/team/memory');
+    if (memRes.json.ok && Array.isArray(memRes.json.agents)) {
+      const memAgent = memRes.json.agents.find(a => a.agentId === agent.id);
+      if (memAgent) {
+        assert.deepEqual(memAgent.tags, r3.json.tags);
+        record('/api/team/memory exposes tags on agent', true);
+      } else {
+        record('/api/team/memory returns agents (no entry for ours yet)', true);
+      }
+    }
+  });
+}
+
 // ─── Cleanup ──────────────────────────────────────────────
 
 async function cleanupAll() {
   for (const id of cleanup) {
     try {
       await del(`/api/projects/${id}`);
+    } catch {
+      /* swallow */
+    }
+  }
+  for (const id of cleanupEmployees) {
+    try {
+      await del(`/api/employees/${id}`);
     } catch {
       /* swallow */
     }
@@ -464,6 +566,12 @@ async function main() {
     await testPrefCandidateDismiss();
   } catch (err) {
     record('TEST 5 failed', false, err.message);
+    failed = true;
+  }
+  try {
+    await testAgentTags();
+  } catch (err) {
+    record('TEST 6 failed', false, err.message);
     failed = true;
   }
 

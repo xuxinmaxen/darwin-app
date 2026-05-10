@@ -26,6 +26,10 @@ export type Employee = {
   linkedHumanId: string | null;
   /** 仅对真人有意义; Agent 总视作 online */
   isOnline: boolean;
+  /** 仅对 agent 有意义: LLM 从其 Intent 历史抽出的 ≤3 个学习 tag */
+  tags?: string[] | null;
+  /** 上次抽 tags 时的 intent 数量 (内部用,UI 不展示) */
+  tagsIntentCount: number;
   ownerId: string;
   createdAt: string;
   updatedAt: string;
@@ -42,6 +46,8 @@ type EmployeeRow = {
   cls: string;
   linked_human_id: string | null;
   is_online: number;
+  tags_json: string | null;
+  tags_intent_count: number;
   owner_id: string;
   created_at: string;
   updated_at: string;
@@ -59,6 +65,13 @@ const AGENT_PALETTE = [
 export const ROLE_OPTIONS = ['PM', 'UI', 'RD', '运营', '增长', '文案', 'CEO'];
 
 function rowToEmployee(row: EmployeeRow): Employee {
+  let tags: string[] | null = null;
+  if (row.tags_json) {
+    try {
+      const parsed = JSON.parse(row.tags_json);
+      if (Array.isArray(parsed)) tags = parsed.filter(s => typeof s === 'string');
+    } catch { /* ignore corrupt */ }
+  }
   return {
     id: row.id,
     kind: row.kind,
@@ -71,6 +84,8 @@ function rowToEmployee(row: EmployeeRow): Employee {
     linkedHumanId: row.linked_human_id ?? null,
     // SQLite 0/1 → boolean
     isOnline: row.is_online !== 0,
+    tags,
+    tagsIntentCount: row.tags_intent_count ?? 0,
     ownerId: row.owner_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -215,6 +230,8 @@ export async function createEmployee(
         cls: digitalCls,
         linkedHumanId: id,
         isOnline: true,
+        tags: null,
+        tagsIntentCount: 0,
         ownerId: input.ownerId,
         createdAt: now,
         updatedAt: now,

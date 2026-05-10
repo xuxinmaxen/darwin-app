@@ -169,6 +169,10 @@ export type AgentLearning = {
   projectsRead: number;
   intentsContributed: number;
   tensionsTouched: number;     // 卷入的冲突数
+  /** LLM 抽出的学习画像 tag (≤3 个), 还没算就为 null (UI 据此触发重算) */
+  tags: string[] | null;
+  /** 上次抽 tag 时的 intent 数量, UI 据此判断是否过期 */
+  tagsIntentCount: number;
 };
 
 export type MemoryEventKind = 'consensus' | 'agent-event' | 'onboarding';
