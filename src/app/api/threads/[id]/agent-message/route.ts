@@ -162,6 +162,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     isDecision: false,
   });
 
+  // agent 发言可能就是凑成共识的"第二个表态" — fire-and-forget 检测
+  if (thread.tensionId) {
+    setTimeout(() => {
+      import('@/lib/detect-consensus')
+        .then(m => m.detectConsensusForThread(threadId))
+        .catch(err => console.warn('[consensus after agent-message] failed:', err));
+    }, 0);
+  }
+
   revalidatePath(`/projects/${thread.projectId}`);
   return NextResponse.json({ ok: true, said: true, message });
 }

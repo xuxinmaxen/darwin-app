@@ -74,7 +74,10 @@ export async function POST(req: Request, { params }: Params) {
       stats: {
         intents: intents.length,
         intentIds: published.intentIds.length,
-        consensusCount: tensions.filter(t => t.status === 'resolved').length,
+        // 'stale' 是 Intent 撤回触发的自动撤销, 不是真共识
+        consensusCount: tensions.filter(
+          t => t.status === 'resolved' && t.resolution?.selectedOptionKey !== 'stale'
+        ).length,
         contributorCount: collaborators.length,
       },
     });
