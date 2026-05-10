@@ -1041,6 +1041,9 @@ body {
 @keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
 .modal-panel {
   width: 100%; max-width: 480px;
+  /* 关键: 高度封顶到视窗内, 让 head/foot 始终可见, 中间 body 滚动 */
+  max-height: calc(100vh - 48px);
+  display: flex; flex-direction: column; min-height: 0;
   background: var(--panel); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-3);
   overflow: hidden;
@@ -1053,15 +1056,22 @@ body {
 .modal-head {
   padding: 18px 22px 12px;
   border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
 }
 .modal-title { font-size: 16px; font-weight: 600; letter-spacing: -0.012em; margin: 0 0 2px; }
 .modal-sub { font-size: 12px; color: var(--text-3); margin: 0; }
-.modal-body { padding: 18px 22px; display: flex; flex-direction: column; gap: 16px; }
+.modal-body {
+  padding: 18px 22px;
+  display: flex; flex-direction: column; gap: 16px;
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto;
+}
 .modal-foot {
   padding: 14px 22px;
   border-top: 1px solid var(--line);
   display: flex; justify-content: flex-end; gap: 8px;
   background: var(--panel-2);
+  flex-shrink: 0;
 }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-label {
@@ -1105,6 +1115,7 @@ body {
   background: #FEF2F2; color: #B91C1C;
   font-size: 11.5px; line-height: 1.5;
   border: 1px solid #FECACA;
+  flex-shrink: 0;
 }
 
 /* ===================================================================
