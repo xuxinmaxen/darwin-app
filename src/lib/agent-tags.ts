@@ -47,14 +47,11 @@ export async function recomputeAgentTags(
   }
 
   // 拉 agent 写过的 intent (按时间正序)
-  const rows = db()
-    .prepare(
-      `SELECT statement, scope, type, weight
-       FROM intents
-       WHERE author_id = ? AND author_kind = 'agent'
-       ORDER BY created_at ASC`
-    )
-    .all(agentId) as AgentTagsInput['intents'];
+  const { data: intentData } = await db().from('intents')
+    .select('statement, scope, type, weight')
+    .eq('author_id', agentId).eq('author_kind', 'agent')
+    .order('created_at', { ascending: true });
+  const rows = (intentData ?? []) as AgentTagsInput['intents'];
   const intentCount = rows.length;
 
   // intent 没变化 → 不重算 (省 LLM 调用)
@@ -127,13 +124,12 @@ export async function recomputeAgentTags(
 }
 
 function writeTags(agentId: string, tags: string[], intentCount: number) {
-  db()
-    .prepare(
-      `UPDATE employees
-       SET tags_json = ?, tags_intent_count = ?, updated_at = ?
-       WHERE id = ?`
-    )
-    .run(JSON.stringify(tags), intentCount, nowISO(), agentId);
+  // fire-and-forget — we don't await here (caller is also fire-and-forget)
+  db().from('employees').update({
+    tags_json: JSON.stringify(tags),
+    tags_intent_count: intentCount,
+    updated_at: nowISO(),
+  }).eq('id', agentId).then(() => { /* ignore */ });
 }
 
 function timeout(ms: number): Promise<never> {

@@ -80,13 +80,10 @@ export async function detectTensionsForProject(
 
   // 有 active tension → project status = 'tension'
   if (created > 0) {
-    db()
-      .prepare(
-        `UPDATE projects SET status = 'tension', updated_at = ?
-         WHERE id = ?
-           AND status IN ('draft', 'collaborating')`
-      )
-      .run(new Date().toISOString(), projectId);
+    await db().from('projects')
+      .update({ status: 'tension', updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+      .in('status', ['draft', 'collaborating']);
   }
 
   return { created };
@@ -165,11 +162,9 @@ function timeout(ms: number): Promise<never> {
 export async function maybeBackToCollaborating(projectId: string): Promise<void> {
   const active = await listActiveTensions(projectId);
   if (active.length === 0) {
-    db()
-      .prepare(
-        `UPDATE projects SET status = 'collaborating', updated_at = ?
-         WHERE id = ? AND status = 'tension'`
-      )
-      .run(new Date().toISOString(), projectId);
+    await db().from('projects')
+      .update({ status: 'collaborating', updated_at: new Date().toISOString() })
+      .eq('id', projectId)
+      .eq('status', 'tension');
   }
 }

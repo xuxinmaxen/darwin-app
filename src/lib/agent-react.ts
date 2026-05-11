@@ -77,12 +77,10 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
   }
 
   // 同 agent 不重复 react 同一 trigger (前端 fan-out 和后端 fan-out 可能重叠)
-  const dup = db()
-    .prepare(
-      `SELECT 1 FROM intents WHERE author_id = ? AND trigger_intent_id = ? LIMIT 1`
-    )
-    .get(agent.id, triggerIntent.id);
-  if (dup) {
+  const { data: dupData } = await db()
+    .from('intents').select('id').eq('author_id', agent.id)
+    .eq('trigger_intent_id', triggerIntent.id).limit(1).maybeSingle();
+  if (dupData) {
     return { ok: true, reaction: 'silent', reason: 'already-reacted' };
   }
 

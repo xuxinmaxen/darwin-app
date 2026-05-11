@@ -1,283 +1,150 @@
-/**
- * Project queries — 走本地 SQLite (lib/db.ts)。
- *
- * Server-only。永远不要从 Client Component 引。
- */
-
-import { db, newId, nowISO } from './db';
-import type {
-  Project,
-  ProjectType,
-  ConflictMode,
-  ProjectStatus,
-} from './types';
+import { db, assertOk, newId, nowISO } from './db';
+import type { Project, ProjectType, ConflictMode, ProjectStatus } from './types';
 import type { Employee } from './employees';
 
-// ─── DB row → Project shape ────────────────────────────────
-
 type ProjectRow = {
-  id: string;
-  name: string;
-  type: string;
-  background: string | null;
-  conflict_mode: string;
-  status: string;
-  owner_id: string;
-  created_at: string;
-  updated_at: string;
+  id: string; name: string; type: string; background: string | null;
+  conflict_mode: string; status: string; owner_id: string;
+  created_at: string; updated_at: string;
 };
 
 function rowToProject(row: ProjectRow): Project {
   return {
-    id: row.id,
-    name: row.name,
-    type: row.type as ProjectType,
-    background: row.background,
-    conflictMode: row.conflict_mode as ConflictMode,
-    status: row.status as ProjectStatus,
-    ownerId: row.owner_id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: row.id, name: row.name, type: row.type as ProjectType,
+    background: row.background, conflictMode: row.conflict_mode as ConflictMode,
+    status: row.status as ProjectStatus, ownerId: row.owner_id,
+    createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
-// ─── Queries ───────────────────────────────────────────────
-
-export async function listProjects(ownerId?: string): Promise<Project[]> {
-  const conn = db();
-  const sql = ownerId
-    ? `SELECT * FROM projects WHERE owner_id = ? ORDER BY updated_at DESC`
-    : `SELECT * FROM projects ORDER BY updated_at DESC`;
-  const rows = (
-    ownerId ? conn.prepare(sql).all(ownerId) : conn.prepare(sql).all()
-  ) as ProjectRow[];
-  return rows.map(rowToProject);
-}
-
-export async function getProject(id: string): Promise<Project | null> {
-  const row = db()
-    .prepare('SELECT * FROM projects WHERE id = ?')
-    .get(id) as ProjectRow | undefined;
-  return row ? rowToProject(row) : null;
-}
-
-export type CreateProjectInput = {
-  name: string;
-  type: ProjectType;
-  background?: string | null;
-  conflictMode?: ConflictMode;
-  ownerId: string;
-  /** 额外协作者 (owner 自动加入,不需要重复传) */
-  collaboratorIds?: string[];
-};
-
-export async function createProject(
-  input: CreateProjectInput
-): Promise<Project> {
-  const id = newId();
-  const now = nowISO();
-  // owner 默认是协作者; 去重后插
-  const allCollabs = Array.from(
-    new Set([input.ownerId, ...(input.collaboratorIds ?? [])])
-  );
-  const conn = db();
-  const tx = conn.transaction(() => {
-    conn
-      .prepare(
-        `INSERT INTO projects (id, name, type, background, conflict_mode, status, owner_id, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`
-      )
-      .run(
-        id,
-        input.name,
-        input.type,
-        input.background ?? null,
-        input.conflictMode ?? 'discuss',
-        input.ownerId,
-        now,
-        now
-      );
-    const insertCollab = conn.prepare(
-      `INSERT OR IGNORE INTO project_collaborators (project_id, employee_id, added_at)
-       VALUES (?, ?, ?)`
-    );
-    for (const empId of allCollabs) {
-      insertCollab.run(id, empId, now);
-    }
-  });
-  tx();
-  const created = await getProject(id);
-  if (!created) throw new Error('createProject: insert succeeded but read failed');
-  return created;
-}
-
-// ─── Collaborators ─────────────────────────────────────────
-
 type EmployeeRow = {
-  id: string;
-  kind: 'human' | 'agent';
-  name: string;
-  short: string;
-  role: string;
-  email: string | null;
-  persona: string | null;
-  cls: string;
-  linked_human_id: string | null;
-  is_online: number;
-  tags_json: string | null;
-  tags_intent_count: number;
-  owner_id: string;
-  created_at: string;
-  updated_at: string;
+  id: string; kind: 'human' | 'agent'; name: string; short: string;
+  role: string; email: string | null; persona: string | null; cls: string;
+  linked_human_id: string | null; is_online: number; tags_json: string | null;
+  tags_intent_count: number; owner_id: string; created_at: string; updated_at: string;
 };
 
 function rowToEmployee(row: EmployeeRow): Employee {
   let tags: string[] | null = null;
   if (row.tags_json) {
-    try {
-      const parsed = JSON.parse(row.tags_json);
-      if (Array.isArray(parsed)) tags = parsed.filter(s => typeof s === 'string');
-    } catch { /* ignore */ }
+    try { const p = JSON.parse(row.tags_json); if (Array.isArray(p)) tags = p.filter((s: unknown) => typeof s === 'string'); } catch { /* ignore */ }
   }
   return {
-    id: row.id,
-    kind: row.kind,
-    name: row.name,
-    short: row.short,
-    role: row.role,
-    email: row.email,
-    persona: row.persona,
-    cls: row.cls,
-    linkedHumanId: row.linked_human_id ?? null,
-    isOnline: row.is_online !== 0,
-    tags,
-    tagsIntentCount: row.tags_intent_count ?? 0,
-    ownerId: row.owner_id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id: row.id, kind: row.kind, name: row.name, short: row.short, role: row.role,
+    email: row.email, persona: row.persona, cls: row.cls,
+    linkedHumanId: row.linked_human_id ?? null, isOnline: row.is_online !== 0,
+    tags, tagsIntentCount: row.tags_intent_count ?? 0,
+    ownerId: row.owner_id, createdAt: row.created_at, updatedAt: row.updated_at,
   };
 }
 
-export async function listCollaborators(projectId: string): Promise<Employee[]> {
-  const rows = db()
-    .prepare(
-      `SELECT e.* FROM employees e
-       JOIN project_collaborators pc ON pc.employee_id = e.id
-       WHERE pc.project_id = ?
-       ORDER BY pc.added_at ASC`
-    )
-    .all(projectId) as EmployeeRow[];
-  return rows.map(rowToEmployee);
+export async function listProjects(ownerId?: string): Promise<Project[]> {
+  const q = db().from('projects').select('*').order('updated_at', { ascending: false });
+  const result = ownerId ? await q.eq('owner_id', ownerId) : await q;
+  return assertOk(result).map(rowToProject);
 }
 
-/** 批量: 给一组 projectId 一次性拉所有 collaborators, 返回 Map<projectId, Employee[]> */
+export async function getProject(id: string): Promise<Project | null> {
+  const { data, error } = await db().from('projects').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? rowToProject(data as ProjectRow) : null;
+}
+
+export type CreateProjectInput = {
+  name: string; type: ProjectType; background?: string | null;
+  conflictMode?: ConflictMode; ownerId: string; collaboratorIds?: string[];
+};
+
+export async function createProject(input: CreateProjectInput): Promise<Project> {
+  const id = newId();
+  const now = nowISO();
+  const allCollabs = Array.from(new Set([input.ownerId, ...(input.collaboratorIds ?? [])]));
+  assertOk(await db().from('projects').insert({
+    id, name: input.name, type: input.type, background: input.background ?? null,
+    conflict_mode: input.conflictMode ?? 'discuss', status: 'draft',
+    owner_id: input.ownerId, created_at: now, updated_at: now,
+  }));
+  if (allCollabs.length > 0) {
+    assertOk(await db().from('project_collaborators').insert(
+      allCollabs.map(empId => ({ project_id: id, employee_id: empId, added_at: now }))
+    ));
+  }
+  const created = await getProject(id);
+  if (!created) throw new Error('createProject: read failed after insert');
+  return created;
+}
+
+export async function listCollaborators(projectId: string): Promise<Employee[]> {
+  const { data, error } = await db()
+    .from('project_collaborators')
+    .select('employee_id, employees(*)')
+    .eq('project_id', projectId)
+    .order('added_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map((r: { employees: unknown }) => rowToEmployee(r.employees as EmployeeRow));
+}
+
 export async function listCollaboratorsByProjects(
   projectIds: string[]
 ): Promise<Map<string, Employee[]>> {
   const result = new Map<string, Employee[]>();
+  for (const id of projectIds) result.set(id, []);
   if (projectIds.length === 0) return result;
-  const placeholders = projectIds.map(() => '?').join(',');
-  const rows = db()
-    .prepare(
-      `SELECT pc.project_id AS pid, e.* FROM employees e
-       JOIN project_collaborators pc ON pc.employee_id = e.id
-       WHERE pc.project_id IN (${placeholders})
-       ORDER BY pc.added_at ASC`
-    )
-    .all(...projectIds) as (EmployeeRow & { pid: string })[];
-  for (const row of rows) {
-    const list = result.get(row.pid) ?? [];
-    list.push(rowToEmployee(row));
-    result.set(row.pid, list);
-  }
-  for (const id of projectIds) {
-    if (!result.has(id)) result.set(id, []);
+  const { data, error } = await db()
+    .from('project_collaborators')
+    .select('project_id, employees(*)')
+    .in('project_id', projectIds)
+    .order('added_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  for (const row of (data ?? []) as { project_id: string; employees: unknown }[]) {
+    const list = result.get(row.project_id) ?? [];
+    list.push(rowToEmployee(row.employees as EmployeeRow));
+    result.set(row.project_id, list);
   }
   return result;
 }
 
 export async function setCollaborators(
-  projectId: string,
-  ownerId: string,
-  collaboratorIds: string[]
+  projectId: string, ownerId: string, collaboratorIds: string[]
 ): Promise<void> {
   const all = Array.from(new Set([ownerId, ...collaboratorIds]));
   const now = nowISO();
-  const conn = db();
-  const tx = conn.transaction(() => {
-    conn.prepare(`DELETE FROM project_collaborators WHERE project_id = ?`).run(projectId);
-    const ins = conn.prepare(
-      `INSERT OR IGNORE INTO project_collaborators (project_id, employee_id, added_at)
-       VALUES (?, ?, ?)`
-    );
-    for (const empId of all) ins.run(projectId, empId, now);
-  });
-  tx();
+  assertOk(await db().from('project_collaborators').delete().eq('project_id', projectId));
+  if (all.length > 0) {
+    assertOk(await db().from('project_collaborators').insert(
+      all.map(empId => ({ project_id: projectId, employee_id: empId, added_at: now }))
+    ));
+  }
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  db().prepare('DELETE FROM projects WHERE id = ?').run(id);
+  assertOk(await db().from('projects').delete().eq('id', id));
 }
 
 export type UpdateProjectInput = {
-  name?: string;
-  background?: string | null;
-  status?: ProjectStatus;
-  conflictMode?: ConflictMode;
+  name?: string; background?: string | null; status?: ProjectStatus; conflictMode?: ConflictMode;
 };
 
-export async function updateProject(
-  id: string,
-  input: UpdateProjectInput
-): Promise<Project> {
-  const fields: string[] = [];
-  const values: unknown[] = [];
-  if (input.name !== undefined) {
-    fields.push('name = ?');
-    values.push(input.name);
-  }
-  if (input.background !== undefined) {
-    fields.push('background = ?');
-    values.push(input.background);
-  }
-  if (input.status !== undefined) {
-    fields.push('status = ?');
-    values.push(input.status);
-  }
-  if (input.conflictMode !== undefined) {
-    fields.push('conflict_mode = ?');
-    values.push(input.conflictMode);
-  }
-  fields.push('updated_at = ?');
-  values.push(nowISO());
-
-  values.push(id);
-  db()
-    .prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`)
-    .run(...values);
-
+export async function updateProject(id: string, input: UpdateProjectInput): Promise<Project> {
+  const patch: Record<string, unknown> = { updated_at: nowISO() };
+  if (input.name !== undefined) patch.name = input.name;
+  if (input.background !== undefined) patch.background = input.background;
+  if (input.status !== undefined) patch.status = input.status;
+  if (input.conflictMode !== undefined) patch.conflict_mode = input.conflictMode;
+  assertOk(await db().from('projects').update(patch).eq('id', id));
   const updated = await getProject(id);
-  if (!updated) throw new Error(`updateProject(${id}): row not found after update`);
+  if (!updated) throw new Error(`updateProject(${id}): not found after update`);
   return updated;
 }
 
-/** 项目从 draft 跳到 collaborating 的轻量 hook —— 写第一条 Intent 时调一下。 */
 export async function bumpToCollaborating(id: string): Promise<void> {
-  db()
-    .prepare(
-      `UPDATE projects
-       SET status = 'collaborating', updated_at = ?
-       WHERE id = ? AND status = 'draft'`
-    )
-    .run(nowISO(), id);
+  await db().from('projects')
+    .update({ status: 'collaborating', updated_at: nowISO() })
+    .eq('id', id).eq('status', 'draft');
 }
 
 export async function markPublished(id: string): Promise<void> {
-  db()
-    .prepare(
-      `UPDATE projects
-       SET status = 'published', updated_at = ?
-       WHERE id = ?`
-    )
-    .run(nowISO(), id);
+  await db().from('projects')
+    .update({ status: 'published', updated_at: nowISO() })
+    .eq('id', id);
 }

@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   // 补数字分身 (仅 human + withDigital=true)
   let digital = null;
   if (updated.kind === 'human' && patch.withDigital === true) {
-    digital = await ensureDigitalForHuman(id);
+    digital = await ensureDigitalForHuman(updated);
   } else if (updated.kind === 'human') {
     digital = await findDigitalForHuman(id);
   }
@@ -94,12 +94,6 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     );
   }
   const result = await deleteEmployee(id);
-  if (!result.ok) {
-    return NextResponse.json(
-      { ok: false, error: 'employee not found' },
-      { status: 404 }
-    );
-  }
   revalidatePath('/employees');
   return NextResponse.json({
     ok: true,
