@@ -264,10 +264,11 @@ export default function ProjectShell({
     const author = employeeById.get(intent.authorId);
     const authorName = author?.name ?? '匿名';
     const scopeHead = intent.scope.split('.')[0];
+    const initiatorName = currentUser?.name ?? '项目 Owner';
     const opening = [
-      `**徐鑫** 在 **${intent.scope}** 区块发起讨论`,
+      `**${initiatorName}** 在 **${intent.scope}** 区块发起讨论`,
       '',
-      `围绕 **${authorName}** 的 Intent: ${intent.statement}`,
+      `围绕 **${authorName}** 的意图: ${intent.statement}`,
     ].join('\n');
     void openDiscussion({
       scope: scopeHead === 'global' ? 'global' : scopeHead,
@@ -674,7 +675,12 @@ export default function ProjectShell({
           </div>
 
           <AgentSpeakBar projectId={project.id} agents={agentCollaborators} />
-          <IntentForm projectId={project.id} agents={agentCollaborators} />
+          <IntentForm
+            projectId={project.id}
+            agents={agentCollaborators}
+            currentUserCls={currentUser?.cls ?? 'xu'}
+            currentUserShort={currentUser?.short ?? '我'}
+          />
         </aside>
 
         {/* CENTER: CANVAS */}
@@ -771,6 +777,7 @@ export default function ProjectShell({
             tension={activeThreadTension}
             employeeMap={employeeById}
             agentsThinkingIds={agentsThinkingInThread}
+            currentUser={currentUser}
             onClose={() => setDrawerOpen(false)}
             onSend={handleSendMessage}
             onResolveTension={handleDrawerResolveTension}

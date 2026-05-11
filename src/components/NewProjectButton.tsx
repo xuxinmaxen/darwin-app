@@ -67,8 +67,11 @@ function CollabCheck({
 
 export default function NewProjectButton({
   employees,
+  currentUserId,
 }: {
   employees: Employee[];
+  /** 当前登录用户 id,用于过滤协作者列表 */
+  currentUserId?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -161,7 +164,8 @@ export default function NewProjectButton({
   }
 
   // owner 之外可勾选的员工 (owner 默认在,不渲染)
-  const selectable = employees.filter(e => e.id !== OWNER_ID);
+  const ownerId = currentUserId ?? OWNER_ID;
+  const selectable = employees.filter(e => e.id !== ownerId);
   const humans = selectable.filter(e => e.kind === 'human');
   // 数字分身 (kind=agent + 有 linked_human_id) 不进 Agent 组,
   // 而是缩进在它真人下面渲染。独立 Agent 才在 Agent 组。

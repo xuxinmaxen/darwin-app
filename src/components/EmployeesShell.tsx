@@ -270,7 +270,7 @@ export default function EmployeesShell({
                 <span className="dot" />
                 员工管理
               </div>
-              <h1 className="ws-title">公司员工管理</h1>
+              <h1 className="ws-title">团队成员</h1>
               <p className="ws-sub">
                 Agent 员工以人设驱动,可以像同事一样加入项目,主动贡献 Intent。
               </p>

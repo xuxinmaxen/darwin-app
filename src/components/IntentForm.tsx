@@ -25,10 +25,14 @@ type Attachment = {
 export default function IntentForm({
   projectId,
   agents = [],
+  currentUserCls = 'xu',
+  currentUserShort = '我',
 }: {
   projectId: string;
-  /** 项目里的 Agent 协作者; 提交后并发触发它们各自决定是否接话 */
   agents?: Employee[];
+  /** 用于头像渲染; 由父组件传入已登录用户信息 */
+  currentUserCls?: string;
+  currentUserShort?: string;
 }) {
   const router = useRouter();
   const [statement, setStatement] = useState('');
@@ -157,7 +161,7 @@ export default function IntentForm({
 
       <div className="quickbar">
         <div className="quickbar-row">
-          <span className="avatar xu">徐</span>
+          <span className={`avatar ${currentUserCls}`}>{currentUserShort}</span>
           <textarea
             value={statement}
             onChange={e => setStatement(e.target.value)}

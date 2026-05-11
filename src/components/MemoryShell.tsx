@@ -554,7 +554,7 @@ function PrefModal({
               type="text"
               value={source}
               onChange={e => setSource(e.target.value)}
-              placeholder="例如: 徐鑫 / 团队默认 / hero 冲突 v2"
+              placeholder="例如: 张三 / 团队默认 / hero 冲突 v2"
               disabled={saving}
             />
           </div>

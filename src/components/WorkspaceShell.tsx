@@ -144,10 +144,10 @@ export default function WorkspaceShell({
               <div className="ws-toolbar-actions">
                 <span
                   className="status-pill ok"
-                  title="SQLite 本地数据库 (darwin.db)"
+                  title="数据库已连接"
                 >
                   <span className="dot" />
-                  SQLite
+                  数据库
                 </span>
                 <span
                   className={`status-pill ${claudeReady ? 'ok' : 'warn'}`}
@@ -160,7 +160,7 @@ export default function WorkspaceShell({
                   <span className="dot" />
                   {claudeReady ? `Claude · ${claudeModel}` : 'Claude 待解锁'}
                 </span>
-                <NewProjectButton employees={employees} />
+                <NewProjectButton employees={employees} currentUserId={currentUser?.id} />
               </div>
             </div>
 
@@ -175,12 +175,12 @@ export default function WorkspaceShell({
                 {query ? (
                   <>
                     <strong>没有找到「{query}」相关的项目</strong>
-                    换个关键词试试，或者点右上角「新建项目」从一句话开始。
+                    换个关键词试试，或者新建一个项目。
                   </>
                 ) : (
                   <>
                     <strong>还没有项目</strong>
-                    点右上角「新建项目」，从一句话开始。
+                    点「新建项目」，从一句话开始。
                   </>
                 )}
               </div>
@@ -202,10 +202,7 @@ export default function WorkspaceShell({
             )}
 
             <div className="ws-foot">
-              <span>v1 · Server Component + Supabase Postgres</span>
-              <Link href="/api/health" className="is-mono">
-                /api/health
-              </Link>
+              <span>Darwin v1 · 多人意图合成</span>
             </div>
           </section>
         </main>
@@ -272,13 +269,7 @@ export function Sidebar({
       </nav>
 
       <div className="ws-sidebar-foot">
-        <div>
-          Darwin · v1 dev
-          <br />
-          <Link href="/api/health">/api/health</Link>
-          {' · '}
-          <Link href="/demo.html">v0 demo</Link>
-        </div>
+        <div>Darwin · v1</div>
       </div>
     </aside>
   );

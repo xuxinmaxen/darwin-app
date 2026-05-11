@@ -18,21 +18,18 @@ import { useEffect, useRef, useState } from 'react';
 import type { Thread, ThreadMessage, Tension } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
 
-const DEMO_USER = { id: '00000000-0000-0000-0000-000000000001', name: '徐鑫', cls: 'xu', short: '徐' };
-
 type Props = {
   open: boolean;
   thread: Thread | null;
   messages: ThreadMessage[];
-  /** 该 thread 关联的 tension (如果有), 用于内联 A/B/C 仲裁 */
   tension?: Tension | null;
   employeeMap: Map<string, Employee>;
-  /** 当前正在 LLM 思考、即将在 thread 里发言的 agent.id 集合 */
   agentsThinkingIds?: Set<string>;
+  /** 当前登录用户,用于输入框头像 */
+  currentUser?: { cls: string; short: string } | null;
   onClose: () => void;
   onSend: (body: string) => Promise<void>;
   onResolveTension: (selectedOptionKey: string) => Promise<void>;
-  /** 用户主动开的 thread (无 tension) 可以显式收敛。Tension thread 不走这条。 */
   onResolveUserThread?: () => Promise<void>;
 };
 
@@ -43,6 +40,7 @@ export default function DiscussionDrawer({
   tension,
   employeeMap,
   agentsThinkingIds,
+  currentUser,
   onClose,
   onSend,
   onResolveTension,
@@ -209,7 +207,7 @@ export default function DiscussionDrawer({
         </div>
       ) : (
         <div className="drawer-input">
-          <span className={`avatar ${DEMO_USER.cls}`}>{DEMO_USER.short}</span>
+          <span className={`avatar ${currentUser?.cls ?? 'xu'}`}>{currentUser?.short ?? '我'}</span>
           <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}

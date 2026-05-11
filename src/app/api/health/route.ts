@@ -17,7 +17,7 @@ export async function GET() {
     env: {
       anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
       openai: Boolean(process.env.OPENAI_API_KEY),
-      sqlite: true,
+      supabase: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     },
     llm,
     timestamp: new Date().toISOString(),
