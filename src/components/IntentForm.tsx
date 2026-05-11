@@ -162,7 +162,7 @@ export default function IntentForm({
             value={statement}
             onChange={e => setStatement(e.target.value)}
             disabled={isPending}
-            placeholder="说说你想要什么，可以尽情表达… (Enter 提交 / Shift+Enter 换行)"
+            placeholder="说说你想要什么,可以尽情表达… (Enter 提交 · Shift+Enter 换行 · 📎 可附文件)"
             rows={2}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -193,14 +193,6 @@ export default function IntentForm({
           </div>
         )}
         <div className="quickbar-foot">
-          <span className="quickbar-hint">
-            <span className="kbd">↵</span>
-            提交
-            <span className="quickbar-hint-sep">·</span>
-            <span className="kbd">⇧</span>
-            <span className="kbd">↵</span>
-            换行
-          </span>
           <input
             ref={fileInputRef}
             type="file"
@@ -229,7 +221,7 @@ export default function IntentForm({
             disabled={isPending || (!statement.trim() && attachments.length === 0)}
             onClick={submit}
           >
-            {isPending ? '添加中…' : '添加 Intent'}
+            {isPending ? '提交中…' : '提交'}
           </button>
         </div>
       </div>

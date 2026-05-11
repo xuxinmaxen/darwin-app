@@ -39,7 +39,9 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 const CreateBody = z.object({
-  statement: z.string().min(1, 'statement cannot be empty').max(2000),
+  /* 50000 字上限留给"附件正文 + 用户原文"拼接场景 (单条 Intent 可能包含
+   * 8000 字的文件参考内容)。LLM 上下文够用, SQLite TEXT 也没限制。 */
+  statement: z.string().min(1, 'statement cannot be empty').max(50_000),
   type: z
     .enum(['Goal', 'Constraint', 'Preference', 'Reference', 'Veto'])
     .optional(),

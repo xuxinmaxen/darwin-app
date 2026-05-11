@@ -18,7 +18,7 @@ import {
 import type { ExtractedIntent } from '@/lib/types';
 
 const BodySchema = z.object({
-  statement: z.string().min(1, 'statement cannot be empty').max(2000),
+  statement: z.string().min(1, 'statement cannot be empty').max(50_000),
   projectType: z.enum(['html', 'ppt', 'doc', 'design']).default('html'),
   projectBackground: z.string().max(4000).optional(),
 });

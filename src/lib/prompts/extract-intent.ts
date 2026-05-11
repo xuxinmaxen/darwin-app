@@ -74,6 +74,8 @@ export function buildExtractIntentSystem(ctx: ExtractContext): string {
     '',
     WEIGHT_RULES,
     '',
+    'Attached references: 如果 statement 里含 "【参考文件: name】<content>" 或 "【导入参考】<content>" 区块, 那是用户挂的参考材料 — 你的输出应基于用户说的"原话"部分推断 type/scope/weight, 参考材料用来辅助理解上下文 (尤其抽 scope 和 rationale)。不要把参考材料原文塞进 rationale。',
+    '',
     OUTPUT_SCHEMA,
     '',
     'Examples:',
