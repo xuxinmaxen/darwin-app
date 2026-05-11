@@ -5,11 +5,13 @@
  * Shell 自己管搜索/过滤/快捷键。
  */
 
+import { redirect } from 'next/navigation';
 import { describeLLM } from '@/lib/llm';
 import { listProjects, listCollaboratorsByProjects } from '@/lib/projects';
 import { summarizeIntentsForProjects } from '@/lib/intents';
 import { listEmployees } from '@/lib/employees';
 import { loadSidebarCounts } from '@/lib/sidebar-counts';
+import { currentUser } from '@/lib/auth';
 import type { Project } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
 import WorkspaceShell from '@/components/WorkspaceShell';
@@ -53,6 +55,9 @@ async function safeLoad(): Promise<{
 }
 
 export default async function WorkspacePage() {
+  const user = await currentUser();
+  if (!user) redirect('/login');
+
   const llm = describeLLM();
   const [{ projects, summaries, collaborators, employees, error: dbError }, counts] =
     await Promise.all([safeLoad(), loadSidebarCounts(DEMO_OWNER_ID)]);
@@ -69,6 +74,13 @@ export default async function WorkspacePage() {
       dbError={dbError}
       memoryCount={counts.memoryCount}
       employeesCount={counts.employeesCount}
+      currentUser={{
+        id: user.id,
+        name: user.name,
+        role: user.role,
+        cls: user.cls,
+        short: user.short,
+      }}
     />
   );
 }

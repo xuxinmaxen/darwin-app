@@ -1,31 +1,55 @@
 'use client';
 
 /**
- * 发布成功的庆祝弹窗 — 对应 v0 demo 的 .celebrate-card.evolution。
+ * 庆祝弹窗 — 两种变体:
+ *   variant="consensus" — 冲突调和达成共识时
+ *   variant="evolution" — 产物发布定稿时
  *
- * V1 简化版:
- *   - 没有 conic-gradient 边框光晕和 confetti spark (demo 的花活)
- *   - 保留: 金色 icon halo + eyebrow + title + sub + 4 stats
+ * 视觉差异:
+ *   - icon (🤝 / ✨)
+ *   - eyebrow 渐变色
+ *   - 卡片右上角光晕颜色
+ *   - stats 数字色
  */
 
 import { useEffect } from 'react';
 
 type Stat = { num: string | number; label: string };
 
+export type CelebrateVariant = 'consensus' | 'evolution';
+
 type Props = {
   open: boolean;
+  variant: CelebrateVariant;
+  /** 顶部 chip 文字, 如 "共识时刻 · 第 1 次" / "组织进化" */
+  eyebrow: string;
   title: string;
   sub: React.ReactNode;
   stats: Stat[];
   onClose: () => void;
+  /** 默认按 variant 取 🤝 / ✨ */
+  icon?: string;
+  /** 默认按 variant 取 "继续 →" / "继续 →" */
+  closeBtnText?: string;
+  ariaLabel?: string;
+};
+
+const DEFAULT_ICON: Record<CelebrateVariant, string> = {
+  consensus: '🤝',
+  evolution: '✨',
 };
 
 export default function CelebrationModal({
   open,
+  variant,
+  eyebrow,
   title,
   sub,
   stats,
   onClose,
+  icon,
+  closeBtnText = '继续 →',
+  ariaLabel,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -46,13 +70,15 @@ export default function CelebrationModal({
       }}
       role="dialog"
       aria-modal="true"
-      aria-label="发布成功"
+      aria-label={ariaLabel ?? eyebrow}
     >
-      <div className="celebrate-card evolution">
-        <div className="celebrate-icon" aria-hidden>✨</div>
+      <div className={`celebrate-card ${variant}`}>
+        <div className="celebrate-icon" aria-hidden>
+          {icon ?? DEFAULT_ICON[variant]}
+        </div>
         <div className="celebrate-eyebrow">
           <span className="dot" />
-          产物定稿
+          {eyebrow}
         </div>
         <h2 className="celebrate-title">{title}</h2>
         <p className="celebrate-sub">{sub}</p>
@@ -70,7 +96,7 @@ export default function CelebrationModal({
           onClick={onClose}
           autoFocus
         >
-          继续协作
+          {closeBtnText}
         </button>
       </div>
     </div>

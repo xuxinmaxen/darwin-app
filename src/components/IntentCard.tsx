@@ -11,6 +11,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Intent } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
+import { parseStatementForDisplay } from '@/lib/parse-statement';
 
 // 历史/未知 author 兜底
 const FALLBACK_HUMAN = { cls: 'xu', short: '徐', name: '徐鑫', role: '产品' };
@@ -72,6 +73,7 @@ export default function IntentCard({
     });
   }
 
+  const { userText, attachments, hasImportRef } = parseStatementForDisplay(intent.statement);
   const isAgent = intent.authorKind === 'agent';
   const fallback = isAgent ? FALLBACK_AGENT : FALLBACK_HUMAN;
   const avatarCls = author?.cls
@@ -98,7 +100,27 @@ export default function IntentCard({
           {formatTime(intent.createdAt)}
         </span>
       </div>
-      <p className="intent-body">{intent.statement}</p>
+      {userText && <p className="intent-body">{userText}</p>}
+      {(attachments.length > 0 || hasImportRef) && (
+        <div className="intent-attach-row">
+          {attachments.map((name, i) => (
+            <span key={`a-${i}`} className="intent-attach-chip" title={`AI 已读取参考文件: ${name}`}>
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M7.5 2.5L3 7a2 2 0 1 0 2.83 2.83L10 5.65a3 3 0 0 0-4.24-4.24L1.5 5.67" strokeLinecap="round" />
+              </svg>
+              <span className="intent-attach-name">{name}</span>
+            </span>
+          ))}
+          {hasImportRef && attachments.length === 0 && (
+            <span className="intent-attach-chip" title="AI 已读取导入的参考内容">
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M3 2.5h4.5L10 5v4.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
+              </svg>
+              <span className="intent-attach-name">导入参考</span>
+            </span>
+          )}
+        </div>
+      )}
       <div className="intent-meta">
         <span className="tag">{intent.type}</span>
         <span className="tag scope">{intent.scope}</span>

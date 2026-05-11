@@ -123,7 +123,7 @@ export default function DiscussionDrawer({
             {isResolved && <span className="drawer-resolved-tag">已收敛</span>}
           </div>
           <div className="drawer-sub">
-            {thread?.scope ? `scope · ${thread.scope}` : '团队讨论'}
+            {thread?.scope ? `关于 · ${thread.scope}` : '一场团队讨论'}
           </div>
         </div>
         <div className="drawer-head-actions">
@@ -133,7 +133,7 @@ export default function DiscussionDrawer({
               className="drawer-resolve-btn"
               onClick={handleResolveUserThread}
               disabled={closing}
-              title="标记此讨论已收敛"
+              title="把这次讨论标为已收敛"
             >
               {closing ? '收敛中…' : '标记已收敛'}
             </button>
@@ -167,7 +167,7 @@ export default function DiscussionDrawer({
               {Array.from(agentsThinkingIds)
                 .map(id => employeeMap.get(id)?.name ?? 'Agent')
                 .join(' / ')}{' '}
-              在看你们的讨论…
+              正在想…
             </span>
           </div>
         )}
@@ -176,7 +176,7 @@ export default function DiscussionDrawer({
       {showTensionInlineOptions && tension && (
         <div className="drawer-options">
           <div className="drawer-options-label">
-            选一个方案直接定: AI 是调和者, 项目 Owner 拍板
+            选一个方案,直接定
           </div>
           <div className="drawer-options-grid">
             {tension.options.map(opt => (
@@ -205,7 +205,7 @@ export default function DiscussionDrawer({
 
       {isResolved ? (
         <div className="drawer-resolved-foot">
-          这条讨论已收敛,产物按定稿方案合成。
+          讨论已经收敛。产物会按定下来的方案重新合成。
         </div>
       ) : (
         <div className="drawer-input">
@@ -213,7 +213,7 @@ export default function DiscussionDrawer({
           <textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            placeholder="加入讨论… (Enter 发送 / Shift+Enter 换行)"
+            placeholder="说点什么… (Enter 发送)"
             rows={2}
             disabled={sending}
             onKeyDown={e => {

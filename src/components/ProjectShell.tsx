@@ -18,7 +18,7 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
@@ -29,6 +29,8 @@ import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
 import CelebrationModal from '@/components/CelebrationModal';
+import UserMenu from '@/components/UserMenu';
+import type { CurrentUserMini } from '@/components/WorkspaceShell';
 import TensionCard from '@/components/TensionCard';
 import DiscussionDrawer from '@/components/DiscussionDrawer';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
@@ -62,6 +64,7 @@ export default function ProjectShell({
   versionsTotal: initialVersionsTotal,
   collaborators,
   activeTensions: initialActiveTensions,
+  currentUser,
 }: {
   project: Project;
   intents: Intent[];
@@ -70,6 +73,7 @@ export default function ProjectShell({
   versionsTotal: number;
   collaborators: Employee[];
   activeTensions: Tension[];
+  currentUser?: CurrentUserMini;
 }) {
   // ─── State ─────────────────────────────────────────────
   const [hoveredIntentId, setHoveredIntentId] = useState<string | null>(null);
@@ -92,6 +96,49 @@ export default function ProjectShell({
     contributorCount: number;
   } | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
+
+  // 每次对立调和后弹一次"共识时刻"
+  const [consensusOpen, setConsensusOpen] = useState(false);
+  const [consensusStats, setConsensusStats] = useState<{
+    nth: number;
+    partyAName: string;
+    partyBName: string;
+    optionKey: string;
+    contributorCount: number;
+  } | null>(null);
+  // 模态关闭后再 reload, 让用户看到"共识时刻"再让产物重合成
+  const pendingReloadRef = useRef(false);
+
+  // 冲突列表默认折叠, 点 statusbar 展开/收起 (多个 tension 时挤画布, 默认收起)
+  const [tensionExpanded, setTensionExpanded] = useState<boolean>(false);
+
+  const handleConsensusModalClose = () => {
+    setConsensusOpen(false);
+    if (pendingReloadRef.current) {
+      pendingReloadRef.current = false;
+      window.location.reload();
+    }
+  };
+
+  function showConsensusFor(tension: Tension, selectedKey: string) {
+    const partyAIntent = intentById.get(tension.intentIds[0]);
+    const partyBIntent = intentById.get(tension.intentIds[1]);
+    const partyA = partyAIntent ? employeeById.get(partyAIntent.authorId) : null;
+    const partyB = partyBIntent ? employeeById.get(partyBIntent.authorId) : null;
+    const uniqueAuthors = new Set(
+      tension.intentIds
+        .map(id => intentById.get(id)?.authorId)
+        .filter((x): x is string => !!x)
+    );
+    setConsensusStats(prev => ({
+      nth: (prev?.nth ?? 0) + 1,
+      partyAName: partyA?.name ?? '一方',
+      partyBName: partyB?.name ?? '另一方',
+      optionKey: selectedKey,
+      contributorCount: uniqueAuthors.size || tension.intentIds.length,
+    }));
+    setConsensusOpen(true);
+  }
 
   // ─── Version handlers ──────────────────────────────────
   const handleVersionCreated = (v: Version) => {
@@ -329,11 +376,19 @@ export default function ProjectShell({
       throw new Error(json.error || '决议失败');
     }
     // tension 关闭 + thread 关闭 + 重新拉消息让 system "决议" 消息出现
+    const resolvedTension = activeTensions.find(
+      t => t.id === activeThread.tensionId
+    );
     setActiveTensions(prev => prev.filter(t => t.id !== activeThread.tensionId));
     setActiveThread(prev => (prev ? { ...prev, status: 'resolved' } : prev));
     await loadThreadMessages(activeThread.id);
-    // 给用户看到"已收敛"动画后再 reload
-    setTimeout(() => window.location.reload(), 800);
+    // 先弹"共识时刻", 关闭后再 reload
+    if (resolvedTension) {
+      showConsensusFor(resolvedTension, selectedOptionKey);
+      pendingReloadRef.current = true;
+    } else {
+      setTimeout(() => window.location.reload(), 800);
+    }
   }
 
   const intentById = useMemo(() => {
@@ -342,16 +397,12 @@ export default function ProjectShell({
     return m;
   }, [intents]);
 
-  const handleTensionResolved = (tensionId: string) => {
-    setActiveTensions(prev => prev.filter(t => t.id !== tensionId));
-    // 触发 router refresh 让看板和产物按新决议重新合成
-    if (typeof window !== 'undefined') {
-      // Tension 解决后让 ProjectCanvas 检测到 intents 没变但需要重合成 — 现状是
-      // canvas 自动合成基于 intent hash, tension 解决不变 hash。简化做法:
-      // 直接 location.reload 让所有数据 (含 versions count) 都刷新一遍。
-      // 重载后 ProjectShell mount 会自动拉候选 (5s/12s/22s 三次轮询)
-      window.location.reload();
-    }
+  const handleTensionResolved = (tension: Tension, selectedKey: string) => {
+    setActiveTensions(prev => prev.filter(t => t.id !== tension.id));
+    if (typeof window === 'undefined') return;
+    // 先弹"共识时刻"庆祝, 用户点继续后再 reload
+    showConsensusFor(tension, selectedKey);
+    pendingReloadRef.current = true;
   };
 
   // 轮询 active tensions (LLM 检测是 fire-and-forget, 客户端要主动拉)
@@ -505,7 +556,10 @@ export default function ProjectShell({
           title="返回工作台"
         >
           <div className="brand-logo" aria-hidden />
-          <span className="brand-name">Darwin</span>
+          <span className="brand-text">
+            <span className="brand-name">Darwin</span>
+            <span className="brand-tagline">组织的每一次共识，即是每一次进化。</span>
+          </span>
         </Link>
         <div className="vsep" />
         <div className="project-info">
@@ -579,6 +633,8 @@ export default function ProjectShell({
             </span>
           )}
         </button>
+
+        {currentUser && <UserMenu user={currentUser} />}
       </div>
 
       {/* MAIN GRID — V1: 2 cols (board + canvas). V2 加上讨论抽屉 */}
@@ -588,7 +644,7 @@ export default function ProjectShell({
           <div className="board-head">
             <div className="board-head-text">
               <span className="board-title">Intent 看板</span>
-              <span className="board-sub">大家想要什么</span>
+              <span className="board-sub">团队此刻在想什么</span>
             </div>
             <span className="board-count">{intents.length}</span>
           </div>
@@ -596,10 +652,10 @@ export default function ProjectShell({
           <div className={`board-list ${anyHover ? 'is-prov-active' : ''}`}>
             {intents.length === 0 ? (
               <div className="board-empty">
-                <strong>大家各抒己见</strong>
-                AI 自动抽取为可合并的 Intent
+                <strong>说一句你想要什么</strong>
+                AI 会理解你的意图,把它放进产物里
                 <br />
-                信息足够时自动开始合成
+                每条意图都会留下来,不会被淹没
               </div>
             ) : (
               intents.map(i => (
@@ -623,35 +679,59 @@ export default function ProjectShell({
 
         {/* CENTER: CANVAS */}
         <section className="canvas-wrap">
-          <div className={`statusbar${activeTensions.length > 0 ? ' has-tension' : ''}`}>
+          <div
+            className={`statusbar${activeTensions.length > 0 ? ' has-tension' : ''}${activeTensions.length > 0 ? ' is-tension-toggle' : ''}`}
+            role={activeTensions.length > 0 ? 'button' : undefined}
+            tabIndex={activeTensions.length > 0 ? 0 : undefined}
+            aria-expanded={activeTensions.length > 0 ? tensionExpanded : undefined}
+            onClick={() => activeTensions.length > 0 && setTensionExpanded(v => !v)}
+            onKeyDown={e => {
+              if (activeTensions.length === 0) return;
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setTensionExpanded(v => !v);
+              }
+            }}
+          >
             <span className={`status-icon ${activeTensions.length > 0 ? 'tension' : intents.length === 0 ? 'idle' : currentVersion ? 'done' : ''}`} />
             <span className="status-text">
               {activeTensions.length > 0 ? (
                 <>
-                  检测到 <strong>{activeTensions.length}</strong> 个未决冲突 ·
-                  AI 已提议调和方案,等待项目 Owner 拍板
+                  <strong>{activeTensions.length}</strong> 个分歧待你拍板 ·
+                  AI 已给出调和方案
                 </>
               ) : intents.length === 0 ? (
-                <>等待输入。所有人到齐后，AI 会把意图合成为产物。</>
+                <>还没有人发声。第一句话就能开始。</>
               ) : currentVersion ? (
                 <>
-                  已合成 · <strong>{intents.length}</strong> 条 Intent · {TYPE_LABEL[project.type]}
+                  <strong>{intents.length}</strong> 条意图,已合成为这版{TYPE_LABEL[project.type]}
                   <span className="prov-hint">
                     {' · '}
-                    {traceMode ? '溯源中,每块标记来源数' : 'hover 卡片看产物联动'}
+                    {traceMode ? '正在显示每块来自谁' : '把鼠标放卡片上,看哪些意图驱动了产物'}
                   </span>
                 </>
               ) : (
                 <>
-                  已收集 <strong>{intents.length}</strong> 条 Intent · 等待合成
+                  <strong>{intents.length}</strong> 条意图,AI 正在合成…
                 </>
               )}
             </span>
+            {activeTensions.length > 0 && (
+              <span
+                className={`tension-toggle-chevron${tensionExpanded ? ' open' : ''}`}
+                aria-hidden
+              >
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.6}>
+                  <path d="M3 4.5L6 7.5L9 4.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                {tensionExpanded ? '收起' : '展开'}
+              </span>
+            )}
           </div>
 
-          {activeTensions.length > 0 && (
+          {activeTensions.length > 0 && tensionExpanded && (
             <div className="tension-stack">
-              {activeTensions.map(t => (
+              {activeTensions.map((t, i) => (
                 <TensionCard
                   key={t.id}
                   projectId={project.id}
@@ -661,6 +741,7 @@ export default function ProjectShell({
                   conflictMode={conflictMode}
                   onResolved={handleTensionResolved}
                   onDiscuss={handleDiscussTension}
+                  defaultExpanded={i === 0}
                 />
               ))}
             </div>
@@ -764,21 +845,49 @@ export default function ProjectShell({
 
       <CelebrationModal
         open={celebrationOpen}
-        title="恭喜，产物完成定稿"
+        variant="evolution"
+        eyebrow="组织进化"
+        title="恭喜，你们的组织完成了一次进化"
         sub={
           <>
-            <strong>{publishStats?.intents ?? intents.length}</strong> 条 Intent 都活在了产物里——
+            从 <strong>{publishStats?.intents ?? intents.length}</strong> 条独立的判断,
+            收敛为一份能上线的产物——
             <br />
-            这是 v1 的一份{TYPE_LABEL[project.type]}定稿。
+            每条意图都活在结果里。
           </>
         }
         stats={[
-          { num: publishStats?.intents ?? intents.length, label: 'Intent 命中' },
+          { num: publishStats?.intents ?? intents.length, label: 'Intent 全部命中' },
           { num: publishStats?.contributorCount ?? collaboratorsState.length, label: '位贡献者' },
           { num: publishStats?.consensusCount ?? 0, label: '次冲突共识' },
           { num: `v${publishStats?.versions ?? versionsTotal}`, label: '产物版本' },
         ]}
         onClose={() => setCelebrationOpen(false)}
+      />
+
+      <CelebrationModal
+        open={consensusOpen}
+        variant="consensus"
+        eyebrow={`共识时刻 · 第 ${consensusStats?.nth ?? 1} 次`}
+        title="团队达成了一次重要共识"
+        sub={
+          consensusStats ? (
+            <>
+              <strong>{consensusStats.partyAName}</strong> 与{' '}
+              <strong>{consensusStats.partyBName}</strong> 从对立走向调和——
+              <br />
+              这次决策已写入产物的溯源。
+            </>
+          ) : (
+            <>对立已经化解,产物会按新方案合成。</>
+          )
+        }
+        stats={[
+          { num: 1, label: '冲突化解' },
+          { num: consensusStats?.contributorCount ?? 2, label: '位贡献者意图' },
+          { num: `方案 ${consensusStats?.optionKey ?? 'A'}`, label: '入选' },
+        ]}
+        onClose={handleConsensusModalClose}
       />
     </div>
   );

@@ -45,7 +45,7 @@ export default function TopbarControls({
         type="button"
         className={`ctrl toggle ${traceMode ? 'active' : ''}`}
         onClick={onTraceToggle}
-        title={traceMode ? '关闭溯源（产物每块来自哪些 Intent）' : '打开溯源'}
+        title={traceMode ? '关闭溯源' : '溯源:看每块由谁的意图驱动'}
       >
         <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
           <circle cx="7" cy="7" r="2.5" />
@@ -77,8 +77,8 @@ export default function TopbarControls({
           isPublished
             ? '已发布'
             : !canPublish
-              ? '至少需要一个合成版本才能发布'
-              : '发布产物'
+              ? '等 AI 合成出第一版,就能发布'
+              : '发布这一版'
         }
       >
         {isPublished ? (

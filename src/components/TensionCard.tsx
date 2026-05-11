@@ -18,6 +18,7 @@
 import { useState } from 'react';
 import type { Tension, Intent } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
+import { parseStatementForDisplay } from '@/lib/parse-statement';
 
 const KEY_LABELS = ['A', 'B', 'C', 'D', 'E'];
 
@@ -27,7 +28,7 @@ type Props = {
   intentMap: Map<string, Intent>;
   employeeMap: Map<string, Employee>;
   conflictMode: 'discuss' | 'ai_decide';
-  onResolved: (tensionId: string) => void;
+  onResolved: (tension: Tension, selectedKey: string) => void;
   onDiscuss: (tension: Tension) => void;
 };
 
@@ -39,10 +40,12 @@ export default function TensionCard({
   conflictMode,
   onResolved,
   onDiscuss,
-}: Props) {
+  defaultExpanded = false,
+}: Props & { defaultExpanded?: boolean }) {
   const [selecting, setSelecting] = useState<string | null>(null);
   const [arbitrating, setArbitrating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<boolean>(defaultExpanded);
 
   // 双方信息 (从 intentMap 反查作者)
   const partyAIntent = intentMap.get(tension.intentIds[0]);
@@ -69,7 +72,7 @@ export default function TensionCard({
         setError(json.error || `请求失败 (${res.status})`);
         return;
       }
-      onResolved(tension.id);
+      onResolved(tension, optionKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -94,7 +97,12 @@ export default function TensionCard({
         setError(json.error || `AI 仲裁失败 (${res.status})`);
         return;
       }
-      onResolved(tension.id);
+      const chosenKey =
+        json.tension?.selectedOptionKey ??
+        json.selectedOptionKey ??
+        tension.options[0]?.key ??
+        'A';
+      onResolved(tension, chosenKey);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -103,22 +111,50 @@ export default function TensionCard({
   }
 
   return (
-    <div className={`tension-card ${tension.variant === 'agents' ? 'agents' : ''}${arbitrating ? ' rainbow-sweep is-arbitrating' : ''}`}>
-      <div className="tension-head">
-        <span className="tension-tag">
-          <span className="dot" />
-          {tension.variant === 'agents' ? 'AGENT ⇄ AGENT' : '冲突'}
-        </span>
-        <span className="tension-scope">
-          scope · <strong>{tension.scope}</strong>
-        </span>
-      </div>
+    <div className={`tension-card ${tension.variant === 'agents' ? 'agents' : ''}${arbitrating ? ' rainbow-sweep is-arbitrating' : ''}${expanded ? ' is-expanded' : ' is-collapsed'}`}>
+      <button
+        type="button"
+        className="tension-card-summary"
+        onClick={() => setExpanded(v => !v)}
+        aria-expanded={expanded}
+      >
+        <div className="tension-head">
+          <span className="tension-tag">
+            <span className="dot" />
+            {tension.variant === 'agents' ? 'AGENT ⇄ AGENT' : '冲突'}
+          </span>
+          <span className="tension-scope">
+            scope · <strong>{tension.scope}</strong>
+          </span>
+          <div className="tension-summary-parties">
+            {partyA && (
+              <span className={`avatar ${partyA.cls}${partyA.kind === 'agent' ? ' agent' : ''}`}>
+                {partyA.short}
+              </span>
+            )}
+            <span className="tension-vs-glyph">vs</span>
+            {partyB && (
+              <span className={`avatar ${partyB.cls}${partyB.kind === 'agent' ? ' agent' : ''}`}>
+                {partyB.short}
+              </span>
+            )}
+          </div>
+          <span className="tension-card-chevron" aria-hidden>
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.6}>
+              <path d="M3 4.5L6 7.5L9 4.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </div>
 
-      <div className="tension-title">
-        {tension.intentIds.length} 条 must Intent 在 <strong>{tension.scope}</strong> 区块语义对立
-      </div>
+        <div className="tension-title">
+          {tension.intentIds.length} 个人在 <strong>{tension.scope}</strong> 上想法对立
+        </div>
+      </button>
+
+      {expanded && (
+      <div className="tension-card-body">
       <div className="tension-desc">
-        AI 已生成 {tension.options.length} 个调和方案,等待团队选择或讨论。
+        AI 给了 {tension.options.length} 个折中方案。选一个,或者开个讨论。
       </div>
 
       {/* 对立双方 */}
@@ -132,7 +168,7 @@ export default function TensionCard({
                 </span>
                 <span>{partyA?.name ?? '?'}</span>
               </div>
-              <div className="vs-text">{partyAIntent.statement}</div>
+              <div className="vs-text">{parseStatementForDisplay(partyAIntent.statement).userText || partyAIntent.statement}</div>
             </div>
           )}
           {partyBIntent && (
@@ -143,7 +179,7 @@ export default function TensionCard({
                 </span>
                 <span>{partyB?.name ?? '?'}</span>
               </div>
-              <div className="vs-text">{partyBIntent.statement}</div>
+              <div className="vs-text">{parseStatementForDisplay(partyBIntent.statement).userText || partyBIntent.statement}</div>
             </div>
           )}
         </div>
@@ -185,14 +221,14 @@ export default function TensionCard({
             arbitrating ? (
               <>
                 <span className="topt-spinner" style={{ position: 'static', transform: 'none', borderTopColor: 'currentColor' }} />
-                AI 仲裁中…
+                AI 决策中…
               </>
             ) : (
               <>
                 <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
                   <path d="M7 1.5L8.5 5l3.5 1.2-3.5 1.2L7 11l-1.5-3.5L2 6.2l3.5-1.2z" strokeLinejoin="round" />
                 </svg>
-                让 AI 评分决策
+                让 AI 替你决定
               </>
             )
           ) : (
@@ -200,14 +236,16 @@ export default function TensionCard({
               <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
                 <path d="M2 5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H6l-3 2v-2a3 3 0 0 1-1-2.5V5z" strokeLinejoin="round" />
               </svg>
-              开讨论
+              开个讨论
             </>
           )}
         </button>
         <span className="tension-foot-hint">
-          AI 是调和者,项目 Owner 是决策者。决议会写入团队记忆。
+          AI 调和,你拍板。决议会留进团队记忆。
         </span>
       </div>
+      </div>
+      )}
     </div>
   );
 }

@@ -9,8 +9,9 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { Sidebar } from '@/components/WorkspaceShell';
+import { Sidebar, type CurrentUserMini } from '@/components/WorkspaceShell';
 import EmployeeModal from '@/components/EmployeeModal';
+import UserMenu from '@/components/UserMenu';
 import type { Employee } from '@/lib/employees';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
@@ -31,11 +32,13 @@ export default function EmployeesShell({
   projectsCount,
   memoryCount,
   employeesCount,
+  currentUser,
 }: {
   initialEmployees: Employee[];
   projectsCount: number;
   memoryCount?: number;
   employeesCount?: number;
+  currentUser?: CurrentUserMini;
 }) {
   const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
   const [editing, setEditing] = useState<Employee | null>(null);
@@ -58,6 +61,16 @@ export default function EmployeesShell({
   const visibleEmployees = useMemo(
     () => employees.filter(e => !(e.kind === 'agent' && e.linkedHumanId)),
     [employees]
+  );
+
+  // 真人 vs Agent 分两栏展示
+  const humanEmployees = useMemo(
+    () => visibleEmployees.filter(e => e.kind === 'human'),
+    [visibleEmployees]
+  );
+  const agentEmployees = useMemo(
+    () => visibleEmployees.filter(e => e.kind === 'agent'),
+    [visibleEmployees]
   );
 
   function openNew() {
@@ -139,6 +152,91 @@ export default function EmployeesShell({
     ? employees.find(e => e.id === confirmDeleteId)
     : null;
 
+  // 单张卡片渲染抽出来给两组复用
+  const renderEmpCard = (emp: Employee) => {
+    const isDefault = emp.id === DEMO_OWNER_ID;
+    const linkedDigital =
+      emp.kind === 'human' ? digitalByHumanId.get(emp.id) ?? null : null;
+    const isDigitalTwin = emp.kind === 'agent' && !!emp.linkedHumanId;
+    return (
+      <div
+        key={emp.id}
+        className={`emp${emp.kind === 'agent' ? ' emp-agent' : ''}${isDigitalTwin ? ' emp-digital' : ''}`}
+      >
+        <div className="card-actions">
+          <button
+            type="button"
+            className="card-action-btn"
+            onClick={() => openEdit(emp)}
+            title="编辑"
+          >
+            {EDIT_ICON}
+          </button>
+          {!isDefault && (
+            <button
+              type="button"
+              className="card-action-btn danger"
+              onClick={() => setConfirmDeleteId(emp.id)}
+              title="删除"
+            >
+              {DELETE_ICON}
+            </button>
+          )}
+        </div>
+        <div className="emp-head">
+          <span
+            className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}
+          >
+            {emp.short}
+          </span>
+          <span className={`emp-kind ${emp.kind}`}>
+            <span className="dot" />
+            {isDigitalTwin
+              ? '数字分身'
+              : emp.kind === 'agent'
+                ? 'AGENT'
+                : 'HUMAN'}
+          </span>
+          {emp.kind === 'human' && (
+            <button
+              type="button"
+              className={`emp-online-tag${emp.isOnline ? ' is-on' : ''}`}
+              onClick={() => toggleOnline(emp)}
+              aria-pressed={emp.isOnline}
+              title={emp.isOnline ? '点击切到离线' : '点击切到在线'}
+            >
+              <span className="dot" />
+              {emp.isOnline ? '在线' : '离线'}
+            </button>
+          )}
+        </div>
+        <div className="emp-name">
+          {emp.name}
+          {linkedDigital && (
+            <span
+              className="emp-has-digital"
+              title={`已配置数字分身: ${linkedDigital.name}`}
+            >
+              ⚡ 数字分身
+            </span>
+          )}
+        </div>
+        <span className="emp-role">{emp.role}</span>
+        <div className="emp-meta">
+          {emp.kind === 'agent' ? (
+            <>
+              <strong>人设:</strong> {emp.persona || '（未填写）'}
+            </>
+          ) : (
+            <>
+              <strong>邮箱:</strong> {emp.email || '—'}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="view-workspace">
       <header className="ws-topbar">
@@ -148,10 +246,13 @@ export default function EmployeesShell({
           style={{ textDecoration: 'none', color: 'inherit' }}
         >
           <div className="brand-logo" aria-hidden />
-          <span className="brand-name">Darwin</span>
-          <span className="brand-sub">多人意图合成</span>
+          <span className="brand-text">
+            <span className="brand-name">Darwin</span>
+            <span className="brand-tagline">组织的每一次共识，即是每一次进化。</span>
+          </span>
         </Link>
         <div className="ws-topbar-spacer" />
+        <UserMenu user={currentUser} />
       </header>
 
       <div className="ws-body">
@@ -178,7 +279,7 @@ export default function EmployeesShell({
             <div className="ws-toolbar">
               <div className="ws-section-title">
                 团队成员
-                <span className="count">{employees.length}</span>
+                <span className="count">{visibleEmployees.length}</span>
               </div>
               <div className="ws-toolbar-actions">
                 <button
@@ -201,106 +302,27 @@ export default function EmployeesShell({
               </div>
             )}
 
-            <div className="ws-employees">
-              {visibleEmployees.map(emp => {
-                const isDefault = emp.id === DEMO_OWNER_ID;
-                const linkedDigital =
-                  emp.kind === 'human' ? digitalByHumanId.get(emp.id) ?? null : null;
-                const isDigitalTwin =
-                  emp.kind === 'agent' && !!emp.linkedHumanId;
-                return (
-                  <div
-                    key={emp.id}
-                    className={`emp${emp.kind === 'agent' ? ' emp-agent' : ''}${isDigitalTwin ? ' emp-digital' : ''}`}
-                  >
-                    <div className="card-actions">
-                      <button
-                        type="button"
-                        className="card-action-btn"
-                        onClick={() => openEdit(emp)}
-                        title="编辑"
-                      >
-                        {EDIT_ICON}
-                      </button>
-                      {!isDefault && (
-                        <button
-                          type="button"
-                          className="card-action-btn danger"
-                          onClick={() => setConfirmDeleteId(emp.id)}
-                          title="删除"
-                        >
-                          {DELETE_ICON}
-                        </button>
-                      )}
-                    </div>
-                    <div className="emp-head">
-                      <span
-                        className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}
-                      >
-                        {emp.short}
-                      </span>
-                      <span className={`emp-kind ${emp.kind}`}>
-                        <span className="dot" />
-                        {isDigitalTwin
-                          ? '数字分身'
-                          : emp.kind === 'agent'
-                            ? 'AGENT'
-                            : 'HUMAN'}
-                      </span>
-                      {emp.kind === 'human' && (
-                        <button
-                          type="button"
-                          className={`emp-online-tag${emp.isOnline ? ' is-on' : ''}`}
-                          onClick={() => toggleOnline(emp)}
-                          aria-pressed={emp.isOnline}
-                          title={emp.isOnline ? '点击切到离线' : '点击切到在线'}
-                        >
-                          <span className="dot" />
-                          {emp.isOnline ? '在线' : '离线'}
-                        </button>
-                      )}
-                    </div>
-                    <div className="emp-name">
-                      {emp.name}
-                      {linkedDigital && (
-                        <span
-                          className="emp-has-digital"
-                          title={`已配置数字分身: ${linkedDigital.name}`}
-                        >
-                          ⚡ 数字分身
-                        </span>
-                      )}
-                    </div>
-                    <span className="emp-role">{emp.role}</span>
-                    <div className="emp-meta">
-                      {emp.kind === 'agent' ? (
-                        <>
-                          <strong>人设:</strong> {emp.persona || '（未填写）'}
-                        </>
-                      ) : (
-                        <>
-                          <strong>邮箱:</strong> {emp.email || '—'}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <EmployeeGroup
+              kind="human"
+              title="真人成员"
+              sub="同事、合作伙伴；他们能离线，离线时数字分身可以代为参与。"
+              employees={humanEmployees}
+              count={humanEmployees.length}
+              renderCard={renderEmpCard}
+              onNew={openNew}
+              newLabel="邀请真人加入"
+            />
 
-              <button
-                type="button"
-                className="emp emp-new"
-                onClick={openNew}
-              >
-                <div className="emp-new-icon">
-                  <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
-                    <path d="M9 3v12M3 9h12" />
-                  </svg>
-                </div>
-                <div className="emp-new-label">新增员工</div>
-                <div className="emp-new-sub">真实员工 / Agent 员工</div>
-              </button>
-            </div>
+            <EmployeeGroup
+              kind="agent"
+              title="Agent 同事"
+              sub="以人设驱动的 AI 同事，永远在线，会主动贡献 Intent。"
+              employees={agentEmployees}
+              count={agentEmployees.length}
+              renderCard={renderEmpCard}
+              onNew={openNew}
+              newLabel="新建 Agent"
+            />
           </section>
         </main>
       </div>
@@ -382,6 +404,57 @@ export default function EmployeesShell({
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+function EmployeeGroup({
+  kind,
+  title,
+  sub,
+  employees,
+  count,
+  renderCard,
+  onNew,
+  newLabel,
+}: {
+  kind: 'human' | 'agent';
+  title: string;
+  sub: string;
+  employees: Employee[];
+  count: number;
+  renderCard: (e: Employee) => React.ReactNode;
+  onNew: () => void;
+  newLabel: string;
+}) {
+  return (
+    <div className={`emp-group emp-group-${kind}`}>
+      <div className="emp-group-head">
+        <div className="emp-group-head-text">
+          <span className={`emp-group-tag ${kind}`}>
+            <span className="dot" />
+            {kind === 'human' ? 'HUMAN' : 'AGENT'}
+          </span>
+          <span className="emp-group-title">{title}</span>
+          <span className="emp-group-count">{count}</span>
+        </div>
+        <p className="emp-group-sub">{sub}</p>
+      </div>
+
+      <div className="ws-employees">
+        {employees.map(renderCard)}
+        <button type="button" className="emp emp-new" onClick={onNew}>
+          <div className="emp-new-icon">
+            <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+              <path d="M9 3v12M3 9h12" />
+            </svg>
+          </div>
+          <div className="emp-new-label">{newLabel}</div>
+          <div className="emp-new-sub">
+            {kind === 'human' ? '邮箱、名字、岗位' : '取个名字、写两句人设'}
+          </div>
+        </button>
+      </div>
     </div>
   );
 }

@@ -150,7 +150,7 @@ export default function IntentForm({
       {thinkingAgents.length > 0 && (
         <div className="quickbar-thinking rainbow-sweep">
           <span className="quickbar-thinking-text">
-            {thinkingAgents.map(a => a.name).join(' / ')} 在看你这条…
+            {thinkingAgents.map(a => a.name).join(' / ')} 正在想…
           </span>
         </div>
       )}
@@ -162,7 +162,7 @@ export default function IntentForm({
             value={statement}
             onChange={e => setStatement(e.target.value)}
             disabled={isPending}
-            placeholder="说说你想要什么,可以尽情表达… (Enter 提交 · Shift+Enter 换行 · 📎 可附文件)"
+            placeholder="想要什么直接说,AI 会理解…  (Enter 发送 · 📎 可附文件)"
             rows={2}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {

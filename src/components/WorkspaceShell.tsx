@@ -13,8 +13,17 @@ import type { Project } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
 import ProjectCard from '@/components/ProjectCard';
 import NewProjectButton from '@/components/NewProjectButton';
+import UserMenu from '@/components/UserMenu';
 
 type Summary = { count: number; preview?: string };
+
+export type CurrentUserMini = {
+  id: string;
+  name: string;
+  role: string;
+  cls: string;
+  short: string;
+};
 
 export default function WorkspaceShell({
   projects,
@@ -27,6 +36,7 @@ export default function WorkspaceShell({
   dbError,
   memoryCount,
   employeesCount,
+  currentUser,
 }: {
   projects: Project[];
   summaries: Record<string, Summary>;
@@ -38,6 +48,7 @@ export default function WorkspaceShell({
   dbError: string | null;
   memoryCount?: number;
   employeesCount?: number;
+  currentUser?: CurrentUserMini;
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -71,26 +82,13 @@ export default function WorkspaceShell({
       <header className="ws-topbar">
         <Link href="/" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="brand-logo" aria-hidden />
-          <span className="brand-name">Darwin</span>
-          <span className="brand-sub">多人意图合成</span>
+          <span className="brand-text">
+            <span className="brand-name">Darwin</span>
+            <span className="brand-tagline">组织的每一次共识，即是每一次进化。</span>
+          </span>
         </Link>
         <div className="ws-topbar-spacer" />
-        <div className="ws-search-bar">
-          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
-            <circle cx="6" cy="6" r="4" />
-            <path d="M9 9l3 3" />
-          </svg>
-          <input
-            ref={inputRef}
-            value={query}
-            placeholder="搜索项目名 / 背景 / Intent…"
-            onChange={e => setQuery(e.target.value)}
-          />
-          <span className="kbd">⌘K</span>
-        </div>
-        <div className="ws-user">
-          <div className="avatar xu" title="徐鑫 / 产品">徐</div>
-        </div>
+        <UserMenu user={currentUser} />
       </header>
 
       <div className="ws-body">
@@ -127,6 +125,20 @@ export default function WorkspaceShell({
                     清除
                   </button>
                 )}
+              </div>
+
+              <div className="ws-search-bar ws-search-inline">
+                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                  <circle cx="6" cy="6" r="4" />
+                  <path d="M9 9l3 3" />
+                </svg>
+                <input
+                  ref={inputRef}
+                  value={query}
+                  placeholder="搜项目名 / 背景 / Intent…"
+                  onChange={e => setQuery(e.target.value)}
+                />
+                <span className="kbd">⌘K</span>
               </div>
 
               <div className="ws-toolbar-actions">

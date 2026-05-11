@@ -11,7 +11,8 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { Sidebar } from '@/components/WorkspaceShell';
+import { Sidebar, type CurrentUserMini } from '@/components/WorkspaceShell';
+import UserMenu from '@/components/UserMenu';
 import type {
   TeamPref,
   TeamPrefIconKey,
@@ -56,6 +57,7 @@ export default function MemoryShell({
   projectsCount,
   memoryCount,
   employeesCount,
+  currentUser,
 }: {
   initialPrefs: TeamPref[];
   agents: AgentLearning[];
@@ -63,6 +65,7 @@ export default function MemoryShell({
   projectsCount: number;
   memoryCount?: number;
   employeesCount?: number;
+  currentUser?: CurrentUserMini;
 }) {
   const [prefs, setPrefs] = useState<TeamPref[]>(initialPrefs);
   const [editing, setEditing] = useState<TeamPref | null>(null);
@@ -153,10 +156,13 @@ export default function MemoryShell({
           style={{ textDecoration: 'none', color: 'inherit' }}
         >
           <div className="brand-logo" aria-hidden />
-          <span className="brand-name">Darwin</span>
-          <span className="brand-sub">多人意图合成</span>
+          <span className="brand-text">
+            <span className="brand-name">Darwin</span>
+            <span className="brand-tagline">组织的每一次共识，即是每一次进化。</span>
+          </span>
         </Link>
         <div className="ws-topbar-spacer" />
+        <UserMenu user={currentUser} />
       </header>
 
       <div className="ws-body">

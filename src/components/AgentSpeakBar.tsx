@@ -53,7 +53,7 @@ export default function AgentSpeakBar({
 
   return (
     <div className="agent-speak-bar">
-      <span className="agent-speak-label">让 Agent 同事说一句</span>
+      <span className="agent-speak-label">让 AI 同事先说</span>
       <div className="agent-speak-chips">
         {agents.map(a => {
           const isSpeaking = speakingId === a.id;
