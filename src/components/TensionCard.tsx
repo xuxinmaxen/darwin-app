@@ -103,7 +103,7 @@ export default function TensionCard({
   }
 
   return (
-    <div className={`tension-card ${tension.variant === 'agents' ? 'agents' : ''}`}>
+    <div className={`tension-card ${tension.variant === 'agents' ? 'agents' : ''}${arbitrating ? ' rainbow-sweep is-arbitrating' : ''}`}>
       <div className="tension-head">
         <span className="tension-tag">
           <span className="dot" />

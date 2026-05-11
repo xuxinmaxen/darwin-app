@@ -94,8 +94,7 @@ export default function IntentForm({
       {error && <div className="quickbar-error">{error}</div>}
 
       {thinkingAgents.length > 0 && (
-        <div className="quickbar-thinking">
-          <span className="quickbar-thinking-pulse" />
+        <div className="quickbar-thinking rainbow-sweep">
           <span className="quickbar-thinking-text">
             {thinkingAgents.map(a => a.name).join(' / ')} 在看你这条…
           </span>

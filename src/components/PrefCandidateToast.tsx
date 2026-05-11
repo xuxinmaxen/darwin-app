@@ -84,7 +84,7 @@ export default function PrefCandidateToast({
   }
 
   return (
-    <div className="pref-toast" role="alert">
+    <div className="pref-toast rainbow-sweep" role="alert">
       <div className="pref-toast-head">
         <span className="pref-toast-tag">
           <span className="dot" />

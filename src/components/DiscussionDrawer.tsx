@@ -162,8 +162,7 @@ export default function DiscussionDrawer({
           ))
         )}
         {agentsThinkingIds && agentsThinkingIds.size > 0 && (
-          <div className="drawer-thinking">
-            <span className="drawer-thinking-pulse" />
+          <div className="drawer-thinking rainbow-sweep">
             <span className="drawer-thinking-text">
               {Array.from(agentsThinkingIds)
                 .map(id => employeeMap.get(id)?.name ?? 'Agent')
