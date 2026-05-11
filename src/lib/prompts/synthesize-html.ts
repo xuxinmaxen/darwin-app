@@ -35,6 +35,7 @@ Rules:
    - A product-screenshot mockup in the hero is allowed, but it must clearly look like an embedded screenshot (chrome bar, drop shadow, max-width), not the page's own chrome.
 9. If two intents conflict (e.g. "技术专业感" + "活泼俏皮"), surface BOTH visually — e.g. professional structure with one playful accent — rather than picking a side. The job is synthesis, not arbitration.
 10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
+11. REFERENCE FILES: if an intent statement or project background contains a block like 【参考文件: name】 / 【导入参考 (HTML)】 / 【导入参考 (...)】, treat that block's body as AUTHORITATIVE source material. Pull copy, structure cues, section names and brand voice from it. Do NOT plagiarize verbatim large paragraphs, but DO honor the imported content as the seed — the page should clearly read as a derived/refined version of the imported source rather than ignoring it. If multiple reference blocks conflict with explicit intents, intents win on scope/weight rules above, but imported text style should still influence tone.
 
 Output:
 - ONLY the HTML document. No prose before or after. No markdown fences.

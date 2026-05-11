@@ -11,10 +11,10 @@ import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Project } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
-import { TYPE_LABEL, TypeIcon } from '@/lib/type-meta';
+import { TYPE_LABEL, TypeIcon, NEW_PROJECT_TYPES } from '@/lib/type-meta';
 
-const TYPES: Project['type'][] = ['html', 'ppt', 'doc', 'design'];
 const OWNER_ID = '00000000-0000-0000-0000-000000000001';
+type SourceMode = 'blank' | 'import';
 
 function CollabCheck({
   emp,
@@ -79,6 +79,87 @@ export default function NewProjectButton({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
+  // 新建 vs 导入: 落地页可导入 URL, PPT 可导入文件
+  const [sourceMode, setSourceMode] = useState<SourceMode>('blank');
+  const [importUrl, setImportUrl] = useState('');
+  const [importedHtmlRef, setImportedHtmlRef] = useState<
+    { url: string; title: string | null; text: string; truncated: boolean } | null
+  >(null);
+  const [importedFile, setImportedFile] = useState<
+    { name: string; isText: boolean; text?: string; note?: string } | null
+  >(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // 切换 type 时重置导入态 (HTML 导入 URL, PPT 导入文件 — 不通用)
+  useEffect(() => {
+    setSourceMode('blank');
+    setImportUrl('');
+    setImportedHtmlRef(null);
+    setImportedFile(null);
+    setImportError(null);
+  }, [type]);
+
+  async function handleImportUrl() {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const res = await fetch('/api/import/html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: importUrl.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setImportError(json.error || `拉取失败 (${res.status})`);
+        return;
+      }
+      setImportedHtmlRef({
+        url: json.url,
+        title: json.title,
+        text: json.text,
+        truncated: json.truncated,
+      });
+      // 若用户没填项目名, 用页面标题自动填一个
+      if (!name && json.title) setName(json.title);
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleImportFile(file: File) {
+    setImporting(true);
+    setImportError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/import/file', { method: 'POST', body: form });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setImportError(json.error || `上传失败 (${res.status})`);
+        return;
+      }
+      setImportedFile({
+        name: json.name,
+        isText: json.isText,
+        text: json.text,
+        note: json.note,
+      });
+      if (!name) {
+        // 用文件名 (去后缀) 当默认项目名
+        const stripped = json.name.replace(/\.[^.]+$/, '');
+        setName(stripped);
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImporting(false);
+    }
+  }
+
   // owner 之外可勾选的员工 (owner 默认在,不渲染)
   const selectable = employees.filter(e => e.id !== OWNER_ID);
   const humans = selectable.filter(e => e.kind === 'human');
@@ -124,6 +205,45 @@ export default function NewProjectButton({
       setError('请输入项目名称');
       return;
     }
+    if (sourceMode === 'import') {
+      if (type === 'html' && !importedHtmlRef) {
+        setError('请先拉取要导入的 HTML 链接');
+        return;
+      }
+      if (type === 'ppt' && !importedFile) {
+        setError('请先上传要导入的 PPT 文件');
+        return;
+      }
+    }
+
+    // 把导入参考拼到 background 里, 项目背景 + 导入正文统一交给 LLM
+    let finalBackground = background.trim();
+    if (sourceMode === 'import') {
+      const parts: string[] = [];
+      if (finalBackground) parts.push(finalBackground);
+      if (type === 'html' && importedHtmlRef) {
+        parts.push(
+          `【导入参考 (HTML)】来源: ${importedHtmlRef.url}` +
+            (importedHtmlRef.title ? `\n标题: ${importedHtmlRef.title}` : '') +
+            `\n\n${importedHtmlRef.text}` +
+            (importedHtmlRef.truncated ? '\n\n[内容已截断 8000 字]' : '')
+        );
+      }
+      if (type === 'ppt' && importedFile) {
+        if (importedFile.isText && importedFile.text) {
+          parts.push(
+            `【导入参考 (${importedFile.name})】\n\n${importedFile.text}`
+          );
+        } else {
+          parts.push(
+            `【导入参考】文件名: ${importedFile.name}` +
+              (importedFile.note ? `\n说明: ${importedFile.note}` : '')
+          );
+        }
+      }
+      finalBackground = parts.join('\n\n');
+    }
+
     startTransition(async () => {
       try {
         const res = await fetch('/api/projects', {
@@ -132,7 +252,7 @@ export default function NewProjectButton({
           body: JSON.stringify({
             name: trimmed,
             type,
-            background: background.trim() || undefined,
+            background: finalBackground || undefined,
             collaboratorIds: Array.from(collaboratorIds),
           }),
         });
@@ -148,6 +268,10 @@ export default function NewProjectButton({
         setBackground('');
         setType('html');
         setCollaboratorIds(new Set());
+        setSourceMode('blank');
+        setImportUrl('');
+        setImportedHtmlRef(null);
+        setImportedFile(null);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -197,8 +321,8 @@ export default function NewProjectButton({
 
               <div className="field">
                 <label className="field-label">产物形态</label>
-                <div className="type-grid">
-                  {TYPES.map(t => (
+                <div className="type-grid type-grid-2">
+                  {NEW_PROJECT_TYPES.map(t => (
                     <button
                       key={t}
                       type="button"
@@ -212,6 +336,101 @@ export default function NewProjectButton({
                   ))}
                 </div>
               </div>
+
+              <div className="field">
+                <label className="field-label">起点</label>
+                <div className="source-toggle">
+                  <button
+                    type="button"
+                    className={`source-pick${sourceMode === 'blank' ? ' active' : ''}`}
+                    onClick={() => setSourceMode('blank')}
+                    disabled={isPending}
+                  >
+                    <span className="source-pick-title">从零新建</span>
+                    <span className="source-pick-desc">空白起步,让团队 Intent 合成出来</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`source-pick${sourceMode === 'import' ? ' active' : ''}`}
+                    onClick={() => setSourceMode('import')}
+                    disabled={isPending}
+                  >
+                    <span className="source-pick-title">
+                      {type === 'html' ? '导入已有链接' : '导入已有 PPT'}
+                    </span>
+                    <span className="source-pick-desc">
+                      {type === 'html'
+                        ? '把目标页/参考页拉进来,AI 在它基础上迭代'
+                        : '把已有 PPT 作为参考底稿 (文本可读,二进制部分仅作记录)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {sourceMode === 'import' && type === 'html' && (
+                <div className="field">
+                  <label className="field-label" htmlFor="np-url">参考 HTML 链接</label>
+                  <div className="import-url-row">
+                    <input
+                      id="np-url"
+                      className="field-input"
+                      type="url"
+                      placeholder="https://example.com/landing"
+                      value={importUrl}
+                      onChange={e => setImportUrl(e.target.value)}
+                      disabled={isPending || importing}
+                    />
+                    <button
+                      type="button"
+                      className="ws-btn ws-btn-ghost"
+                      onClick={handleImportUrl}
+                      disabled={isPending || importing || !importUrl.trim()}
+                    >
+                      {importing ? '拉取中…' : '拉取'}
+                    </button>
+                  </div>
+                  {importError && <div className="import-error">⚠️ {importError}</div>}
+                  {importedHtmlRef && (
+                    <div className="import-ok">
+                      ✓ 已拉取
+                      {importedHtmlRef.title && (
+                        <strong> 「{importedHtmlRef.title}」</strong>
+                      )}
+                      {' '}· {importedHtmlRef.text.length} 字
+                      {importedHtmlRef.truncated && ' (已截断)'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {sourceMode === 'import' && type === 'ppt' && (
+                <div className="field">
+                  <label className="field-label" htmlFor="np-file">参考 PPT 文件</label>
+                  <div className="import-file-row">
+                    <input
+                      id="np-file"
+                      className="field-input"
+                      type="file"
+                      accept=".ppt,.pptx,.pdf,.txt,.md,.html"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) handleImportFile(f);
+                      }}
+                      disabled={isPending || importing}
+                    />
+                  </div>
+                  {importing && <div className="import-info">读取中…</div>}
+                  {importError && <div className="import-error">⚠️ {importError}</div>}
+                  {importedFile && (
+                    <div className="import-ok">
+                      ✓ 已上传 <strong>{importedFile.name}</strong>
+                      {importedFile.isText
+                        ? ` · 文本已提取 ${importedFile.text?.length ?? 0} 字`
+                        : ` · 二进制文件 (AI 仅读得到文件名)`}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="field">
                 <label className="field-label" htmlFor="np-bg">项目背景（可选）</label>

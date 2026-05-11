@@ -15,6 +15,13 @@ import type { Employee } from '@/lib/employees';
 
 const AGENT_REACT_REFRESH_DELAY_MS = 8000;
 
+type Attachment = {
+  name: string;
+  isText: boolean;
+  text?: string;
+  note?: string;
+};
+
 export default function IntentForm({
   projectId,
   agents = [],
@@ -29,6 +36,35 @@ export default function IntentForm({
   const [isPending, startTransition] = useTransition();
   const [thinkingAgents, setThinkingAgents] = useState<Employee[]>([]);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 附件: 用户在 Intent 上挂的参考文件 (会拼到 statement 给 LLM 读)
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attaching, setAttaching] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleAttachFile(file: File) {
+    setAttaching(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/import/file', { method: 'POST', body: form });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.error || `附件读取失败 (${res.status})`);
+        return;
+      }
+      setAttachments(prev => [
+        ...prev,
+        { name: json.name, isText: json.isText, text: json.text, note: json.note },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAttaching(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   useEffect(() => {
     return () => {
@@ -65,13 +101,30 @@ export default function IntentForm({
   function submit() {
     setError(null);
     const trimmed = statement.trim();
-    if (!trimmed) return;
+    if (!trimmed && attachments.length === 0) return;
+
+    // 拼附件内容到 statement: 用户文字优先, 附件附后, LLM 抽取 / 合成都能读到
+    let finalStatement = trimmed;
+    if (attachments.length > 0) {
+      const refs: string[] = [];
+      for (const a of attachments) {
+        if (a.isText && a.text) {
+          refs.push(`【参考文件: ${a.name}】\n${a.text}`);
+        } else {
+          refs.push(`【参考文件: ${a.name}】${a.note ?? ''}`);
+        }
+      }
+      finalStatement = trimmed
+        ? `${trimmed}\n\n${refs.join('\n\n')}`
+        : refs.join('\n\n');
+    }
+
     startTransition(async () => {
       try {
         const res = await fetch(`/api/projects/${projectId}/intents`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ statement: trimmed }),
+          body: JSON.stringify({ statement: finalStatement }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) {
@@ -79,6 +132,7 @@ export default function IntentForm({
           return;
         }
         setStatement('');
+        setAttachments([]);
         router.refresh();
         if (json.intent?.id) {
           fireAgentReactions(json.intent.id);
@@ -118,6 +172,26 @@ export default function IntentForm({
             }}
           />
         </div>
+        {attachments.length > 0 && (
+          <div className="quickbar-attachments">
+            {attachments.map((a, i) => (
+              <span key={i} className="quickbar-chip">
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                  <path d="M7.5 2.5L3 7a2 2 0 1 0 2.83 2.83L10 5.65a3 3 0 0 0-4.24-4.24L1.5 5.67" strokeLinecap="round" />
+                </svg>
+                <span className="quickbar-chip-name">{a.name}</span>
+                <span className="quickbar-chip-kind">{a.isText ? '文本' : '二进制'}</span>
+                <button
+                  type="button"
+                  className="quickbar-chip-x"
+                  onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                  aria-label={`移除 ${a.name}`}
+                  disabled={isPending}
+                >×</button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="quickbar-foot">
           <span className="quickbar-hint">
             <span className="kbd">↵</span>
@@ -127,10 +201,32 @@ export default function IntentForm({
             <span className="kbd">↵</span>
             换行
           </span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.md,.markdown,.html,.htm,.json,.csv,.xml,.yaml,.yml,.pptx,.pdf"
+            style={{ display: 'none' }}
+            onChange={e => {
+              const f = e.target.files?.[0];
+              if (f) handleAttachFile(f);
+            }}
+          />
+          <button
+            type="button"
+            className="quickbar-attach"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isPending || attaching}
+            title="附加参考文件 (文本/HTML/Markdown 会被 AI 读到正文; PPT/PDF 只记文件名)"
+          >
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+              <path d="M9.5 3L4 8.5a2.5 2.5 0 1 0 3.54 3.54L13 6.5A4 4 0 0 0 7.34 0.85L2 6.17" strokeLinecap="round" />
+            </svg>
+            {attaching ? '读取中…' : '附件'}
+          </button>
           <button
             type="button"
             className="quickbar-submit"
-            disabled={isPending || !statement.trim()}
+            disabled={isPending || (!statement.trim() && attachments.length === 0)}
             onClick={submit}
           >
             {isPending ? '添加中…' : '添加 Intent'}

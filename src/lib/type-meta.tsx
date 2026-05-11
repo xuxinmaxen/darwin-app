@@ -5,9 +5,13 @@ type ProjectType = Project['type'];
 export const TYPE_LABEL: Record<ProjectType, string> = {
   html: '落地页',
   ppt: 'PPT',
+  // 'doc' / 'design' 不再让用户新建, 但保留 label 以兼容旧数据
   doc: '文档',
   design: '设计稿',
 };
+
+/** 用户能在"新建项目"时选择的类型 (UI 层) */
+export const NEW_PROJECT_TYPES: ProjectType[] = ['html', 'ppt'];
 
 export function TypeIcon({ type }: { type: ProjectType }) {
   switch (type) {
