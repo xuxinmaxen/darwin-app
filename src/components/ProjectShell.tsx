@@ -630,22 +630,27 @@ export default function ProjectShell({
 
         <ThemeToggle />
 
-        {/* 协作者头像组 */}
+        {/* 协作者头像组 — 带在线状态 */}
         <button
           type="button"
           className="ws-user proj-collab proj-collab-topbar proj-collab-topbar-btn"
-          title="管理协作者"
+          title="管理项目成员"
           onClick={() => setCollabPanelOpen(true)}
         >
-          {collaboratorsState.slice(0, MAX_TOPBAR_AVATARS).map(e => (
-            <span
-              key={e.id}
-              className={`avatar ${e.cls}${e.kind === 'agent' ? ' agent' : ''}`}
-              title={`${e.name} · ${e.role}${e.kind === 'agent' ? '（Agent）' : ''}`}
-            >
-              {e.short}
-            </span>
-          ))}
+          {collaboratorsState.slice(0, MAX_TOPBAR_AVATARS).map(e => {
+            const isOnline = e.kind === 'agent' || e.isOnline;
+            return (
+              <span key={e.id} className="collab-topbar-wrap">
+                <span
+                  className={`avatar ${e.cls}${e.kind === 'agent' ? ' agent' : ''}`}
+                  title={`${e.name} · ${e.role}${e.kind === 'agent' ? '（永远在线）' : isOnline ? '（在线）' : '（离线）'}`}
+                >
+                  {e.short}
+                </span>
+                <span className={`collab-topbar-dot${isOnline ? ' online' : ' offline'}`} aria-hidden />
+              </span>
+            );
+          })}
           {collaboratorsState.length > MAX_TOPBAR_AVATARS && (
             <span
               className="avatar avatar-more"

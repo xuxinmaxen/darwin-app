@@ -1626,6 +1626,9 @@ body {
   animation: modal-fade-in 0.18s ease;
 }
 @keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+/* 宽版弹窗 — 新建/编辑项目这种内容多的表单 */
+.modal-panel-lg { max-width: 680px; }
+
 .modal-panel {
   width: 100%; max-width: 480px;
   max-height: calc(100vh - 48px);
@@ -4044,6 +4047,19 @@ body {
 .theme-toggle-btn:hover:not(:disabled) { color: #7C3AED; }
 .theme-toggle-btn.is-dark { color: #F59E0B; }
 .theme-toggle-btn.is-dark:hover:not(:disabled) { color: #FBBF24; }
+
+/* 顶栏协作者 — 头像 + 在线状态点 */
+.collab-topbar-wrap {
+  position: relative; display: inline-flex; flex-shrink: 0;
+}
+.collab-topbar-dot {
+  position: absolute; bottom: -1px; right: -1px;
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 1.5px solid var(--glass-bg, #fff);
+  flex-shrink: 0; z-index: 1;
+}
+.collab-topbar-dot.online { background: #10B981; box-shadow: 0 0 4px rgba(16,185,129,0.7); }
+.collab-topbar-dot.offline { background: var(--text-4); }
 
 /* 协作者头像组 和 当前用户头像 之间的竖线分隔符 */
 .topbar-avatar-sep {

@@ -310,7 +310,7 @@ export default function NewProjectButton({
       {open && (
         <div className="modal-backdrop" onClick={close}>
           <form
-            className="modal-panel"
+            className="modal-panel modal-panel-lg"
             onClick={e => e.stopPropagation()}
             onSubmit={handleSubmit}
           >

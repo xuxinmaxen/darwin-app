@@ -164,10 +164,10 @@ export default function ProjectCard({
       {/* 编辑模态 */}
       {mode === 'edit' && (
         <div className="modal-backdrop" onClick={closeModal}>
-          <form className="modal-panel" onClick={e => e.stopPropagation()} onSubmit={handleSaveEdit}>
+          <form className="modal-panel modal-panel-lg" onClick={e => e.stopPropagation()} onSubmit={handleSaveEdit}>
             <header className="modal-head">
               <h2 className="modal-title">编辑项目</h2>
-              <p className="modal-sub">修改项目名称或背景描述。已有的 Intent 不受影响。</p>
+              <p className="modal-sub">「{project.name}」· 修改后已有的意图和版本不受影响。</p>
             </header>
             <div className="modal-body">
               <div className="field">
