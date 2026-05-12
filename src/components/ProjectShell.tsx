@@ -652,7 +652,7 @@ export default function ProjectShell({
         <aside className="board">
           <div className="board-head">
             <div className="board-head-text">
-              <span className="board-title">Intent 看板</span>
+              <span className="board-title">意图看板</span>
               <span className="board-sub">团队此刻在想什么</span>
             </div>
             <span className="board-count">{intents.length}</span>

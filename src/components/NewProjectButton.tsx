@@ -459,9 +459,9 @@ export default function NewProjectButton({
 
               <div className="field">
                 <label className="field-label">
-                  邀请协作者
+                  邀请成员
                   <span className="field-hint">
-                    — 你已自动加入。Agent 会按人设主动贡献 Intent
+                    — 你已自动加入。Agent 员工会按人设主动贡献意图
                   </span>
                 </label>
                 {selectable.length === 0 ? (

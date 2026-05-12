@@ -46,6 +46,8 @@ export default function WorkspaceShell({
   currentUser?: CurrentUserMini;
 }) {
   const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -62,9 +64,13 @@ export default function WorkspaceShell({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter(p => p.name.toLowerCase().includes(q));
-  }, [projects, summaries, query]);
+    return projects.filter(p => {
+      if (q && !p.name.toLowerCase().includes(q)) return false;
+      if (typeFilter !== 'all' && p.type !== typeFilter) return false;
+      if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      return true;
+    });
+  }, [projects, query, typeFilter, statusFilter]);
 
   return (
     <div className="view-workspace">
@@ -102,22 +108,40 @@ export default function WorkspaceShell({
               </p>
             </div>
 
-            <div className="ws-toolbar">
+            {/* 筛选行 */}
+            <div className="ws-filters">
               <div className="ws-section-title">
-                {query ? '搜索结果' : '最近项目'}
+                项目
                 <span className="count">{filtered.length}</span>
-                {query && (
-                  <button
-                    type="button"
-                    className="ws-link-btn"
-                    onClick={() => setQuery('')}
-                  >
-                    清除
-                  </button>
-                )}
               </div>
-
-              <div className="ws-toolbar-actions">
+              <div className="ws-filter-group">
+                <select
+                  className="ws-filter-select"
+                  value={typeFilter}
+                  onChange={e => setTypeFilter(e.target.value)}
+                  aria-label="项目类型筛选"
+                >
+                  <option value="all">产物类型 · 全部</option>
+                  <option value="html">落地页</option>
+                  <option value="ppt">PPT</option>
+                  <option value="doc">文档</option>
+                  <option value="design">设计稿</option>
+                </select>
+                <select
+                  className="ws-filter-select"
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value)}
+                  aria-label="项目状态筛选"
+                >
+                  <option value="all">项目状态 · 全部</option>
+                  <option value="draft">草稿</option>
+                  <option value="collaborating">协作中</option>
+                  <option value="tension">有分歧</option>
+                  <option value="converged">已收敛</option>
+                  <option value="published">已发布</option>
+                </select>
+              </div>
+              <div className="ws-toolbar-actions ws-toolbar-actions-tight">
                 <div className="ws-search-bar ws-search-inline">
                   <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
                     <circle cx="6" cy="6" r="4" />
@@ -126,16 +150,11 @@ export default function WorkspaceShell({
                   <input
                     ref={inputRef}
                     value={query}
-                    placeholder="搜索项目名…"
+                    placeholder="搜索项目"
                     onChange={e => setQuery(e.target.value)}
                   />
                   {query && (
-                    <button
-                      type="button"
-                      className="ws-search-clear"
-                      onClick={() => setQuery('')}
-                      aria-label="清除搜索"
-                    >×</button>
+                    <button type="button" className="ws-search-clear" onClick={() => setQuery('')} aria-label="清除">×</button>
                   )}
                   <span className="kbd">⌘K</span>
                 </div>

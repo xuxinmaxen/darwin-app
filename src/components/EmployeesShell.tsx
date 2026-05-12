@@ -272,7 +272,7 @@ export default function EmployeesShell({
               </div>
               <h1 className="ws-title">团队成员</h1>
               <p className="ws-sub">
-                Agent 员工以人设驱动,可以像同事一样加入项目,主动贡献 Intent。
+                管理真实员工和 Agent 员工，任何人都可以加入项目、贡献意图。
               </p>
             </div>
 
@@ -304,24 +304,24 @@ export default function EmployeesShell({
 
             <EmployeeGroup
               kind="human"
-              title="真人成员"
-              sub="同事、合作伙伴；他们能离线，离线时数字分身可以代为参与。"
+              title="真实员工"
+              sub="真实的团队成员；可以离线，离线时可由数字分身代为参与项目。"
               employees={humanEmployees}
               count={humanEmployees.length}
               renderCard={renderEmpCard}
               onNew={openNew}
-              newLabel="邀请真人加入"
+              newLabel="邀请员工加入"
             />
 
             <EmployeeGroup
               kind="agent"
-              title="Agent 同事"
-              sub="以人设驱动的 AI 同事，永远在线，会主动贡献 Intent。"
+              title="Agent 员工"
+              sub="以人设驱动的 AI 员工，永远在线，会主动为项目贡献意图。"
               employees={agentEmployees}
               count={agentEmployees.length}
               renderCard={renderEmpCard}
               onNew={openNew}
-              newLabel="新建 Agent"
+              newLabel="新建 Agent 员工"
             />
           </section>
         </main>
@@ -357,17 +357,17 @@ export default function EmployeesShell({
                 </h2>
                 <p className="modal-sub">
                   {isTwin
-                    ? '该数字分身会从员工列表和它参与的项目协作者中移除。它已留下的 Intent 不受影响。'
+                    ? '该数字分身会从员工列表和它参与的项目中移除。已贡献的意图不受影响。'
                     : confirmDeleteEmp.kind === 'agent'
-                      ? '这个 Agent 会从员工列表和它参与的项目协作者中移除。已留下的 Intent 不受影响。'
-                      : '这个真人会从员工列表和参与的项目协作者中移除。已留下的 Intent 不受影响。'}
+                      ? '这位 Agent 员工会从员工列表和所参与的项目中移除。已贡献的意图不受影响。'
+                      : '这位员工会从员工列表和所参与的项目中移除。已贡献的意图不受影响。'}
                 </p>
               </header>
               {cascadedTwin && (
                 <div className="modal-cascade-warn">
                   <span className="modal-cascade-warn-icon" aria-hidden>⚠</span>
                   <div>
-                    <strong>同时会删除：</strong>TA 的数字分身{' '}
+                    <strong>同时会删除：</strong>他的数字分身{' '}
                     <span className="modal-cascade-twin">
                       <span className={`avatar ${cascadedTwin.cls} agent`}>
                         {cascadedTwin.short}
@@ -375,7 +375,7 @@ export default function EmployeesShell({
                       {cascadedTwin.name}
                     </span>
                     <div className="modal-cascade-warn-sub">
-                      数字分身依附真人存在,真人删了后没有"代为参与"的对象。
+                      数字分身与真实员工绑定，员工删除后数字分身也失去意义。
                     </div>
                   </div>
                 </div>

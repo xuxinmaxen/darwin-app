@@ -130,9 +130,9 @@ export default function CollaboratorsPanel({
         aria-label="协作者管理"
       >
         <header className="modal-head">
-          <h2 className="modal-title">协作者</h2>
+          <h2 className="modal-title">项目成员</h2>
           <p className="modal-sub">
-            真实员工和 Agent 都可加入。Agent 在沟通时会按人设主动接话。
+            真实员工和 Agent 员工都可加入。Agent 员工会按人设主动贡献意图。
           </p>
         </header>
 
