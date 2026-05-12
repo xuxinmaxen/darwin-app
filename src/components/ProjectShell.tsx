@@ -615,25 +615,10 @@ export default function ProjectShell({
 
         <div className="topbar-spacer" />
 
-        <TopbarControls
-          traceMode={traceMode}
-          onTraceToggle={() => setTraceMode(v => !v)}
-          versionLabel={versionLabel}
-          versionsTotal={versionsTotal}
-          versionPanelOpen={versionPanelOpen}
-          onVersionsToggle={() => setVersionPanelOpen(v => !v)}
-          canPublish={canPublish}
-          isPublished={isPublished}
-          publishing={publishing}
-          onPublishClick={handlePublish}
-        />
-
-        <ThemeToggle />
-
-        {/* 协作者头像组 — 带在线状态 */}
+        {/* 协作者头像组 — 居中显示带在线状态 */}
         <button
           type="button"
-          className="ws-user proj-collab proj-collab-topbar proj-collab-topbar-btn"
+          className="ws-user proj-collab proj-collab-topbar proj-collab-topbar-btn proj-collab-center"
           title="管理项目成员"
           onClick={() => setCollabPanelOpen(true)}
         >
@@ -652,14 +637,28 @@ export default function ProjectShell({
             );
           })}
           {collaboratorsState.length > MAX_TOPBAR_AVATARS && (
-            <span
-              className="avatar avatar-more"
-              title={`还有 ${collaboratorsState.length - MAX_TOPBAR_AVATARS} 位`}
-            >
+            <span className="avatar avatar-more" title={`还有 ${collaboratorsState.length - MAX_TOPBAR_AVATARS} 位`}>
               +{collaboratorsState.length - MAX_TOPBAR_AVATARS}
             </span>
           )}
         </button>
+
+        <div className="topbar-spacer" />
+
+        <TopbarControls
+          traceMode={traceMode}
+          onTraceToggle={() => setTraceMode(v => !v)}
+          versionLabel={versionLabel}
+          versionsTotal={versionsTotal}
+          versionPanelOpen={versionPanelOpen}
+          onVersionsToggle={() => setVersionPanelOpen(v => !v)}
+          canPublish={canPublish}
+          isPublished={isPublished}
+          publishing={publishing}
+          onPublishClick={handlePublish}
+        />
+
+        <ThemeToggle />
 
         {/* 分隔线 */}
         <span className="topbar-avatar-sep" aria-hidden />
@@ -702,25 +701,15 @@ export default function ProjectShell({
             ) : (
               (() => {
                 const synthIds = new Set(currentVersion?.intentIds ?? []);
-                // 找到最后一条"已合成"intent 的位置,在其后插入分界线
+                // lastSynthIndex: 上一个已完成版本里最后一条意图的位置
                 let lastSynthIndex = -1;
                 if (currentVersion && synthIds.size > 0) {
                   for (let idx = intents.length - 1; idx >= 0; idx--) {
                     if (synthIds.has(intents[idx].id)) { lastSynthIndex = idx; break; }
                   }
                 }
-                // 合成开始时:立即在最后一条旧意图后插入"合成中"分界线
-                // 合成完成时:改为"vN 合成基准"
-                const nextVersion = versionsTotal + (isSynthesizing ? 1 : 0);
-                const badgeLabel = isSynthesizing
-                  ? `v${nextVersion} 合成中…`
-                  : currentVersion ? `v${versionsTotal} 合成基准` : '合成基准';
-                const badgeClass = isSynthesizing
-                  ? 'board-synth-badge board-synth-badge-active'
-                  : 'board-synth-badge';
-
-                // 若合成中但没有新意图 (所有意图已在 synthIds),则分界线放在所有意图之后
-                const showBoundaryAtEnd = isSynthesizing && lastSynthIndex === intents.length - 1;
+                const prevVersion = versionsTotal;
+                const nextVersion = versionsTotal + 1;
 
                 const cards: React.ReactNode[] = [];
                 intents.forEach((i, idx) => {
@@ -736,20 +725,32 @@ export default function ProjectShell({
                       onDiscuss={handleDiscussIntent}
                     />
                   );
-                  // 分界线条件:最后一条已合成意图之后,且后面还有新意图
-                  const isBoundaryHere =
-                    (idx === lastSynthIndex && idx < intents.length - 1) ||
-                    (showBoundaryAtEnd && idx === intents.length - 1);
-                  if (isBoundaryHere && (currentVersion || isSynthesizing)) {
+
+                  // ── 分界线 1: 上一个版本"已完成"标记 ──────────────────────────
+                  // 仅当还有新意图在它后面时才显示(否则所有意图都在最新版里,不需要区分)
+                  if (currentVersion && idx === lastSynthIndex && idx < intents.length - 1) {
                     cards.push(
-                      <div key="synth-boundary" className="board-synth-boundary">
-                        <span className={badgeClass}>
-                          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                            <path d="M2 6h8M8 4l2 2-2 2" strokeLinecap="round" strokeLinejoin="round" />
+                      <div key="synth-done" className="board-synth-boundary board-synth-done">
+                        <span className="board-synth-badge board-synth-badge-done">
+                          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
+                            <path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
-                          {badgeLabel}
+                          v{prevVersion} 已完成
                         </span>
-                        <div className="board-synth-line" />
+                        <div className="board-synth-line board-synth-line-done" />
+                      </div>
+                    );
+                  }
+
+                  // ── 分界线 2: 新版本"生成中"标记 (合成进行时, 放在最后一条意图下方) ─
+                  if (isSynthesizing && idx === intents.length - 1) {
+                    cards.push(
+                      <div key="synth-ing" className="board-synth-boundary board-synth-ing">
+                        <span className="board-synth-badge board-synth-badge-active">
+                          <span className="board-synth-pulse" aria-hidden />
+                          v{nextVersion} 生成中…
+                        </span>
+                        <div className="board-synth-line board-synth-line-active" />
                       </div>
                     );
                   }

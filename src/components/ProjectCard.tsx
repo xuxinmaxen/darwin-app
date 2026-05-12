@@ -171,7 +171,9 @@ export default function ProjectCard({
             </header>
             <div className="modal-body">
               <div className="field">
-                <label className="field-label" htmlFor="pc-name">项目名称</label>
+                <label className="field-label" htmlFor="pc-name">
+                  项目名称 <span className="field-required">*</span>
+                </label>
                 <input
                   id="pc-name" className="field-input" type="text"
                   value={name} onChange={e => setName(e.target.value)}
@@ -179,7 +181,15 @@ export default function ProjectCard({
                 />
               </div>
               <div className="field">
-                <label className="field-label">产物类型</label>
+                <label className="field-label" htmlFor="pc-bg">项目背景</label>
+                <textarea
+                  id="pc-bg" className="field-input field-textarea" rows={3}
+                  value={background} onChange={e => setBackground(e.target.value)}
+                  disabled={isPending} placeholder="目标受众、关键约束。Agent 会读这段做参考。（可选）"
+                />
+              </div>
+              <div className="field">
+                <label className="field-label">产物类型 <span className="field-required">*</span></label>
                 <div className="type-grid">
                   {NEW_PROJECT_TYPES.map(t => (
                     <button
@@ -219,14 +229,6 @@ export default function ProjectCard({
                 </div>
               </div>
 
-              <div className="field">
-                <label className="field-label" htmlFor="pc-bg">项目背景（可选）</label>
-                <textarea
-                  id="pc-bg" className="field-input field-textarea" rows={4}
-                  value={background} onChange={e => setBackground(e.target.value)}
-                  disabled={isPending} placeholder="这个项目是做什么的？目标用户是谁？有什么特别要求？"
-                />
-              </div>
               {error && <div className="modal-error">{error}</div>}
             </div>
             <footer className="modal-foot">

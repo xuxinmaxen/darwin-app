@@ -321,7 +321,9 @@ export default function NewProjectButton({
 
             <div className="modal-body">
               <div className="field">
-                <label className="field-label" htmlFor="np-name">项目名称</label>
+                <label className="field-label" htmlFor="np-name">
+                  项目名称 <span className="field-required">*</span>
+                </label>
                 <input
                   id="np-name"
                   className="field-input"
@@ -335,7 +337,20 @@ export default function NewProjectButton({
               </div>
 
               <div className="field">
-                <label className="field-label">产物形态</label>
+                <label className="field-label" htmlFor="np-bg">项目背景</label>
+                <textarea
+                  id="np-bg"
+                  className="field-input field-textarea"
+                  value={background}
+                  placeholder="一两句话描述目标受众、关键约束。Agent 会读这段做参考。（可选）"
+                  onChange={e => setBackground(e.target.value)}
+                  disabled={isPending}
+                  rows={3}
+                />
+              </div>
+
+              <div className="field">
+                <label className="field-label">产物形态 <span className="field-required">*</span></label>
                 <div className="type-grid type-grid-2">
                   {NEW_PROJECT_TYPES.map(t => (
                     <button
@@ -446,18 +461,6 @@ export default function NewProjectButton({
                   )}
                 </div>
               )}
-
-              <div className="field">
-                <label className="field-label" htmlFor="np-bg">项目背景（可选）</label>
-                <textarea
-                  id="np-bg"
-                  className="field-input field-textarea"
-                  value={background}
-                  placeholder="一两句话描述目标受众、关键约束。Agent 会读这段做参考。"
-                  onChange={e => setBackground(e.target.value)}
-                  disabled={isPending}
-                />
-              </div>
 
               <div className="field">
                 <label className="field-label">冲突处理方式</label>
