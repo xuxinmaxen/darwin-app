@@ -15,7 +15,11 @@ type EmployeeRow = {
   role: string; email: string | null; persona: string | null; cls: string;
   linked_human_id: string | null; is_online: number; tags_json: string | null;
   tags_intent_count: number; owner_id: string; created_at: string; updated_at: string;
+  last_active_at?: string | null;
 };
+
+/** 真人在线判定: 最近 90 秒内有心跳。Agent 永远在线。 */
+const ONLINE_THRESHOLD_MS = 90_000;
 
 export const ROLE_OPTIONS = ['PM', 'UI', 'RD', '运营', '增长', '文案', 'CEO'];
 
@@ -27,13 +31,33 @@ function rowToEmployee(row: EmployeeRow): Employee {
   if (row.tags_json) {
     try { const p = JSON.parse(row.tags_json); if (Array.isArray(p)) tags = p.filter((s: unknown) => typeof s === 'string'); } catch { /* ignore */ }
   }
+  // 在线判定: Agent 永远在线; 真人看 last_active_at 是否在 90s 内
+  let isOnline = false;
+  if (row.kind === 'agent') {
+    isOnline = true;
+  } else if (row.last_active_at) {
+    const t = new Date(row.last_active_at).getTime();
+    if (!Number.isNaN(t) && Date.now() - t < ONLINE_THRESHOLD_MS) {
+      isOnline = true;
+    }
+  }
   return {
     id: row.id, kind: row.kind, name: row.name, short: row.short, role: row.role,
     email: row.email, persona: row.persona, cls: row.cls,
-    linkedHumanId: row.linked_human_id ?? null, isOnline: row.is_online !== 0,
+    linkedHumanId: row.linked_human_id ?? null, isOnline,
     tags, tagsIntentCount: row.tags_intent_count ?? 0,
     ownerId: row.owner_id, createdAt: row.created_at, updatedAt: row.updated_at,
   };
+}
+
+/** Update last_active_at for current user (heartbeat). Server-only. */
+export async function bumpLastActive(employeeId: string): Promise<void> {
+  await db().from('employees').update({ last_active_at: nowISO() }).eq('id', employeeId);
+}
+
+/** Clear last_active_at on logout */
+export async function clearLastActive(employeeId: string): Promise<void> {
+  await db().from('employees').update({ last_active_at: null }).eq('id', employeeId);
 }
 
 function firstChar(s: string): string { return [...s.trim()][0] || '?'; }

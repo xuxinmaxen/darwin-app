@@ -14,6 +14,7 @@ import { useEffect, useState } from 'react';
 import { Sidebar, type CurrentUserMini } from '@/components/WorkspaceShell';
 import UserMenu from '@/components/UserMenu';
 import ThemeToggle from '@/components/ThemeToggle';
+import Heartbeat from '@/components/Heartbeat';
 import type {
   TeamPref,
   TeamPrefIconKey,
@@ -150,6 +151,7 @@ export default function MemoryShell({
 
   return (
     <div className="view-workspace">
+      <Heartbeat />
       <header className="ws-topbar">
         <Link
           href="/"

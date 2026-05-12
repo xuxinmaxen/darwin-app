@@ -15,6 +15,7 @@ import ProjectCard from '@/components/ProjectCard';
 import NewProjectButton from '@/components/NewProjectButton';
 import UserMenu from '@/components/UserMenu';
 import ThemeToggle from '@/components/ThemeToggle';
+import Heartbeat from '@/components/Heartbeat';
 
 type Summary = { count: number; preview?: string };
 
@@ -74,6 +75,7 @@ export default function WorkspaceShell({
 
   return (
     <div className="view-workspace">
+      <Heartbeat />
       <header className="ws-topbar">
         <Link href="/" className="brand" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="brand-logo" aria-hidden />

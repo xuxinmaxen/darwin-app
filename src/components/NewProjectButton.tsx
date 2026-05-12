@@ -319,179 +319,150 @@ export default function NewProjectButton({
               <p className="modal-sub">从一句话开始。Intent 会持续在这里沉淀。</p>
             </header>
 
-            {/* 左右两栏布局,避免内容过长需要滚动 */}
-            <div className="modal-body modal-body-cols">
+            {/* 单列布局, 自上而下 — 与编辑项目弹窗一致 */}
+            <div className="modal-body">
+              <div className="field">
+                <label className="field-label" htmlFor="np-name">
+                  项目名称 <span className="field-required">*</span>
+                </label>
+                <input
+                  id="np-name" className="field-input" type="text" value={name}
+                  placeholder="例：AI 编码工具产品发布页"
+                  onChange={e => setName(e.target.value)}
+                  disabled={isPending} autoFocus
+                />
+              </div>
 
-              {/* ── 左列: 名称 + 背景 + 冲突模式 ── */}
-              <div className="modal-col">
-                <div className="field">
-                  <label className="field-label" htmlFor="np-name">
-                    项目名称 <span className="field-required">*</span>
-                  </label>
-                  <input
-                    id="np-name"
-                    className="field-input"
-                    type="text"
-                    value={name}
-                    placeholder="例：AI 编码工具产品发布页"
-                    onChange={e => setName(e.target.value)}
-                    disabled={isPending}
-                    autoFocus
-                  />
-                </div>
+              <div className="field">
+                <label className="field-label" htmlFor="np-bg">项目背景</label>
+                <textarea
+                  id="np-bg" className="field-input field-textarea" rows={3}
+                  value={background}
+                  placeholder="目标受众、关键约束。Agent 会读这段做参考。（可选）"
+                  onChange={e => setBackground(e.target.value)}
+                  disabled={isPending}
+                />
+              </div>
 
-                <div className="field">
-                  <label className="field-label" htmlFor="np-bg">项目背景</label>
-                  <textarea
-                    id="np-bg"
-                    className="field-input field-textarea"
-                    value={background}
-                    placeholder="目标受众、关键约束。（可选）"
-                    onChange={e => setBackground(e.target.value)}
-                    disabled={isPending}
-                    rows={4}
-                  />
-                </div>
-
-                <div className="field">
-                  <label className="field-label">冲突处理方式</label>
-                  <div className="conflict-mode-stack">
-                    <button
-                      type="button"
-                      className={`conflict-mode-opt${conflictMode === 'discuss' ? ' active' : ''}`}
-                      onClick={() => setConflictMode('discuss')}
-                      disabled={isPending}
+              <div className="field">
+                <label className="field-label">产物类型 <span className="field-required">*</span></label>
+                <div className="type-grid type-grid-2">
+                  {NEW_PROJECT_TYPES.map(t => (
+                    <button key={t} type="button"
+                      className={`type-pick${type === t ? ' active' : ''}`}
+                      onClick={() => setType(t)} disabled={isPending}
                     >
-                      <span className="conflict-mode-icon">💬</span>
-                      <span className="conflict-mode-title">开讨论</span>
-                      <span className="conflict-mode-desc">AI 给调和方案，团队在讨论框里仲裁。</span>
+                      <TypeIcon type={t} />
+                      <span>{TYPE_LABEL[t]}</span>
                     </button>
-                    <button
-                      type="button"
-                      className={`conflict-mode-opt${conflictMode === 'ai_decide' ? ' active' : ''}`}
-                      onClick={() => setConflictMode('ai_decide')}
-                      disabled={isPending}
-                    >
-                      <span className="conflict-mode-icon">✦</span>
-                      <span className="conflict-mode-title">AI 评分决策</span>
-                      <span className="conflict-mode-desc">AI 自动评分选最佳方案，直接产出决议。</span>
-                    </button>
-                  </div>
+                  ))}
                 </div>
               </div>
 
-              {/* ── 右列: 产物形态 + 起点 + 邀请成员 ── */}
-              <div className="modal-col">
-                <div className="field">
-                  <label className="field-label">产物形态 <span className="field-required">*</span></label>
-                  <div className="type-grid type-grid-2">
-                    {NEW_PROJECT_TYPES.map(t => (
-                      <button
-                        key={t}
-                        type="button"
-                        className={`type-pick${type === t ? ' active' : ''}`}
-                        onClick={() => setType(t)}
-                        disabled={isPending}
-                      >
-                        <TypeIcon type={t} />
-                        <span>{TYPE_LABEL[t]}</span>
-                      </button>
-                    ))}
-                  </div>
+              <div className="field">
+                <label className="field-label">起点</label>
+                <div className="source-toggle">
+                  <button type="button"
+                    className={`source-pick${sourceMode === 'blank' ? ' active' : ''}`}
+                    onClick={() => setSourceMode('blank')} disabled={isPending}
+                  >
+                    <span className="source-pick-title">从零新建</span>
+                    <span className="source-pick-desc">空白起步,让团队 Intent 合成出来</span>
+                  </button>
+                  <button type="button"
+                    className={`source-pick${sourceMode === 'import' ? ' active' : ''}`}
+                    onClick={() => setSourceMode('import')} disabled={isPending}
+                  >
+                    <span className="source-pick-title">
+                      {type === 'html' ? '导入已有链接' : '导入已有 PPT'}
+                    </span>
+                    <span className="source-pick-desc">
+                      {type === 'html'
+                        ? '把目标页拉进来,AI 在它基础上迭代'
+                        : '把已有 PPT 作为参考底稿'}
+                    </span>
+                  </button>
                 </div>
+              </div>
 
+              {sourceMode === 'import' && type === 'html' && (
                 <div className="field">
-                  <label className="field-label">起点</label>
-                  <div className="source-toggle">
-                    <button
-                      type="button"
-                      className={`source-pick${sourceMode === 'blank' ? ' active' : ''}`}
-                      onClick={() => setSourceMode('blank')}
-                      disabled={isPending}
-                    >
-                      <span className="source-pick-title">从零新建</span>
-                      <span className="source-pick-desc">空白起步,让团队 Intent 合成出来</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={`source-pick${sourceMode === 'import' ? ' active' : ''}`}
-                      onClick={() => setSourceMode('import')}
-                      disabled={isPending}
-                    >
-                      <span className="source-pick-title">
-                        {type === 'html' ? '导入已有链接' : '导入已有 PPT'}
-                      </span>
-                      <span className="source-pick-desc">
-                        {type === 'html'
-                          ? '把目标页/参考页拉进来,AI 在它基础上迭代'
-                          : '把已有 PPT 作为参考底稿'}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                {sourceMode === 'import' && type === 'html' && (
-                  <div className="field">
-                    <label className="field-label" htmlFor="np-url">参考链接</label>
-                    <div className="import-url-row">
-                      <input
-                        id="np-url"
-                        className="field-input"
-                        type="url"
-                        placeholder="https://example.com"
-                        value={importUrl}
-                        onChange={e => setImportUrl(e.target.value)}
-                        disabled={isPending || importing}
-                      />
-                      <button
-                        type="button"
-                        className="ws-btn ws-btn-ghost"
-                        onClick={handleImportUrl}
-                        disabled={isPending || importing || !importUrl.trim()}
-                      >
-                        {importing ? '拉取中…' : '拉取'}
-                      </button>
-                    </div>
-                    {importError && <div className="import-error">⚠️ {importError}</div>}
-                    {importedHtmlRef && (
-                      <div className="import-ok">
-                        ✓ 已拉取{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
-                        {' '}· {importedHtmlRef.text.length} 字
-                        {importedHtmlRef.truncated && ' (已截断)'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {sourceMode === 'import' && type === 'ppt' && (
-                  <div className="field">
-                    <label className="field-label" htmlFor="np-file">参考 PPT</label>
+                  <label className="field-label" htmlFor="np-url">参考 HTML 链接</label>
+                  <div className="import-url-row">
                     <input
-                      id="np-file"
-                      className="field-input"
-                      type="file"
-                      accept=".ppt,.pptx,.pdf,.txt,.md,.html"
-                      onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }}
+                      id="np-url" className="field-input" type="url"
+                      placeholder="https://example.com/landing"
+                      value={importUrl}
+                      onChange={e => setImportUrl(e.target.value)}
                       disabled={isPending || importing}
                     />
-                    {importing && <div className="import-info">读取中…</div>}
-                    {importError && <div className="import-error">⚠️ {importError}</div>}
-                    {importedFile && (
-                      <div className="import-ok">✓ 已上传 <strong>{importedFile.name}</strong></div>
-                    )}
+                    <button type="button" className="ws-btn ws-btn-ghost"
+                      onClick={handleImportUrl}
+                      disabled={isPending || importing || !importUrl.trim()}
+                    >
+                      {importing ? '拉取中…' : '拉取'}
+                    </button>
                   </div>
-                )}
+                  {importError && <div className="import-error">⚠️ {importError}</div>}
+                  {importedHtmlRef && (
+                    <div className="import-ok">
+                      ✓ 已拉取{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
+                      {' '}· {importedHtmlRef.text.length} 字
+                      {importedHtmlRef.truncated && ' (已截断)'}
+                    </div>
+                  )}
+                </div>
+              )}
 
+              {sourceMode === 'import' && type === 'ppt' && (
                 <div className="field">
-                  <label className="field-label">
-                    邀请成员
-                    <span className="field-hint"> — 你已自动加入</span>
-                  </label>
+                  <label className="field-label" htmlFor="np-file">参考 PPT 文件</label>
+                  <input
+                    id="np-file" className="field-input" type="file"
+                    accept=".ppt,.pptx,.pdf,.txt,.md,.html"
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }}
+                    disabled={isPending || importing}
+                  />
+                  {importing && <div className="import-info">读取中…</div>}
+                  {importError && <div className="import-error">⚠️ {importError}</div>}
+                  {importedFile && (
+                    <div className="import-ok">✓ 已上传 <strong>{importedFile.name}</strong></div>
+                  )}
+                </div>
+              )}
+
+              <div className="field">
+                <label className="field-label">冲突处理方式</label>
+                <div className="conflict-mode-grid">
+                  <button type="button"
+                    className={`conflict-mode-opt${conflictMode === 'discuss' ? ' active' : ''}`}
+                    onClick={() => setConflictMode('discuss')} disabled={isPending}
+                  >
+                    <span className="conflict-mode-icon">💬</span>
+                    <span className="conflict-mode-title">开讨论</span>
+                    <span className="conflict-mode-desc">AI 给调和方案，团队在讨论框里仲裁。</span>
+                  </button>
+                  <button type="button"
+                    className={`conflict-mode-opt${conflictMode === 'ai_decide' ? ' active' : ''}`}
+                    onClick={() => setConflictMode('ai_decide')} disabled={isPending}
+                  >
+                    <span className="conflict-mode-icon">✦</span>
+                    <span className="conflict-mode-title">AI 评分决策</span>
+                    <span className="conflict-mode-desc">AI 自动评分选最佳方案，直接产出决议。</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="field">
+                <label className="field-label">
+                  邀请成员
+                  <span className="field-hint"> — 你已自动加入。Agent 员工会按人设主动贡献意图</span>
+                </label>
                 {selectable.length === 0 ? (
                   <div className="collab-empty">
                     还没有其他员工。去{' '}
                     <a href="/employees" target="_blank" rel="noreferrer">员工管理</a>{' '}
-                    新增。
+                    新增真实成员或 Agent。
                   </div>
                 ) : (
                   <div className="collab-grid">
@@ -524,9 +495,8 @@ export default function NewProjectButton({
                     )}
                   </div>
                 )}
-                </div>{/* field */}
-              </div>{/* modal-col right */}
-            </div>{/* modal-body-cols */}
+              </div>
+            </div>
 
             {error && <div className="modal-error">{error}</div>}
 

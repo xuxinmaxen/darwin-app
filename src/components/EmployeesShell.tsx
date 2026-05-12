@@ -13,6 +13,7 @@ import { Sidebar, type CurrentUserMini } from '@/components/WorkspaceShell';
 import EmployeeModal from '@/components/EmployeeModal';
 import UserMenu from '@/components/UserMenu';
 import ThemeToggle from '@/components/ThemeToggle';
+import Heartbeat from '@/components/Heartbeat';
 import type { Employee } from '@/lib/employees';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
@@ -98,35 +99,6 @@ export default function EmployeesShell({
     setModalOpen(false);
   }
 
-  async function toggleOnline(emp: Employee) {
-    if (emp.kind !== 'human') return;
-    const next = !emp.isOnline;
-    // 乐观更新
-    setEmployees(prev =>
-      prev.map(e => (e.id === emp.id ? { ...e, isOnline: next } : e))
-    );
-    try {
-      const res = await fetch(`/api/employees/${emp.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isOnline: next }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        // 回滚
-        setEmployees(prev =>
-          prev.map(e => (e.id === emp.id ? { ...e, isOnline: !next } : e))
-        );
-        setError(json.error || '切换在线状态失败');
-      }
-    } catch (err) {
-      setEmployees(prev =>
-        prev.map(e => (e.id === emp.id ? { ...e, isOnline: !next } : e))
-      );
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
   async function handleConfirmDelete(id: string) {
     setDeletingId(id);
     setError(null);
@@ -199,18 +171,16 @@ export default function EmployeesShell({
                 : 'HUMAN'}
           </span>
           {emp.kind === 'human' ? (
-            <button
-              type="button"
-              className={`emp-online-tag${emp.isOnline ? ' is-on' : ''}`}
-              onClick={() => toggleOnline(emp)}
-              aria-pressed={emp.isOnline}
-              title={emp.isOnline ? '点击切到离线' : '点击切到在线'}
+            // 真人在线状态由 heartbeat 自动判定,不可手动切换
+            <span
+              className={`emp-online-tag emp-online-tag-readonly${emp.isOnline ? ' is-on' : ''}`}
+              title={emp.isOnline ? '最近活跃' : '已离线'}
             >
               <span className="dot" />
               {emp.isOnline ? '在线' : '离线'}
-            </button>
+            </span>
           ) : (
-            // Agent 永远在线，用不可点击的标签展示
+            // Agent 永远在线
             <span className="emp-online-tag is-on emp-always-online" title="永远在线">
               <span className="dot" />
               永远在线
@@ -246,6 +216,7 @@ export default function EmployeesShell({
 
   return (
     <div className="view-workspace">
+      <Heartbeat />
       <header className="ws-topbar">
         <Link
           href="/"

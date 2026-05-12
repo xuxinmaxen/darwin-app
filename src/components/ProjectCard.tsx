@@ -62,9 +62,16 @@ export default function ProjectCard({
 
   // 可选员工 (排除 owner)
   const OWNER_ID = '00000000-0000-0000-0000-000000000001';
-  const selectableEmps = allEmployees.filter(e => e.id !== OWNER_ID && !(e.kind === 'agent' && e.linkedHumanId));
-  const humanEmps = selectableEmps.filter(e => e.kind === 'human');
-  const agentEmps = selectableEmps.filter(e => e.kind === 'agent' && !e.linkedHumanId);
+  // 真人 + 独立 Agent 显示在列表里；数字分身缩进在真人下方
+  const visibleEmps = allEmployees.filter(e => e.id !== OWNER_ID && !(e.kind === 'agent' && e.linkedHumanId));
+  const humanEmps = visibleEmps.filter(e => e.kind === 'human');
+  const agentEmps = visibleEmps.filter(e => e.kind === 'agent' && !e.linkedHumanId);
+  // 真人 → 数字分身映射
+  const twinByHumanId = new Map<string, Employee>();
+  for (const e of allEmployees) {
+    if (e.kind === 'agent' && e.linkedHumanId) twinByHumanId.set(e.linkedHumanId, e);
+  }
+  const selectableEmps = visibleEmps; // 兼容旧名字
 
   const previewText = project.background?.trim() || '暂无项目背景描述。';
 
@@ -246,26 +253,63 @@ export default function ProjectCard({
 
               {selectableEmps.length > 0 && (
                 <div className="field">
-                  <label className="field-label">邀请成员</label>
+                  <label className="field-label">
+                    邀请成员
+                    <span className="field-hint"> — 你已自动加入</span>
+                  </label>
                   <div className="collab-grid">
                     {humanEmps.length > 0 && (
                       <>
                         <div className="collab-group-label">真实员工</div>
-                        {humanEmps.map(emp => (
-                          <button key={emp.id} type="button"
-                            className={`collab-row${editCollabIds.has(emp.id) ? ' is-checked' : ''}`}
-                            onClick={() => toggleEditCollab(emp.id)} disabled={isPending}
-                          >
-                            <span className={`avatar ${emp.cls}`}>{emp.short}</span>
-                            <span className="collab-text">
-                              <span className="collab-name">{emp.name}</span>
-                              <span className="collab-role">{emp.role}</span>
-                            </span>
-                            <span className={`collab-check${editCollabIds.has(emp.id) ? ' on' : ''}`} aria-hidden>
-                              {editCollabIds.has(emp.id) && <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}><path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                            </span>
-                          </button>
-                        ))}
+                        {humanEmps.map(emp => {
+                          const twin = twinByHumanId.get(emp.id) ?? null;
+                          const isOnline = emp.isOnline;
+                          return (
+                            <div key={emp.id} className="collab-cluster">
+                              <button type="button"
+                                className={`collab-row${editCollabIds.has(emp.id) ? ' is-checked' : ''}`}
+                                onClick={() => toggleEditCollab(emp.id)} disabled={isPending}
+                              >
+                                <span className="collab-avatar-wrap">
+                                  <span className={`avatar ${emp.cls}`}>{emp.short}</span>
+                                  <span className={`collab-online-dot${isOnline ? ' online' : ' offline'}`} title={isOnline ? '在线' : '离线'} />
+                                </span>
+                                <span className="collab-text">
+                                  <span className="collab-name">{emp.name}</span>
+                                  <span className="collab-role">
+                                    {emp.role}
+                                    <span className={`collab-status-tag${isOnline ? ' online' : ' offline'}`}>
+                                      {isOnline ? '在线' : '离线'}
+                                    </span>
+                                  </span>
+                                </span>
+                                <span className={`collab-check${editCollabIds.has(emp.id) ? ' on' : ''}`} aria-hidden>
+                                  {editCollabIds.has(emp.id) && <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}><path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                </span>
+                              </button>
+                              {twin && (
+                                <button type="button"
+                                  className={`collab-row is-twin${!isOnline ? ' is-twin-recommended' : ''}${editCollabIds.has(twin.id) ? ' is-checked' : ''}`}
+                                  onClick={() => toggleEditCollab(twin.id)} disabled={isPending}
+                                >
+                                  <span className="collab-avatar-wrap">
+                                    <span className={`avatar ${twin.cls} agent`}>{twin.short}</span>
+                                  </span>
+                                  <span className="collab-text">
+                                    <span className="collab-name">{twin.name}</span>
+                                    <span className="collab-role">
+                                      {twin.role}
+                                      <span className="collab-row-hint"> · {!isOnline ? `${emp.name}离线，推荐数字分身代为参与` : '数字分身'}</span>
+                                    </span>
+                                  </span>
+                                  <span className={`collab-check${editCollabIds.has(twin.id) ? ' on' : ''}`} aria-hidden>
+                                    {editCollabIds.has(twin.id) && <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}><path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </>
                     )}
                     {agentEmps.length > 0 && (

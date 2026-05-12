@@ -35,6 +35,7 @@ import TensionCard from '@/components/TensionCard';
 import DiscussionDrawer from '@/components/DiscussionDrawer';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
 import ThemeToggle from '@/components/ThemeToggle';
+import Heartbeat from '@/components/Heartbeat';
 import PrefCandidateToast from '@/components/PrefCandidateToast';
 import type { PrefCandidate } from '@/lib/types';
 import type { Version } from '@/lib/versions';
@@ -581,6 +582,7 @@ export default function ProjectShell({
 
   return (
     <div className="view-project">
+      <Heartbeat />
       {/* TOP BAR */}
       <div className="topbar">
         <Link

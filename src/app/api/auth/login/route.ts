@@ -15,6 +15,7 @@ import {
   setLoginCookie,
   DEMO_VERIFICATION_CODE,
 } from '@/lib/auth';
+import { bumpLastActive } from '@/lib/employees';
 
 const BodySchema = z.object({
   email: z.string().email('请输入合法的邮箱').max(200),
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   await setLoginCookie(emp.id);
+  await bumpLastActive(emp.id); // 标记本次登录, 立刻进入在线状态
   return NextResponse.json({
     ok: true,
     user: {

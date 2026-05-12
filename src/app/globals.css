@@ -2830,6 +2830,10 @@ body {
   box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.18);
   animation: online-pulse 2s ease-in-out infinite;
 }
+/* 只读态 (由 heartbeat 自动判定, 不可手动点) */
+.emp-online-tag-readonly { cursor: default; }
+.emp-online-tag-readonly:hover { border-color: var(--line); color: var(--text-3); }
+.emp-online-tag-readonly.is-on:hover { color: #047857; border-color: rgba(16,185,129,0.30); }
 
 /* 卡片"含数字员工" */
 .emp-has-digital {
