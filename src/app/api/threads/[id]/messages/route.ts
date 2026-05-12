@@ -9,8 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listMessages, createMessage, getThread } from '@/lib/threads';
-
-const DEMO_AUTHOR_ID = '00000000-0000-0000-0000-000000000001';
+import { currentUserId } from '@/lib/auth';
 
 const Body = z.object({
   body: z.string().min(1).max(4000),
@@ -63,9 +62,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   try {
+    const resolvedAuthorId = body.authorId ?? (await currentUserId());
     const message = await createMessage({
       threadId,
-      authorId: body.authorId ?? DEMO_AUTHOR_ID,
+      authorId: resolvedAuthorId,
       authorKind: body.authorKind ?? 'human',
       body: body.body,
       isDecision: body.isDecision,

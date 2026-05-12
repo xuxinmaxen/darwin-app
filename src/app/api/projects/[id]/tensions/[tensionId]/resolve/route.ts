@@ -21,8 +21,7 @@ import {
   resolveThread,
   createMessage,
 } from '@/lib/threads';
-
-const DEMO_AUTHOR_ID = '00000000-0000-0000-0000-000000000001';
+import { currentUserId } from '@/lib/auth';
 
 const Body = z.object({
   selectedOptionKey: z.string().min(1).max(40),
@@ -71,10 +70,11 @@ export async function POST(req: NextRequest, { params }: Params) {
       if (thread) threadId = thread.id;
     }
 
+    const deciderId = await currentUserId();
     const resolved = await resolveTension({
       tensionId,
       selectedOptionKey: body.selectedOptionKey,
-      decidedBy: body.decidedBy ?? [DEMO_AUTHOR_ID],
+      decidedBy: body.decidedBy ?? [deciderId],
       threadId,
     });
     await maybeBackToCollaborating(projectId);

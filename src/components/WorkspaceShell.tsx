@@ -14,6 +14,7 @@ import type { Employee } from '@/lib/employees';
 import ProjectCard from '@/components/ProjectCard';
 import NewProjectButton from '@/components/NewProjectButton';
 import UserMenu from '@/components/UserMenu';
+import ThemeToggle from '@/components/ThemeToggle';
 
 type Summary = { count: number; preview?: string };
 
@@ -88,6 +89,7 @@ export default function WorkspaceShell({
           </span>
         </Link>
         <div className="ws-topbar-spacer" />
+        <ThemeToggle />
         <UserMenu user={currentUser} />
       </header>
 

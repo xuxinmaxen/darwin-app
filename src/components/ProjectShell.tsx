@@ -34,6 +34,7 @@ import type { CurrentUserMini } from '@/components/WorkspaceShell';
 import TensionCard from '@/components/TensionCard';
 import DiscussionDrawer from '@/components/DiscussionDrawer';
 import ProjectSettingsPanel from '@/components/ProjectSettingsPanel';
+import ThemeToggle from '@/components/ThemeToggle';
 import PrefCandidateToast from '@/components/PrefCandidateToast';
 import type { PrefCandidate } from '@/lib/types';
 import type { Version } from '@/lib/versions';
@@ -598,10 +599,12 @@ export default function ProjectShell({
           onPublishClick={handlePublish}
         />
 
+        <ThemeToggle />
+
         <button
           type="button"
           className="ctrl proj-settings-btn"
-          title={`项目设置 · 冲突默认 ${conflictMode === 'ai_decide' ? 'AI 评分决策' : '开讨论'}`}
+          title={`冲突模式: ${conflictMode === 'ai_decide' ? 'AI 评分' : '开讨论'}`}
           onClick={() => setSettingsOpen(true)}
         >
           <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden>
@@ -610,6 +613,7 @@ export default function ProjectShell({
           </svg>
         </button>
 
+        {/* 协作者头像组 */}
         <button
           type="button"
           className="ws-user proj-collab proj-collab-topbar proj-collab-topbar-btn"
@@ -635,6 +639,10 @@ export default function ProjectShell({
           )}
         </button>
 
+        {/* 分隔线 */}
+        <span className="topbar-avatar-sep" aria-hidden />
+
+        {/* 当前用户头像 + 菜单 */}
         {currentUser && <UserMenu user={currentUser} />}
       </div>
 

@@ -19,11 +19,9 @@ import { listIntentsByProject, createIntent } from '@/lib/intents';
 import { bumpToCollaborating, getProject } from '@/lib/projects';
 import { tryExtractIntent } from '@/lib/extract';
 import { detectTensionsForProject } from '@/lib/detect-tension';
+import { currentUserId } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
-
-/** Phase 2: replace with Supabase Auth user id */
-const DEMO_AUTHOR_ID = '00000000-0000-0000-0000-000000000001';
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
@@ -95,9 +93,10 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   try {
+    const authorId = await currentUserId();
     const intent = await createIntent({
       projectId,
-      authorId: DEMO_AUTHOR_ID,
+      authorId,
       authorKind: body.authorKind,
       statement: body.statement,
       type: resolvedType,

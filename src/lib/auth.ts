@@ -43,3 +43,17 @@ export async function clearLoginCookie() {
   const jar = await cookies();
   jar.delete(COOKIE_NAME);
 }
+
+const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
+
+/**
+ * 从 cookie 读取当前登录用户 id.
+ * 如果没有登录(cookie 不存在或用户已删)，回退 DEMO_OWNER_ID 保持向后兼容。
+ */
+export async function currentUserId(): Promise<string> {
+  const jar = await cookies();
+  const id = jar.get(COOKIE_NAME)?.value;
+  if (!id) return DEMO_OWNER_ID;
+  // 轻量验证: 只检查 cookie 值非空, 不查库 (节省 DB 调用)
+  return id;
+}

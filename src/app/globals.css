@@ -73,6 +73,59 @@
     "JetBrains Mono", "Liberation Mono", "Courier New", monospace;
 }
 
+/* ===================================================================
+ * Dark mode tokens  (html[data-theme="dark"])
+ * =================================================================== */
+[data-theme="dark"] {
+  --bg: #0F0F13;
+  --bg-2: #16161C;
+  --panel: #1C1C24;
+  --panel-2: #22222C;
+  --panel-3: #2A2A36;
+  --text: #F0EEFF;
+  --text-2: #A9A8C0;
+  --text-3: #6B6A80;
+  --text-4: #45445A;
+  --line: #2E2D3E;
+  --line-2: #3A3950;
+  --line-strong: #4A4860;
+
+  --accent-soft: rgba(79, 70, 229, 0.18);
+  --accent-soft-2: rgba(99, 102, 241, 0.24);
+  --accent-text: #A5B4FC;
+  --tension-soft: rgba(245, 158, 11, 0.12);
+  --tension-soft-2: rgba(245, 158, 11, 0.20);
+  --ok-soft: rgba(16, 185, 129, 0.12);
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.30), 0 0 0 1px rgba(255,255,255,0.04);
+  --shadow-2: 0 4px 18px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.25);
+  --shadow-3: 0 18px 50px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.30);
+  --shadow-glow-violet: 0 0 0 3px rgba(168,85,247,0.18), 0 8px 28px rgba(168,85,247,0.30);
+
+  --glass-bg: linear-gradient(180deg, rgba(28,28,36,0.88) 0%, rgba(22,22,30,0.82) 100%);
+  --glass-bg-strong: linear-gradient(180deg, rgba(34,34,46,0.95) 0%, rgba(28,28,38,0.90) 100%);
+  --glass-bg-faint: linear-gradient(180deg, rgba(22,22,30,0.65) 0%, rgba(18,18,25,0.55) 100%);
+  --glass-border: rgba(255,255,255,0.08);
+  --glass-edge: rgba(255,255,255,0.07);
+  --glass-highlight: rgba(255,255,255,0.08);
+}
+
+[data-theme="dark"] body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Dark mode: body 光晕换成深色渐变 */
+[data-theme="dark"] body::before {
+  background:
+    radial-gradient(ellipse 60% 55% at 20% 20%, rgba(124, 58, 237, 0.20) 0%, transparent 65%),
+    radial-gradient(ellipse 45% 40% at 80% 15%, rgba(59, 130, 246, 0.15) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 45% at 55% 85%, rgba(168, 85, 247, 0.12) 0%, transparent 65%),
+    radial-gradient(ellipse 40% 38% at 10% 80%, rgba(16, 185, 129, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 35% 30% at 90% 75%, rgba(245, 158, 11, 0.08) 0%, transparent 60%),
+    var(--bg);
+}
+
 /* —— Rainbow conic 系统:lumioi 标志性动效 ——
  * 用 @property 让 conic-gradient 角度可动。.rainbow-sweep 给元素套上
  * 1.5px 旋转彩虹边框,期间 violet drop-shadow 制造 "AI 在工作" 的瞬间。 */
@@ -1087,6 +1140,23 @@ body {
   padding: 0 2px;
 }
 .quickbar-chip-x:hover { color: var(--text); }
+/* 图片 chip: 带缩略图 */
+.quickbar-chip-image {
+  padding: 2px 8px 2px 4px;
+  background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,182,212,0.08));
+  border-color: rgba(16,185,129,0.25);
+}
+.quickbar-chip-thumb {
+  width: 22px; height: 22px;
+  object-fit: cover; border-radius: 4px;
+  flex-shrink: 0;
+}
+/* 链接 chip */
+.quickbar-chip-link {
+  background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(99,102,241,0.08));
+  border-color: rgba(59,130,246,0.25);
+}
+.quickbar-chip-link svg { color: #3B82F6; }
 .quickbar-hint {
   font-size: 10.5px; color: var(--text-3);
   display: flex; align-items: center; gap: 4px;
@@ -3776,6 +3846,24 @@ body {
 .proj-collab-topbar-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* ThemeToggle button */
+.theme-toggle-btn {
+  transition: transform 0.22s, color 0.18s, background 0.18s;
+}
+.theme-toggle-btn:hover:not(:disabled) { color: #7C3AED; }
+.theme-toggle-btn.is-dark { color: #F59E0B; }
+.theme-toggle-btn.is-dark:hover:not(:disabled) { color: #FBBF24; }
+
+/* 协作者头像组 和 当前用户头像 之间的竖线分隔符 */
+.topbar-avatar-sep {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  background: var(--glass-edge);
+  margin: 0 6px;
+  align-self: center;
+  flex-shrink: 0;
 }
 
 .collab-panel { width: 460px; max-width: 100%; }

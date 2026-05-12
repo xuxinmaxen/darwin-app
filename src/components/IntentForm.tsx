@@ -15,11 +15,17 @@ import type { Employee } from '@/lib/employees';
 
 const AGENT_REACT_REFRESH_DELAY_MS = 8000;
 
+const URL_RE = /https?:\/\/[^\s"'<>]+/g;
+
 type Attachment = {
   name: string;
   isText: boolean;
   text?: string;
   note?: string;
+  /** 图片: data URL 或 Supabase 公开 URL */
+  imageUrl?: string;
+  /** URL 链接预览 */
+  linkUrl?: string;
 };
 
 export default function IntentForm({
@@ -70,6 +76,58 @@ export default function IntentForm({
     }
   }
 
+  // 粘贴图片
+  async function handlePasteImage(file: File) {
+    setAttaching(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/import/image', { method: 'POST', body: form });
+      const json = await res.json();
+      if (!res.ok || !json.ok) { setError(json.error || '图片上传失败'); return; }
+      setAttachments(prev => [...prev, {
+        name: file.name || '图片',
+        isText: false,
+        imageUrl: json.url,
+        note: `【参考图片: ${file.name || '图片'}】${json.url}`,
+      }]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAttaching(false);
+    }
+  }
+
+  // 粘贴 URL
+  function handlePasteUrl(url: string) {
+    setAttachments(prev => {
+      if (prev.some(a => a.linkUrl === url)) return prev; // 去重
+      return [...prev, { name: url, isText: true, linkUrl: url, text: `【参考链接】${url}` }];
+    });
+  }
+
+  // textarea paste 事件: 图片 / URL 都走这里
+  async function handleTextareaPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData.items);
+    const imageItem = items.find(i => i.type.startsWith('image/'));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (file) await handlePasteImage(file);
+      return;
+    }
+    // 文本里有 URL → 抽出来
+    const text = e.clipboardData.getData('text/plain');
+    const urls = text.match(URL_RE);
+    if (urls && urls.length > 0 && !text.trim().replace(URL_RE, '').trim()) {
+      // 整段都是 URL(没有别的文字)→ 转为 link chip 而不是直接贴进输入框
+      e.preventDefault();
+      for (const url of urls) handlePasteUrl(url);
+    }
+    // 否则让浏览器默认处理(正常文字粘贴)
+  }
+
   useEffect(() => {
     return () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
@@ -112,7 +170,11 @@ export default function IntentForm({
     if (attachments.length > 0) {
       const refs: string[] = [];
       for (const a of attachments) {
-        if (a.isText && a.text) {
+        if (a.imageUrl) {
+          refs.push(`【参考图片: ${a.name}】${a.imageUrl}`);
+        } else if (a.linkUrl) {
+          refs.push(`【参考链接】${a.linkUrl}`);
+        } else if (a.isText && a.text) {
           refs.push(`【参考文件: ${a.name}】\n${a.text}`);
         } else {
           refs.push(`【参考文件: ${a.name}】${a.note ?? ''}`);
@@ -166,7 +228,7 @@ export default function IntentForm({
             value={statement}
             onChange={e => setStatement(e.target.value)}
             disabled={isPending}
-            placeholder="想要什么直接说,AI 会理解…  (Enter 发送 · 📎 可附文件)"
+            placeholder="想要什么直接说,AI 会理解…  (Enter 发送 · 📎 附文件 · 可直接粘贴图片或链接)"
             rows={2}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -174,17 +236,32 @@ export default function IntentForm({
                 submit();
               }
             }}
+            onPaste={handleTextareaPaste}
           />
         </div>
         {attachments.length > 0 && (
           <div className="quickbar-attachments">
             {attachments.map((a, i) => (
-              <span key={i} className="quickbar-chip">
-                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                  <path d="M7.5 2.5L3 7a2 2 0 1 0 2.83 2.83L10 5.65a3 3 0 0 0-4.24-4.24L1.5 5.67" strokeLinecap="round" />
-                </svg>
-                <span className="quickbar-chip-name">{a.name}</span>
-                <span className="quickbar-chip-kind">{a.isText ? '文本' : '二进制'}</span>
+              <span key={i} className={`quickbar-chip${a.imageUrl ? ' quickbar-chip-image' : a.linkUrl ? ' quickbar-chip-link' : ''}`}>
+                {a.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={a.imageUrl} alt={a.name} className="quickbar-chip-thumb" />
+                ) : a.linkUrl ? (
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                    <path d="M4.5 6.5a3 3 0 0 0 4.24 0l1.5-1.5a3 3 0 0 0-4.24-4.24l-.83.83" strokeLinecap="round"/>
+                    <path d="M7.5 5.5a3 3 0 0 0-4.24 0L1.76 7a3 3 0 0 0 4.24 4.24l.83-.83" strokeLinecap="round"/>
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                    <path d="M7.5 2.5L3 7a2 2 0 1 0 2.83 2.83L10 5.65a3 3 0 0 0-4.24-4.24L1.5 5.67" strokeLinecap="round" />
+                  </svg>
+                )}
+                <span className="quickbar-chip-name">
+                  {a.linkUrl ? new URL(a.linkUrl).hostname : a.name}
+                </span>
+                {!a.imageUrl && !a.linkUrl && (
+                  <span className="quickbar-chip-kind">{a.isText ? '文本' : '文件'}</span>
+                )}
                 <button
                   type="button"
                   className="quickbar-chip-x"

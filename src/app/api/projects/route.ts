@@ -12,8 +12,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listProjects, createProject } from '@/lib/projects';
+import { currentUserId } from '@/lib/auth';
 
-/** Phase 2: replace with Supabase Auth `userId` */
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
 
 export async function GET() {
@@ -47,12 +47,13 @@ export async function POST(req: NextRequest) {
     );
   }
   try {
+    const ownerId = await currentUserId();
     const project = await createProject({
       name: body.name,
       type: body.type,
       background: body.background ?? null,
       conflictMode: body.conflictMode,
-      ownerId: DEMO_OWNER_ID,
+      ownerId,
       collaboratorIds: body.collaboratorIds,
     });
     revalidatePath('/');
