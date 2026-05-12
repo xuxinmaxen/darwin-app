@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       // Storage bucket not configured, fall through to base64
     }
 
-    // Fallback: base64 data URL (works without storage setup)
+    // Fallback: base64 data URL — 仅用于前端缩略图预览, 不能嵌入 statement
     const base64 = Buffer.from(bytes).toString('base64');
     const dataUrl = `data:${file.type};base64,${base64}`;
     return NextResponse.json({
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       url: dataUrl,
       name: file.name,
       type: file.type,
-      storage: 'base64',
+      storage: 'base64', // 前端据此判断不嵌入 statement
     });
   } catch (err) {
     return NextResponse.json(

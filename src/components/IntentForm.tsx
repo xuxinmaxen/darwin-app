@@ -171,7 +171,11 @@ export default function IntentForm({
       const refs: string[] = [];
       for (const a of attachments) {
         if (a.imageUrl) {
-          refs.push(`【参考图片: ${a.name}】${a.imageUrl}`);
+          // base64 data URL 太长无法塞进 statement; 只用真实 URL 或跳过
+          const urlToEmbed = a.imageUrl.startsWith('data:') ? null : a.imageUrl;
+          refs.push(urlToEmbed
+            ? `【参考图片: ${a.name}】${urlToEmbed}`
+            : `【参考图片: ${a.name}】(图片已附上，请结合用户描述进行合成)`);
         } else if (a.linkUrl) {
           refs.push(`【参考链接】${a.linkUrl}`);
         } else if (a.isText && a.text) {
