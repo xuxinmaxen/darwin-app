@@ -103,6 +103,7 @@ async function detectScopeTension(args: {
         cacheSystem: false,
         maxTokens: 600,
         temperature: 0.2,
+        tier: 'fast',
       }),
       timeout(DETECT_TIMEOUT_MS),
     ]);

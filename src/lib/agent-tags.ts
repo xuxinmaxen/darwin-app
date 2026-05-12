@@ -97,6 +97,7 @@ export async function recomputeAgentTags(
         cacheSystem: false,
         maxTokens: 200,
         temperature: 0.2,
+        tier: 'fast',
       }),
       timeout(TAGS_TIMEOUT_MS),
     ]);

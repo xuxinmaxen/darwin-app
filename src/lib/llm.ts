@@ -70,6 +70,12 @@ export type CallOpts = {
   cacheSystem?: boolean;
   maxTokens?: number;
   temperature?: number;
+  /**
+   * 任务规模提示。'fast' = 使用 OPENAI_MODEL_FAST / CLAUDE_MODEL_HAIKU 等小模型,
+   * 适合 extract-intent / detect-tension / detect-consensus 等只输出 50-300 token 的任务。
+   * 'full' (默认) = 用主模型,适合 synthesis 等需要大量输出的任务。
+   */
+  tier?: 'fast' | 'full';
 };
 
 export async function callLLM(opts: CallOpts): Promise<string> {
@@ -109,6 +115,10 @@ async function callAnthropic(opts: CallOpts): Promise<string> {
       baseURL: process.env.ANTHROPIC_BASE_URL?.trim() || undefined,
     });
   }
+  // fast tier → haiku (快 3-5x); full tier → 主模型
+  const model = opts.tier === 'fast'
+    ? (process.env.CLAUDE_MODEL_HAIKU?.trim() || process.env.CLAUDE_MODEL_DEFAULT?.trim() || 'claude-haiku-4-5')
+    : (process.env.CLAUDE_MODEL_DEFAULT?.trim() || 'claude-sonnet-4-5');
   const systemBlocks = [
     opts.cacheSystem
       ? {
@@ -119,7 +129,7 @@ async function callAnthropic(opts: CallOpts): Promise<string> {
       : { type: 'text' as const, text: opts.system },
   ];
   const response = await _anthropic.messages.create({
-    model: process.env.CLAUDE_MODEL_DEFAULT?.trim() || 'claude-sonnet-4-5',
+    model,
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0,
     system: systemBlocks,
@@ -127,9 +137,7 @@ async function callAnthropic(opts: CallOpts): Promise<string> {
   });
   const block = response.content[0];
   if (block.type !== 'text') {
-    throw new Error(
-      `Anthropic returned ${block.type} block, expected text`
-    );
+    throw new Error(`Anthropic returned ${block.type} block, expected text`);
   }
   return block.text;
 }
@@ -143,8 +151,12 @@ async function callOpenAI(opts: CallOpts): Promise<string> {
       baseURL: process.env.OPENAI_BASE_URL?.trim() || undefined,
     });
   }
+  // fast tier → 小模型 (快 3-5x,适合 50-300 token 输出); full → 主模型
+  const model = opts.tier === 'fast'
+    ? (process.env.OPENAI_MODEL_FAST?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini')
+    : (process.env.OPENAI_MODEL?.trim() || 'gpt-4o');
   const response = await _openai.chat.completions.create({
-    model: process.env.OPENAI_MODEL?.trim() || 'gpt-4o',
+    model,
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0,
     messages: [

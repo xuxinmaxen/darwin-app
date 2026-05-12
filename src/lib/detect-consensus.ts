@@ -84,6 +84,7 @@ export async function detectConsensusForThread(
         cacheSystem: false,
         maxTokens: 300,
         temperature: 0.1,
+        tier: 'fast',
       }),
       timeout(TIMEOUT_MS),
     ]);

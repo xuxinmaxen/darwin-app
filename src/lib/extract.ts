@@ -57,6 +57,7 @@ export async function tryExtractIntent(
         cacheSystem: true,
         maxTokens: 256,
         temperature: 0,
+        tier: 'fast',
       }),
       timeout(EXTRACT_TIMEOUT_MS),
     ]);

@@ -23,9 +23,13 @@ import type { Project, Intent } from '@/lib/types';
 import type { Version } from '@/lib/versions';
 import { TYPE_LABEL } from '@/lib/type-meta';
 
-// 冲突检测 LLM 调用需要 5-15s, debounce 设为 20s 让检测有时间先完成
-// 如果检测到分歧, 自动合成会被跳过直到分歧解决
-const AUTO_SYNC_DEBOUNCE_MS = 20_000;
+// 冲突检测异步运行 (fire-and-forget), 有分歧时 activeTensionCount > 0 会阻断合成。
+// debounce 给检测足够时间后再触发合成, 通常 LLM 8-12s 内返回。
+const AUTO_SYNC_DEBOUNCE_MS = Number(
+  typeof window !== 'undefined'
+    ? undefined
+    : process?.env?.DARWIN_AUTOSYNC_DEBOUNCE_MS
+) || 10_000;
 
 /** 在合成产物里注入 <base target="_blank"> 防止 iframe 内链接导航破坏当前页面 */
 function injectBaseTarget(html: string): string {

@@ -121,6 +121,7 @@ export async function extractPrefCandidateForTension(
         cacheSystem: false,
         maxTokens: 500,
         temperature: 0.2,
+        tier: 'fast',
       }),
       timeout(EXTRACT_TIMEOUT_MS),
     ]);

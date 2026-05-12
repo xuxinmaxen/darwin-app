@@ -107,6 +107,7 @@ export async function arbitrateTension(tensionId: string): Promise<ArbitrateResu
         cacheSystem: false,
         maxTokens: 800,
         temperature: 0.2,
+        tier: 'fast',
       }),
       timeout(ARBITRATE_TIMEOUT_MS),
     ]);

@@ -124,6 +124,7 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
         cacheSystem: false,
         maxTokens: 400,
         temperature: 0.4,
+        tier: 'fast',
       }),
       timeout(REACT_TIMEOUT_MS),
     ]);

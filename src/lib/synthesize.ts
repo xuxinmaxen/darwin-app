@@ -107,7 +107,7 @@ async function callLLMForHtmlSynthesis(
     system,
     user,
     cacheSystem: true,
-    maxTokens: 8000,
+    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 5000,
     temperature: 0.4,
   });
 
@@ -132,7 +132,7 @@ async function callLLMForIncrementalUpdate(
     system,
     user,
     cacheSystem: true,
-    maxTokens: 8000,
+    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 5000,
     temperature: 0.2,  // 更低温度 → 更保守地修改
   });
 
