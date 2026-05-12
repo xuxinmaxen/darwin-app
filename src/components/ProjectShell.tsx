@@ -189,6 +189,33 @@ export default function ProjectShell({
   // Tensions: 本地 state, 解决/检测出新的会更新
   const [activeTensions, setActiveTensions] = useState<Tension[]>(initialActiveTensions);
 
+  // 历史讨论面板
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [allThreads, setAllThreads] = useState<Thread[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  async function openDiscussionForThread(t: Thread) {
+    setActiveThread(t);
+    setDrawerOpen(true);
+    await loadThreadMessages(t.id);
+  }
+
+  async function loadAllThreads() {
+    if (loadingHistory) return;
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/threads`);
+      const json = await res.json();
+      if (json.ok) setAllThreads(json.threads ?? []);
+    } catch { /* swallow */ }
+    finally { setLoadingHistory(false); }
+  }
+
+  function openHistory() {
+    setHistoryOpen(true);
+    loadAllThreads();
+  }
+
   // 讨论抽屉状态
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeThread, setActiveThread] = useState<Thread | null>(null);
@@ -656,6 +683,17 @@ export default function ProjectShell({
               <span className="board-sub">团队此刻在想什么</span>
             </div>
             <span className="board-count">{intents.length}</span>
+            <button
+              type="button"
+              className="board-history-btn"
+              onClick={openHistory}
+              title="查看所有历史讨论"
+            >
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M2 5a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v3a3 3 0 0 1-3 3H6l-3 2v-2a3 3 0 0 1-1-2.5V5z" strokeLinejoin="round"/>
+              </svg>
+              历史讨论
+            </button>
           </div>
 
           <div className={`board-list ${anyHover ? 'is-prov-active' : ''}`}>
@@ -667,18 +705,46 @@ export default function ProjectShell({
                 每条意图都会留下来,不会被淹没
               </div>
             ) : (
-              intents.map(i => (
-                <IntentCard
-                  key={i.id}
-                  intent={i}
-                  author={employeeById.get(i.authorId) ?? null}
-                  isHovered={hoveredIntentId === i.id || intentHighlightSet.has(i.id)}
-                  isDimmed={anyHover && !(hoveredIntentId === i.id || intentHighlightSet.has(i.id))}
-                  onMouseEnter={() => setHoveredIntentId(i.id)}
-                  onMouseLeave={() => setHoveredIntentId(null)}
-                  onDiscuss={handleDiscussIntent}
-                />
-              ))
+              (() => {
+                const synthIds = new Set(currentVersion?.intentIds ?? []);
+                // 找到最后一条"已合成"intent 的位置,在其后插入分界线
+                let lastSynthIndex = -1;
+                if (currentVersion && synthIds.size > 0) {
+                  for (let idx = intents.length - 1; idx >= 0; idx--) {
+                    if (synthIds.has(intents[idx].id)) { lastSynthIndex = idx; break; }
+                  }
+                }
+                const cards: React.ReactNode[] = [];
+                intents.forEach((i, idx) => {
+                  cards.push(
+                    <IntentCard
+                      key={i.id}
+                      intent={i}
+                      author={employeeById.get(i.authorId) ?? null}
+                      isHovered={hoveredIntentId === i.id || intentHighlightSet.has(i.id)}
+                      isDimmed={anyHover && !(hoveredIntentId === i.id || intentHighlightSet.has(i.id))}
+                      onMouseEnter={() => setHoveredIntentId(i.id)}
+                      onMouseLeave={() => setHoveredIntentId(null)}
+                      onDiscuss={handleDiscussIntent}
+                    />
+                  );
+                  // 在最后一条已合成意图后插入分界线
+                  if (idx === lastSynthIndex && idx < intents.length - 1) {
+                    cards.push(
+                      <div key="synth-boundary" className="board-synth-boundary">
+                        <span className="board-synth-badge">
+                          <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                            <path d="M2 6h8M8 4l2 2-2 2" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                          {currentVersion ? `v${versionsTotal} 合成基准` : '已合成范围'}
+                        </span>
+                        <div className="board-synth-line" />
+                      </div>
+                    );
+                  }
+                });
+                return cards;
+              })()
             )}
           </div>
 
@@ -773,6 +839,7 @@ export default function ProjectShell({
               traceMode={traceMode}
               onVersionCreated={handleVersionCreated}
               onExitPreview={handleExitPreview}
+              activeTensionCount={activeTensions.length}
             />
           </div>
         </section>
@@ -843,6 +910,50 @@ export default function ProjectShell({
               }
             />
           ))}
+        </div>
+      )}
+
+      {/* 历史讨论面板 */}
+      {historyOpen && (
+        <div className="modal-backdrop" onClick={() => setHistoryOpen(false)}>
+          <div className="modal-panel history-panel" onClick={e => e.stopPropagation()} role="dialog" aria-label="历史讨论">
+            <header className="modal-head">
+              <h2 className="modal-title">历史讨论</h2>
+              <p className="modal-sub">所有曾开启的讨论，包括已收敛的。</p>
+            </header>
+            <div className="modal-body history-list">
+              {loadingHistory ? (
+                <div className="history-empty">加载中…</div>
+              ) : allThreads.length === 0 ? (
+                <div className="history-empty">还没有任何讨论。</div>
+              ) : allThreads.map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="history-row"
+                  onClick={() => {
+                    setHistoryOpen(false);
+                    // 打开这条 thread 的抽屉
+                    openDiscussionForThread(t);
+                  }}
+                >
+                  <span className={`history-status-dot${t.status === 'resolved' ? ' resolved' : ''}`} />
+                  <span className="history-row-text">
+                    <span className="history-row-title">{t.title}</span>
+                    <span className="history-row-meta">
+                      {t.scope ? `${t.scope} · ` : ''}{t.status === 'resolved' ? '已收敛' : '进行中'}
+                    </span>
+                  </span>
+                  <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden style={{ width: 10, height: 10, flexShrink: 0, color: 'var(--text-4)' }}>
+                    <path d="M3 2l4 3-4 3" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              ))}
+            </div>
+            <footer className="modal-foot">
+              <button type="button" className="ws-btn ws-btn-ghost" onClick={() => setHistoryOpen(false)}>关闭</button>
+            </footer>
+          </div>
         </div>
       )}
 

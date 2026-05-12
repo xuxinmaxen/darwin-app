@@ -23,7 +23,15 @@ import type { Project, Intent } from '@/lib/types';
 import type { Version } from '@/lib/versions';
 import { TYPE_LABEL } from '@/lib/type-meta';
 
-const AUTO_SYNC_DEBOUNCE_MS = 1500;
+// 冲突检测 LLM 调用需要 5-15s, debounce 设为 20s 让检测有时间先完成
+// 如果检测到分歧, 自动合成会被跳过直到分歧解决
+const AUTO_SYNC_DEBOUNCE_MS = 20_000;
+
+/** 在合成产物里注入 <base target="_blank"> 防止 iframe 内链接导航破坏当前页面 */
+function injectBaseTarget(html: string): string {
+  if (html.includes('<base')) return html;
+  return html.replace(/<head([^>]*)>/i, '<head$1><base target="_blank">');
+}
 
 const HIGHLIGHT_STYLE = `
   [data-scope] {
@@ -106,6 +114,7 @@ export default function ProjectCanvas({
   traceMode,
   onVersionCreated,
   onExitPreview,
+  activeTensionCount = 0,
 }: {
   project: Project;
   intents: Intent[];
@@ -117,6 +126,8 @@ export default function ProjectCanvas({
   traceMode?: boolean;
   onVersionCreated: (v: Version) => void;
   onExitPreview?: () => void;
+  /** 有 active tension 时阻断自动合成 */
+  activeTensionCount?: number;
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
@@ -257,6 +268,8 @@ export default function ProjectCanvas({
     if (!currentVersion) return;
     if (intents.length === 0) return;
     if (autoSyncing) return;
+    // 有未解决冲突时不合成 — 等待分歧解决后再触发
+    if (activeTensionCount > 0) return;
 
     const currentHash = hashIntents(intents);
     if (currentHash === lastSyncedHashRef.current) return;
@@ -412,12 +425,11 @@ export default function ProjectCanvas({
 
       {project.type === 'html' ? (
         <iframe
-          // key 让 iframe 在 displayVersion 切换时彻底重 load
           key={displayVersion.id}
           ref={iframeRef}
           onLoad={handleIframeLoad}
           className="canvas-frame"
-          srcDoc={displayContent}
+          srcDoc={injectBaseTarget(displayContent)}
           title={`${project.name} · synthesized preview`}
           sandbox="allow-same-origin"
         />
@@ -434,10 +446,14 @@ export default function ProjectCanvas({
                 ? 'AI 正在按新 Intent 增量更新…'
                 : 'AI 正在合成新版本…'}
             </span>
+          ) : isStale && activeTensionCount > 0 ? (
+            <span className="canvas-stale canvas-stale-blocked">
+              <span className="canvas-stale-dot" />
+              有 {activeTensionCount} 个分歧待解决，解决后自动合成新版本</span>
           ) : isStale ? (
             <span className="canvas-stale">
               <span className="canvas-stale-dot" />
-              检测到 Intent 变化，{Math.ceil(AUTO_SYNC_DEBOUNCE_MS / 1000)} 秒内自动重合成…
+              检测到意图变化，正在等待冲突检测完成后合成…
             </span>
           ) : error ? (
             <span className="canvas-sync-error">

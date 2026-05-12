@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { Project } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
-import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
+import { TYPE_LABEL, TypeIcon, STATUS_LABEL, NEW_PROJECT_TYPES } from '@/lib/type-meta';
 
 function formatRelativeTime(iso: string) {
   const now = Date.now();
@@ -45,6 +45,7 @@ export default function ProjectCard({
   const [isPending, startTransition] = useTransition();
   const [mode, setMode] = useState<'idle' | 'edit' | 'confirm-delete'>('idle');
   const [name, setName] = useState(project.name);
+  const [type, setType] = useState(project.type);
   const [background, setBackground] = useState(project.background ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -68,7 +69,7 @@ export default function ProjectCard({
         const res = await fetch(`/api/projects/${project.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, background: background.trim() || null }),
+          body: JSON.stringify({ name: trimmedName, background: background.trim() || null, type }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) { setError(json.error || '保存失败'); return; }
@@ -177,11 +178,26 @@ export default function ProjectCard({
                 />
               </div>
               <div className="field">
+                <label className="field-label">产物类型</label>
+                <div className="type-grid">
+                  {NEW_PROJECT_TYPES.map(t => (
+                    <button
+                      key={t} type="button"
+                      className={`type-opt${type === t ? ' active' : ''}`}
+                      onClick={() => setType(t)} disabled={isPending}
+                    >
+                      <TypeIcon type={t} />
+                      <span>{TYPE_LABEL[t]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="field">
                 <label className="field-label" htmlFor="pc-bg">项目背景（可选）</label>
                 <textarea
-                  id="pc-bg" className="field-input field-textarea" rows={3}
+                  id="pc-bg" className="field-input field-textarea" rows={4}
                   value={background} onChange={e => setBackground(e.target.value)}
-                  disabled={isPending} placeholder="这个项目是做什么的？目标用户是谁？"
+                  disabled={isPending} placeholder="这个项目是做什么的？目标用户是谁？有什么特别要求？"
                 />
               </div>
               {error && <div className="modal-error">{error}</div>}
