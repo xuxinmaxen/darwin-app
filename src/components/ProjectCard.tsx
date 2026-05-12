@@ -35,11 +35,13 @@ export default function ProjectCard({
   project,
   intentCount,
   collaborators,
+  allEmployees = [],
 }: {
   project: Project;
   intentCount: number;
   preview?: string;
   collaborators: Employee[];
+  allEmployees?: Employee[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -50,6 +52,19 @@ export default function ProjectCard({
   const [background, setBackground] = useState(project.background ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+
+  // 协作者选择状态 (编辑时)
+  const [editCollabIds, setEditCollabIds] = useState<Set<string>>(
+    new Set(collaborators.map(c => c.id))
+  );
+  const toggleEditCollab = (id: string) =>
+    setEditCollabIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  // 可选员工 (排除 owner)
+  const OWNER_ID = '00000000-0000-0000-0000-000000000001';
+  const selectableEmps = allEmployees.filter(e => e.id !== OWNER_ID && !(e.kind === 'agent' && e.linkedHumanId));
+  const humanEmps = selectableEmps.filter(e => e.kind === 'human');
+  const agentEmps = selectableEmps.filter(e => e.kind === 'agent' && !e.linkedHumanId);
 
   const previewText = project.background?.trim() || '暂无项目背景描述。';
 
@@ -70,7 +85,7 @@ export default function ProjectCard({
         const res = await fetch(`/api/projects/${project.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, background: background.trim() || null, type, conflictMode }),
+          body: JSON.stringify({ name: trimmedName, background: background.trim() || null, type, conflictMode, collaboratorIds: Array.from(editCollabIds) }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) { setError(json.error || '保存失败'); return; }
@@ -228,6 +243,54 @@ export default function ProjectCard({
                   </button>
                 </div>
               </div>
+
+              {selectableEmps.length > 0 && (
+                <div className="field">
+                  <label className="field-label">邀请成员</label>
+                  <div className="collab-grid">
+                    {humanEmps.length > 0 && (
+                      <>
+                        <div className="collab-group-label">真实员工</div>
+                        {humanEmps.map(emp => (
+                          <button key={emp.id} type="button"
+                            className={`collab-row${editCollabIds.has(emp.id) ? ' is-checked' : ''}`}
+                            onClick={() => toggleEditCollab(emp.id)} disabled={isPending}
+                          >
+                            <span className={`avatar ${emp.cls}`}>{emp.short}</span>
+                            <span className="collab-text">
+                              <span className="collab-name">{emp.name}</span>
+                              <span className="collab-role">{emp.role}</span>
+                            </span>
+                            <span className={`collab-check${editCollabIds.has(emp.id) ? ' on' : ''}`} aria-hidden>
+                              {editCollabIds.has(emp.id) && <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}><path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {agentEmps.length > 0 && (
+                      <>
+                        <div className="collab-group-label">Agent 员工</div>
+                        {agentEmps.map(emp => (
+                          <button key={emp.id} type="button"
+                            className={`collab-row${editCollabIds.has(emp.id) ? ' is-checked' : ''}`}
+                            onClick={() => toggleEditCollab(emp.id)} disabled={isPending}
+                          >
+                            <span className={`avatar ${emp.cls} agent`}>{emp.short}</span>
+                            <span className="collab-text">
+                              <span className="collab-name">{emp.name}</span>
+                              <span className="collab-role">{emp.role}</span>
+                            </span>
+                            <span className={`collab-check${editCollabIds.has(emp.id) ? ' on' : ''}`} aria-hidden>
+                              {editCollabIds.has(emp.id) && <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2}><path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {error && <div className="modal-error">{error}</div>}
             </div>

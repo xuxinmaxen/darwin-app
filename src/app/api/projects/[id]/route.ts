@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { getProject, deleteProject, updateProject } from '@/lib/projects';
+import { getProject, deleteProject, updateProject, setCollaborators } from '@/lib/projects';
+import { currentUserId } from '@/lib/auth';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -40,6 +41,7 @@ const PatchBody = z.object({
     .enum(['draft', 'collaborating', 'tension', 'converged', 'published'])
     .optional(),
   conflictMode: z.enum(['discuss', 'ai_decide']).optional(),
+  collaboratorIds: z.array(z.string()).optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -61,6 +63,10 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   try {
     const project = await updateProject(id, body);
+    if (body.collaboratorIds !== undefined) {
+      const ownerId = await currentUserId();
+      await setCollaborators(id, ownerId, body.collaboratorIds);
+    }
     revalidatePath('/');
     revalidatePath(`/projects/${id}`);
     return NextResponse.json({ ok: true, project });

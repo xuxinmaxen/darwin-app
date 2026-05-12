@@ -198,7 +198,7 @@ export default function EmployeesShell({
                 ? 'AGENT'
                 : 'HUMAN'}
           </span>
-          {emp.kind === 'human' && (
+          {emp.kind === 'human' ? (
             <button
               type="button"
               className={`emp-online-tag${emp.isOnline ? ' is-on' : ''}`}
@@ -209,6 +209,12 @@ export default function EmployeesShell({
               <span className="dot" />
               {emp.isOnline ? '在线' : '离线'}
             </button>
+          ) : (
+            // Agent 永远在线，用不可点击的标签展示
+            <span className="emp-online-tag is-on emp-always-online" title="永远在线">
+              <span className="dot" />
+              永远在线
+            </span>
           )}
         </div>
         <div className="emp-name">

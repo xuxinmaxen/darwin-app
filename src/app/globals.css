@@ -1644,10 +1644,10 @@ body {
   position: fixed; inset: 0; z-index: 100;
   /* 蒙层换成"科技夜空": 深紫 + 蓝 + 透 + blur, 让背后的彩色光晕也能透一点 */
   background:
-    radial-gradient(800px 600px at 20% 30%, rgba(168, 85, 247, 0.20), transparent 60%),
-    radial-gradient(700px 500px at 80% 70%, rgba(59, 130, 246, 0.18), transparent 60%),
-    rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(10px) saturate(140%);
+    radial-gradient(800px 600px at 20% 30%, rgba(124, 58, 237, 0.15), transparent 60%),
+    radial-gradient(700px 500px at 80% 70%, rgba(59, 130, 246, 0.12), transparent 60%),
+    rgba(8, 10, 20, 0.82);
+  backdrop-filter: blur(14px) saturate(120%);
   -webkit-backdrop-filter: blur(10px) saturate(140%);
   display: flex; align-items: center; justify-content: center;
   padding: 24px;
@@ -1661,7 +1661,7 @@ body {
   width: 100%; max-width: 480px;
   max-height: calc(100vh - 48px);
   display: flex; flex-direction: column; min-height: 0;
-  background: var(--glass-bg-strong);
+  background: var(--panel); /* 全不透明,避免弹窗后内容透视 */
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
@@ -1701,6 +1701,25 @@ body {
   display: flex; flex-direction: column; gap: 16px;
   flex: 1 1 auto; min-height: 0;
   overflow-y: auto;
+}
+/* 两栏表单: 左右并排, 减少垂直空间需求 */
+.modal-body-cols {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+  align-items: start;
+  overflow-y: auto;
+}
+.modal-col {
+  display: flex; flex-direction: column; gap: 14px;
+  min-width: 0;
+}
+/* 冲突模式纵向排列 (左列专用) */
+.conflict-mode-stack {
+  display: flex; flex-direction: column; gap: 8px;
+}
+.conflict-mode-stack .conflict-mode-opt {
+  width: 100%;
 }
 .modal-foot {
   padding: 14px 22px;

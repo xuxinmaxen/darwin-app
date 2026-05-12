@@ -125,8 +125,6 @@ export default function WorkspaceShell({
                     <option value="all">产物类型 · 全部</option>
                     <option value="html">落地页</option>
                     <option value="ppt">PPT</option>
-                    <option value="doc">文档</option>
-                    <option value="design">设计稿</option>
                   </select>
                   <select
                     className="ws-filter-select"
@@ -197,15 +195,13 @@ export default function WorkspaceShell({
                       intentCount={summary.count}
                       preview={summary.preview}
                       collaborators={collaborators[p.id] ?? []}
+                      allEmployees={employees}
                     />
                   );
                 })}
               </div>
             )}
 
-            <div className="ws-foot">
-              <span>Darwin v1 · 多人意图合成</span>
-            </div>
           </section>
         </main>
       </div>
