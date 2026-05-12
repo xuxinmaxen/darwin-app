@@ -108,40 +108,45 @@ export default function WorkspaceShell({
               </p>
             </div>
 
-            {/* 筛选行 */}
+            {/* 工具栏:左边标题+筛选,右边搜索+新建 — 始终同一行靠右 */}
             <div className="ws-filters">
-              <div className="ws-section-title">
-                项目
-                <span className="count">{filtered.length}</span>
+              {/* 左侧:标题 + 筛选下拉 */}
+              <div className="ws-filters-left">
+                <div className="ws-section-title">
+                  项目
+                  <span className="count">{filtered.length}</span>
+                </div>
+                <div className="ws-filter-group">
+                  <select
+                    className="ws-filter-select"
+                    value={typeFilter}
+                    onChange={e => setTypeFilter(e.target.value)}
+                    aria-label="项目类型筛选"
+                  >
+                    <option value="all">产物类型 · 全部</option>
+                    <option value="html">落地页</option>
+                    <option value="ppt">PPT</option>
+                    <option value="doc">文档</option>
+                    <option value="design">设计稿</option>
+                  </select>
+                  <select
+                    className="ws-filter-select"
+                    value={statusFilter}
+                    onChange={e => setStatusFilter(e.target.value)}
+                    aria-label="项目状态筛选"
+                  >
+                    <option value="all">项目状态 · 全部</option>
+                    <option value="draft">草稿</option>
+                    <option value="collaborating">协作中</option>
+                    <option value="tension">有分歧</option>
+                    <option value="converged">已收敛</option>
+                    <option value="published">已发布</option>
+                  </select>
+                </div>
               </div>
-              <div className="ws-filter-group">
-                <select
-                  className="ws-filter-select"
-                  value={typeFilter}
-                  onChange={e => setTypeFilter(e.target.value)}
-                  aria-label="项目类型筛选"
-                >
-                  <option value="all">产物类型 · 全部</option>
-                  <option value="html">落地页</option>
-                  <option value="ppt">PPT</option>
-                  <option value="doc">文档</option>
-                  <option value="design">设计稿</option>
-                </select>
-                <select
-                  className="ws-filter-select"
-                  value={statusFilter}
-                  onChange={e => setStatusFilter(e.target.value)}
-                  aria-label="项目状态筛选"
-                >
-                  <option value="all">项目状态 · 全部</option>
-                  <option value="draft">草稿</option>
-                  <option value="collaborating">协作中</option>
-                  <option value="tension">有分歧</option>
-                  <option value="converged">已收敛</option>
-                  <option value="published">已发布</option>
-                </select>
-              </div>
-              <div className="ws-toolbar-actions ws-toolbar-actions-tight">
+
+              {/* 右侧:搜索框 + 新建按钮 — 永远在同一行最右边 */}
+              <div className="ws-filters-right">
                 <div className="ws-search-bar ws-search-inline">
                   <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
                     <circle cx="6" cy="6" r="4" />

@@ -12,6 +12,7 @@ import { useMemo, useState } from 'react';
 import { Sidebar, type CurrentUserMini } from '@/components/WorkspaceShell';
 import EmployeeModal from '@/components/EmployeeModal';
 import UserMenu from '@/components/UserMenu';
+import ThemeToggle from '@/components/ThemeToggle';
 import type { Employee } from '@/lib/employees';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
@@ -252,6 +253,7 @@ export default function EmployeesShell({
           </span>
         </Link>
         <div className="ws-topbar-spacer" />
+        <ThemeToggle />
         <UserMenu user={currentUser} />
       </header>
 

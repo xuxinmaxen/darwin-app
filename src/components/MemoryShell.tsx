@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Sidebar, type CurrentUserMini } from '@/components/WorkspaceShell';
 import UserMenu from '@/components/UserMenu';
+import ThemeToggle from '@/components/ThemeToggle';
 import type {
   TeamPref,
   TeamPrefIconKey,
@@ -162,6 +163,7 @@ export default function MemoryShell({
           </span>
         </Link>
         <div className="ws-topbar-spacer" />
+        <ThemeToggle />
         <UserMenu user={currentUser} />
       </header>
 

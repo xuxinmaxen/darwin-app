@@ -474,11 +474,25 @@ body {
 /* 搜索框和新建按钮紧贴一起 */
 .ws-toolbar-actions-tight { gap: 6px; margin-left: auto; }
 
-/* 筛选行: 左边标题 + 中间下拉 + 右边搜索/新建 */
+/* 筛选行: 左边(标题+下拉) 右边(搜索+新建) — 永远同一行 */
 .ws-filters {
-  display: flex; align-items: center; gap: 12px;
-  flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 18px;
+  flex-wrap: nowrap; /* 整行不换行 */
+  min-width: 0;
+}
+.ws-filters-left {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap; /* 左侧标题+筛选可换行 */
+  flex: 1; min-width: 0;
+}
+.ws-filters-right {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0; /* 永不压缩 */
+  white-space: nowrap;
 }
 .ws-filter-group {
   display: flex; gap: 8px; align-items: center;
