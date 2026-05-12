@@ -36,10 +36,12 @@ export default function ProjectCard({
   preview?: string;
   collaborators: Employee[];
 }) {
+  // 卡片摘要: 项目背景优先(让人一眼知道这是做什么的); 没背景才降级到 Intent 内容
+  const backgroundText = project.background?.trim();
   const previewText =
+    backgroundText ||
     preview?.trim() ||
-    project.background?.trim() ||
-    '还没有 Intent。打开项目，开始第一句表达。';
+    '还没有背景描述。打开项目，开始第一句表达。';
 
   return (
     <div

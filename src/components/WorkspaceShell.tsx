@@ -31,9 +31,6 @@ export default function WorkspaceShell({
   summaries,
   collaborators,
   employees,
-  supabaseConfigured,
-  claudeReady,
-  claudeModel,
   dbError,
   memoryCount,
   employeesCount,
@@ -43,9 +40,6 @@ export default function WorkspaceShell({
   summaries: Record<string, Summary>;
   collaborators: Record<string, Employee[]>;
   employees: Employee[];
-  supabaseConfigured: boolean;
-  claudeReady: boolean;
-  claudeModel: string;
   dbError: string | null;
   memoryCount?: number;
   employeesCount?: number;
@@ -69,13 +63,7 @@ export default function WorkspaceShell({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return projects;
-    return projects.filter(p => {
-      if (p.name.toLowerCase().includes(q)) return true;
-      if (p.background?.toLowerCase().includes(q)) return true;
-      const preview = summaries[p.id]?.preview?.toLowerCase();
-      if (preview?.includes(q)) return true;
-      return false;
-    });
+    return projects.filter(p => p.name.toLowerCase().includes(q));
   }, [projects, summaries, query]);
 
   return (
@@ -110,7 +98,7 @@ export default function WorkspaceShell({
               </div>
               <h1 className="ws-title">把团队的意图，合成为一份产物</h1>
               <p className="ws-sub">
-                每个项目以 Intent Layer 协作。多人输入、AI 合成、单一收敛。同一份意图可以输出落地页、PPT、文档或设计稿。
+                每个项目以 Intent Layer 协作，多人输入、AI 合成、单一收敛。
               </p>
             </div>
 
@@ -129,39 +117,28 @@ export default function WorkspaceShell({
                 )}
               </div>
 
-              <div className="ws-search-bar ws-search-inline">
-                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
-                  <circle cx="6" cy="6" r="4" />
-                  <path d="M9 9l3 3" />
-                </svg>
-                <input
-                  ref={inputRef}
-                  value={query}
-                  placeholder="搜项目名 / 背景 / Intent…"
-                  onChange={e => setQuery(e.target.value)}
-                />
-                <span className="kbd">⌘K</span>
-              </div>
-
               <div className="ws-toolbar-actions">
-                <span
-                  className="status-pill ok"
-                  title="数据库已连接"
-                >
-                  <span className="dot" />
-                  数据库
-                </span>
-                <span
-                  className={`status-pill ${claudeReady ? 'ok' : 'warn'}`}
-                  title={
-                    claudeReady
-                      ? `Claude 模型 ${claudeModel} 可用`
-                      : 'Claude key 待解锁,Intent 抽取/合成功能离线'
-                  }
-                >
-                  <span className="dot" />
-                  {claudeReady ? `Claude · ${claudeModel}` : 'Claude 待解锁'}
-                </span>
+                <div className="ws-search-bar ws-search-inline">
+                  <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5}>
+                    <circle cx="6" cy="6" r="4" />
+                    <path d="M9 9l3 3" />
+                  </svg>
+                  <input
+                    ref={inputRef}
+                    value={query}
+                    placeholder="搜索项目名…"
+                    onChange={e => setQuery(e.target.value)}
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      className="ws-search-clear"
+                      onClick={() => setQuery('')}
+                      aria-label="清除搜索"
+                    >×</button>
+                  )}
+                  <span className="kbd">⌘K</span>
+                </div>
                 <NewProjectButton employees={employees} currentUserId={currentUser?.id} />
               </div>
             </div>

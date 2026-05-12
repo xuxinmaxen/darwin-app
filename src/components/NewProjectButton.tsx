@@ -32,6 +32,7 @@ function CollabCheck({
   hint?: string;
 }) {
   const isTwin = variant === 'twin' || variant === 'twin-recommended';
+  const isOnline = emp.kind === 'agent' || emp.isOnline;
   return (
     <button
       type="button"
@@ -39,18 +40,26 @@ function CollabCheck({
       onClick={onToggle}
       disabled={disabled}
     >
-      <span className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}>
-        {emp.short}
+      <span className="collab-avatar-wrap">
+        <span className={`avatar ${emp.cls}${emp.kind === 'agent' ? ' agent' : ''}`}>
+          {emp.short}
+        </span>
+        {emp.kind === 'human' && (
+          <span
+            className={`collab-online-dot${isOnline ? ' online' : ' offline'}`}
+            title={isOnline ? '在线' : '离线'}
+          />
+        )}
       </span>
       <span className="collab-text">
-        <span className="collab-name">
-          {emp.name}
-          {emp.kind === 'human' && !emp.isOnline && (
-            <span className="collab-offline-tag">离线</span>
-          )}
-        </span>
+        <span className="collab-name">{emp.name}</span>
         <span className="collab-role">
           {emp.role}
+          {emp.kind === 'human' && (
+            <span className={`collab-status-tag${isOnline ? ' online' : ' offline'}`}>
+              {isOnline ? '在线' : '离线'}
+            </span>
+          )}
           {hint && <span className="collab-row-hint"> · {hint}</span>}
         </span>
       </span>
@@ -468,9 +477,12 @@ export default function NewProjectButton({
                         <div className="collab-group-label">真实员工</div>
                         {humans.map(emp => {
                           const twin = twinByHumanId.get(emp.id) ?? null;
-                          // 真人在线 → 不显示数字分身入口 (本人就能参与, 别让用户多做选择)
-                          // 真人离线且有分身 → 显示并强推 (本人不在场, 让分身代为参与)
-                          const showTwin = !!twin && !emp.isOnline;
+                          // 有数字分身 → 始终展示(在线时可选,离线时推荐)
+                          const showTwin = !!twin;
+                          const twinVariant = !emp.isOnline ? 'twin-recommended' : 'twin';
+                          const twinHint = !emp.isOnline
+                            ? `${emp.name}离线，推荐数字分身代为参与`
+                            : '数字分身';
                           return (
                             <div key={emp.id} className="collab-cluster">
                               <CollabCheck
@@ -485,8 +497,8 @@ export default function NewProjectButton({
                                   checked={collaboratorIds.has(twin.id)}
                                   onToggle={() => toggleCollab(twin.id)}
                                   disabled={isPending}
-                                  variant="twin-recommended"
-                                  hint={`${emp.name}离线,推荐让数字分身代为参与`}
+                                  variant={twinVariant}
+                                  hint={twinHint}
                                 />
                               )}
                             </div>

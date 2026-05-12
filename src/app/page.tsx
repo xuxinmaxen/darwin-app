@@ -6,7 +6,6 @@
  */
 
 import { redirect } from 'next/navigation';
-import { describeLLM } from '@/lib/llm';
 import { listProjects, listCollaboratorsByProjects } from '@/lib/projects';
 import { summarizeIntentsForProjects } from '@/lib/intents';
 import { listEmployees } from '@/lib/employees';
@@ -58,7 +57,6 @@ export default async function WorkspacePage() {
   const user = await currentUser();
   if (!user) redirect('/login');
 
-  const llm = describeLLM();
   const [{ projects, summaries, collaborators, employees, error: dbError }, counts] =
     await Promise.all([safeLoad(), loadSidebarCounts(DEMO_OWNER_ID)]);
 
@@ -68,9 +66,6 @@ export default async function WorkspacePage() {
       summaries={summaries}
       collaborators={collaborators}
       employees={employees}
-      supabaseConfigured={true}
-      claudeReady={llm.hasKey}
-      claudeModel={llm.provider ? `${llm.provider} · ${llm.model}` : '未配置'}
       dbError={dbError}
       memoryCount={counts.memoryCount}
       employeesCount={counts.employeesCount}
