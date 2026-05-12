@@ -102,7 +102,6 @@ export default function WorkspaceShell({
                 <span className="dot" />
                 项目管理
               </div>
-              <h1 className="ws-title">把团队的意图，合成为一份产物</h1>
               <p className="ws-sub">
                 每个项目以 Intent Layer 协作，多人输入、AI 合成、单一收敛。
               </p>

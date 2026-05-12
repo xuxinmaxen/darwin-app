@@ -272,17 +272,12 @@ export default function EmployeesShell({
                 <span className="dot" />
                 员工管理
               </div>
-              <h1 className="ws-title">团队成员</h1>
               <p className="ws-sub">
                 管理真实员工和 Agent 员工，任何人都可以加入项目、贡献意图。
               </p>
             </div>
 
             <div className="ws-toolbar">
-              <div className="ws-section-title">
-                团队成员
-                <span className="count">{visibleEmployees.length}</span>
-              </div>
               <div className="ws-toolbar-actions">
                 <button
                   type="button"

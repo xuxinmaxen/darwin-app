@@ -182,10 +182,9 @@ export default function MemoryShell({
                 <span className="dot" />
                 团队记忆
               </div>
-              <h1 className="ws-title">组织级 AI 资产</h1>
               <p className="ws-sub">
-                每次冲突的解决、每个决策的取舍,都会自动沉淀为团队共识。
-                新加入的 Agent 会读取这份记忆,第一天就懂团队脾气。
+                每次冲突的解决、每个决策的取舍，都会自动沉淀为团队共识。
+                新加入的 Agent 会读取这份记忆，第一天了解团队的品味。
               </p>
             </div>
 
@@ -230,8 +229,6 @@ export default function MemoryShell({
             {prefs.length === 0 ? (
               <div className="proj-empty">
                 <strong>还没有团队共识</strong>
-                每次冲突仲裁后,团队的判断可以沉淀到这里。
-                也可以现在就 <button type="button" className="ws-link-btn" onClick={openNew}>手动新增第一条</button>。
               </div>
             ) : (
               <div className="memory-grid">
