@@ -40,7 +40,10 @@ export async function POST(_req: NextRequest, { params }: Params) {
         { status: 404 }
       );
     }
-    const intents = await listIntentsByProject(id);
+    const [intents, latestVersion] = await Promise.all([
+      listIntentsByProject(id),
+      getLatestVersion(id),
+    ]);
     if (intents.length === 0) {
       return NextResponse.json(
         { ok: false, error: '至少需要 1 条 Intent 才能合成' },
@@ -48,7 +51,12 @@ export async function POST(_req: NextRequest, { params }: Params) {
       );
     }
 
-    const result = await synthesize(project, intents);
+    // 有已有版本 → 尝试增量更新
+    const existing = latestVersion
+      ? { html: latestVersion.content, intentIds: latestVersion.intentIds }
+      : null;
+
+    const result = await synthesize(project, intents, existing);
     const version = await createVersion({
       projectId: id,
       format: project.type,
@@ -64,6 +72,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
         ok: true,
         version: { ...version, source: result.source },
         source: result.source,
+        mode: result.mode,
         reason: result.reason,
       },
       { status: 201 }

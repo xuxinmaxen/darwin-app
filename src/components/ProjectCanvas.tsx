@@ -120,6 +120,7 @@ export default function ProjectCanvas({
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
+  const [lastSyncMode, setLastSyncMode] = useState<'full' | 'incremental' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 上一次合成时的 intent 指纹 — 跟 currentVersion 一起更新
@@ -281,6 +282,7 @@ export default function ProjectCanvas({
         return;
       }
       lastSyncedHashRef.current = intentHash;
+      setLastSyncMode(json.mode ?? 'full');
       onVersionCreated(json.version);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -428,7 +430,9 @@ export default function ProjectCanvas({
           {autoSyncing ? (
             <span className="canvas-syncing">
               <span className="canvas-syncing-pulse" />
-              AI 正在按新 Intent 重新合成…
+              {lastSyncMode === 'incremental'
+                ? 'AI 正在按新 Intent 增量更新…'
+                : 'AI 正在合成新版本…'}
             </span>
           ) : isStale ? (
             <span className="canvas-stale">

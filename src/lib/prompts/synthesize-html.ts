@@ -78,6 +78,42 @@ export function buildSynthesizeUser(intents: Intent[]): string {
   return lines.join('\n');
 }
 
+/**
+ * 增量更新 prompt:基于已有 HTML,只处理新增的 Intent,做最小改动。
+ *
+ * 设计:
+ * - 保留原有 HTML 结构、copy 和视觉风格
+ * - 只针对 newIntents 影响的 scope 做局部修改
+ * - 不允许大幅重写——这是 patch,不是重新合成
+ */
+export function buildIncrementalUpdateUser(
+  newIntents: Intent[],
+  existingHtml: string
+): string {
+  const lines: string[] = [];
+  lines.push(`New intents to incorporate (${newIntents.length}):`);
+  lines.push('');
+  for (let i = 0; i < newIntents.length; i++) {
+    const it = newIntents[i];
+    const author = it.authorKind === 'agent' ? 'Agent' : 'Human';
+    lines.push(
+      `${i + 1}. [${it.type} · scope:${it.scope} · ${it.weight} · ${author}] ${it.statement}`
+    );
+  }
+  lines.push('');
+  lines.push('Current HTML (update this, do NOT regenerate from scratch):');
+  lines.push('');
+  lines.push(existingHtml);
+  lines.push('');
+  lines.push(
+    'Task: update the HTML above to incorporate the new intents. ' +
+    'Make the MINIMUM necessary changes — only modify sections affected by the new intents. ' +
+    'Preserve all existing sections, copy, styles and structure that are not impacted. ' +
+    'Output ONLY the complete updated HTML document.'
+  );
+  return lines.join('\n');
+}
+
 /** Crude sanity check before iframe-rendering. */
 export function looksLikeValidHtml(s: string): boolean {
   const trimmed = s.trim().toLowerCase();

@@ -15,6 +15,7 @@ import { callLLM, llmProvider } from './llm';
 import {
   buildSynthesizeSystem,
   buildSynthesizeUser,
+  buildIncrementalUpdateUser,
   looksLikeValidHtml,
   stripCodeFences,
 } from './prompts/synthesize-html';
@@ -23,6 +24,7 @@ export type SynthesisResult = {
   content: string;
   source: 'llm' | 'template';
   reason?: string;
+  mode?: 'full' | 'incremental';
 };
 
 // HTML 8000 token 约 80-100s 生成,留足 margin。可通过 env 调,长时间项目也能用。
@@ -30,13 +32,16 @@ const LLM_TIMEOUT_MS = Number(process.env.LLM_SYNTHESIZE_TIMEOUT_MS) || 180_000;
 
 export async function synthesize(
   project: Project,
-  intents: Intent[]
+  intents: Intent[],
+  /** 如果传入当前版本 HTML + 已合成的 intentIds，会走增量更新而非完全重生成 */
+  existing?: { html: string; intentIds: string[] } | null
 ): Promise<SynthesisResult> {
   if (process.env.DARWIN_DISABLE_CLAUDE === '1') {
     return {
       content: renderTemplate(project, intents),
       source: 'template',
       reason: 'DARWIN_DISABLE_CLAUDE=1 强制使用本地模板',
+      mode: 'full',
     };
   }
 
@@ -45,16 +50,38 @@ export async function synthesize(
       content: renderTemplate(project, intents),
       source: 'template',
       reason: '未配置 OPENAI_API_KEY 或 ANTHROPIC_API_KEY,使用本地模板',
+      mode: 'full',
     };
   }
 
-  // 优先走 LLM,失败回退
+  // 增量模式: 有已有版本 + 有新的 intent
+  if (existing && existing.html) {
+    const prevIds = new Set(existing.intentIds);
+    const newIntents = intents.filter(i => !prevIds.has(i.id));
+
+    // 只有新增 intent 才走增量;如果 intent 没变化或全是新的,走全量
+    if (newIntents.length > 0 && newIntents.length < intents.length) {
+      try {
+        const html = await Promise.race([
+          callLLMForIncrementalUpdate(project, newIntents, existing.html),
+          timeout(LLM_TIMEOUT_MS),
+        ]);
+        return { content: html, source: 'llm', mode: 'incremental' };
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn('[synthesize] incremental update failed, falling back to full synthesis:', reason);
+        // 降级到全量
+      }
+    }
+  }
+
+  // 全量合成
   try {
     const html = await Promise.race([
       callLLMForHtmlSynthesis(project, intents),
       timeout(LLM_TIMEOUT_MS),
     ]);
-    return { content: html, source: 'llm' };
+    return { content: html, source: 'llm', mode: 'full' };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     console.warn('[synthesize] LLM path failed, falling back to template:', reason);
@@ -62,11 +89,12 @@ export async function synthesize(
       content: renderTemplate(project, intents),
       source: 'template',
       reason: `LLM 失败: ${reason.slice(0, 120)}`,
+      mode: 'full',
     };
   }
 }
 
-// ─── LLM path ──────────────────────────────────────────────
+// ─── LLM paths ──────────────────────────────────────────────
 
 async function callLLMForHtmlSynthesis(
   project: Project,
@@ -87,6 +115,31 @@ async function callLLMForHtmlSynthesis(
   if (!looksLikeValidHtml(cleaned)) {
     throw new Error(
       `LLM 返回不是 HTML 文档 (前 100 字符: ${cleaned.slice(0, 100)})`
+    );
+  }
+  return cleaned;
+}
+
+async function callLLMForIncrementalUpdate(
+  project: Project,
+  newIntents: Intent[],
+  existingHtml: string
+): Promise<string> {
+  const system = buildSynthesizeSystem(project);
+  const user = buildIncrementalUpdateUser(newIntents, existingHtml);
+
+  const raw = await callLLM({
+    system,
+    user,
+    cacheSystem: true,
+    maxTokens: 8000,
+    temperature: 0.2,  // 更低温度 → 更保守地修改
+  });
+
+  const cleaned = stripCodeFences(raw);
+  if (!looksLikeValidHtml(cleaned)) {
+    throw new Error(
+      `LLM 增量更新返回不是 HTML (前 100 字符: ${cleaned.slice(0, 100)})`
     );
   }
   return cleaned;
