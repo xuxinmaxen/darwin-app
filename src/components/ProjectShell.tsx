@@ -84,6 +84,7 @@ export default function ProjectShell({
   const [publishing, setPublishing] = useState(false);
   const [versionsTotal, setVersionsTotal] = useState(initialVersionsTotal);
   const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
+  const [isSynthesizing, setIsSynthesizing] = useState(false);
   const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<'draft' | 'published'>(
@@ -145,6 +146,7 @@ export default function ProjectShell({
   const handleVersionCreated = (v: Version) => {
     setCurrentVersion(v);
     setVersionsTotal(n => n + 1);
+    setIsSynthesizing(false); // 合成完成
   };
 
   const handlePreview = async (versionId: string) => {
@@ -628,18 +630,6 @@ export default function ProjectShell({
 
         <ThemeToggle />
 
-        <button
-          type="button"
-          className="ctrl proj-settings-btn"
-          title={`冲突模式: ${conflictMode === 'ai_decide' ? 'AI 评分' : '开讨论'}`}
-          onClick={() => setSettingsOpen(true)}
-        >
-          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.4} aria-hidden>
-            <circle cx="7" cy="7" r="2.2" />
-            <path d="M7 1.4v1.4M7 11.2v1.4M1.4 7h1.4M11.2 7h1.4M3 3l1 1M10 10l1 1M3 11l1-1M10 4l1-1" strokeLinecap="round" />
-          </svg>
-        </button>
-
         {/* 协作者头像组 */}
         <button
           type="button"
@@ -714,6 +704,19 @@ export default function ProjectShell({
                     if (synthIds.has(intents[idx].id)) { lastSynthIndex = idx; break; }
                   }
                 }
+                // 合成开始时:立即在最后一条旧意图后插入"合成中"分界线
+                // 合成完成时:改为"vN 合成基准"
+                const nextVersion = versionsTotal + (isSynthesizing ? 1 : 0);
+                const badgeLabel = isSynthesizing
+                  ? `v${nextVersion} 合成中…`
+                  : currentVersion ? `v${versionsTotal} 合成基准` : '合成基准';
+                const badgeClass = isSynthesizing
+                  ? 'board-synth-badge board-synth-badge-active'
+                  : 'board-synth-badge';
+
+                // 若合成中但没有新意图 (所有意图已在 synthIds),则分界线放在所有意图之后
+                const showBoundaryAtEnd = isSynthesizing && lastSynthIndex === intents.length - 1;
+
                 const cards: React.ReactNode[] = [];
                 intents.forEach((i, idx) => {
                   cards.push(
@@ -728,15 +731,18 @@ export default function ProjectShell({
                       onDiscuss={handleDiscussIntent}
                     />
                   );
-                  // 在最后一条已合成意图后插入分界线
-                  if (idx === lastSynthIndex && idx < intents.length - 1) {
+                  // 分界线条件:最后一条已合成意图之后,且后面还有新意图
+                  const isBoundaryHere =
+                    (idx === lastSynthIndex && idx < intents.length - 1) ||
+                    (showBoundaryAtEnd && idx === intents.length - 1);
+                  if (isBoundaryHere && (currentVersion || isSynthesizing)) {
                     cards.push(
                       <div key="synth-boundary" className="board-synth-boundary">
-                        <span className="board-synth-badge">
+                        <span className={badgeClass}>
                           <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
                             <path d="M2 6h8M8 4l2 2-2 2" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
-                          {currentVersion ? `v${versionsTotal} 合成基准` : '已合成范围'}
+                          {badgeLabel}
                         </span>
                         <div className="board-synth-line" />
                       </div>
@@ -840,6 +846,7 @@ export default function ProjectShell({
               onVersionCreated={handleVersionCreated}
               onExitPreview={handleExitPreview}
               activeTensionCount={activeTensions.length}
+              onSynthesisStart={() => setIsSynthesizing(true)}
             />
           </div>
         </section>

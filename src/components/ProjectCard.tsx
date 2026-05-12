@@ -46,6 +46,7 @@ export default function ProjectCard({
   const [mode, setMode] = useState<'idle' | 'edit' | 'confirm-delete'>('idle');
   const [name, setName] = useState(project.name);
   const [type, setType] = useState(project.type);
+  const [conflictMode, setConflictMode] = useState<'discuss' | 'ai_decide'>(project.conflictMode as 'discuss' | 'ai_decide');
   const [background, setBackground] = useState(project.background ?? '');
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -69,7 +70,7 @@ export default function ProjectCard({
         const res = await fetch(`/api/projects/${project.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: trimmedName, background: background.trim() || null, type }),
+          body: JSON.stringify({ name: trimmedName, background: background.trim() || null, type, conflictMode }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) { setError(json.error || '保存失败'); return; }
@@ -192,6 +193,32 @@ export default function ProjectCard({
                   ))}
                 </div>
               </div>
+              <div className="field">
+                <label className="field-label">冲突处理方式</label>
+                <div className="conflict-mode-grid">
+                  <button
+                    type="button"
+                    className={`conflict-mode-opt${conflictMode === 'discuss' ? ' active' : ''}`}
+                    onClick={() => setConflictMode('discuss')}
+                    disabled={isPending}
+                  >
+                    <span className="conflict-mode-icon">💬</span>
+                    <span className="conflict-mode-title">开讨论</span>
+                    <span className="conflict-mode-desc">AI 给调和方案，团队在讨论框里仲裁。</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`conflict-mode-opt${conflictMode === 'ai_decide' ? ' active' : ''}`}
+                    onClick={() => setConflictMode('ai_decide')}
+                    disabled={isPending}
+                  >
+                    <span className="conflict-mode-icon">✦</span>
+                    <span className="conflict-mode-title">AI 评分决策</span>
+                    <span className="conflict-mode-desc">AI 自动评分选最佳方案，直接产出决议。</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="field">
                 <label className="field-label" htmlFor="pc-bg">项目背景（可选）</label>
                 <textarea

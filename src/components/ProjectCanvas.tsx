@@ -115,6 +115,7 @@ export default function ProjectCanvas({
   onVersionCreated,
   onExitPreview,
   activeTensionCount = 0,
+  onSynthesisStart,
 }: {
   project: Project;
   intents: Intent[];
@@ -126,8 +127,9 @@ export default function ProjectCanvas({
   traceMode?: boolean;
   onVersionCreated: (v: Version) => void;
   onExitPreview?: () => void;
-  /** 有 active tension 时阻断自动合成 */
   activeTensionCount?: number;
+  /** 合成开始时立刻通知父组件,让看板提前显示分界线 */
+  onSynthesisStart?: () => void;
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
@@ -285,6 +287,8 @@ export default function ProjectCanvas({
   async function runSynthesis(intentHash: string) {
     setAutoSyncing(true);
     setError(null);
+    // 立刻通知父组件:合成已启动 → 看板可以提前显示分界线
+    onSynthesisStart?.();
     try {
       const res = await fetch(`/api/projects/${project.id}/synthesize`, {
         method: 'POST',
@@ -306,6 +310,7 @@ export default function ProjectCanvas({
 
   function handleFirstSynthesize() {
     setError(null);
+    onSynthesisStart?.();
     startFirstTransition(async () => {
       try {
         const res = await fetch(`/api/projects/${project.id}/synthesize`, {

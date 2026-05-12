@@ -86,6 +86,7 @@ export default function NewProjectButton({
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState<Project['type']>('html');
+  const [conflictMode, setConflictMode] = useState<'discuss' | 'ai_decide'>('discuss');
   const [background, setBackground] = useState('');
   const [collaboratorIds, setCollaboratorIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -266,6 +267,7 @@ export default function NewProjectButton({
             name: trimmed,
             type,
             background: finalBackground || undefined,
+            conflictMode,
             collaboratorIds: Array.from(collaboratorIds),
           }),
         });
@@ -455,6 +457,32 @@ export default function NewProjectButton({
                   onChange={e => setBackground(e.target.value)}
                   disabled={isPending}
                 />
+              </div>
+
+              <div className="field">
+                <label className="field-label">冲突处理方式</label>
+                <div className="conflict-mode-grid">
+                  <button
+                    type="button"
+                    className={`conflict-mode-opt${conflictMode === 'discuss' ? ' active' : ''}`}
+                    onClick={() => setConflictMode('discuss')}
+                    disabled={isPending}
+                  >
+                    <span className="conflict-mode-icon">💬</span>
+                    <span className="conflict-mode-title">开讨论</span>
+                    <span className="conflict-mode-desc">AI 给 3 个调和方案，团队在讨论框里仲裁。</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`conflict-mode-opt${conflictMode === 'ai_decide' ? ' active' : ''}`}
+                    onClick={() => setConflictMode('ai_decide')}
+                    disabled={isPending}
+                  >
+                    <span className="conflict-mode-icon">✦</span>
+                    <span className="conflict-mode-title">AI 评分决策</span>
+                    <span className="conflict-mode-desc">AI 给 3 个方案打分选最佳，直接产出决议。</span>
+                  </button>
+                </div>
               </div>
 
               <div className="field">
