@@ -190,11 +190,11 @@ export default function ProjectCard({
               </div>
               <div className="field">
                 <label className="field-label">产物类型 <span className="field-required">*</span></label>
-                <div className="type-grid">
+                <div className="type-grid type-grid-2">
                   {NEW_PROJECT_TYPES.map(t => (
                     <button
                       key={t} type="button"
-                      className={`type-opt${type === t ? ' active' : ''}`}
+                      className={`type-pick${type === t ? ' active' : ''}`}
                       onClick={() => setType(t)} disabled={isPending}
                     >
                       <TypeIcon type={t} />

@@ -85,6 +85,8 @@ export default function ProjectShell({
   const [versionsTotal, setVersionsTotal] = useState(initialVersionsTotal);
   const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
+  // 开始合成时快照当时的 intentIds，用于在生成中状态下精确定位分界线
+  const [synthesisPendingIds, setSynthesisPendingIds] = useState<Set<string>>(new Set());
   const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<'draft' | 'published'>(
@@ -146,7 +148,8 @@ export default function ProjectShell({
   const handleVersionCreated = (v: Version) => {
     setCurrentVersion(v);
     setVersionsTotal(n => n + 1);
-    setIsSynthesizing(false); // 合成完成
+    setIsSynthesizing(false);
+    setSynthesisPendingIds(new Set()); // 清空待合成快照
   };
 
   const handlePreview = async (versionId: string) => {
@@ -676,7 +679,6 @@ export default function ProjectShell({
               <span className="board-title">意图看板</span>
               <span className="board-sub">团队此刻在想什么</span>
             </div>
-            <span className="board-count">{intents.length}</span>
             <button
               type="button"
               className="board-history-btn"
@@ -700,14 +702,24 @@ export default function ProjectShell({
               </div>
             ) : (
               (() => {
+                // 上一个完成版本包含的 intentIds
                 const synthIds = new Set(currentVersion?.intentIds ?? []);
-                // lastSynthIndex: 上一个已完成版本里最后一条意图的位置
+                // lastSynthIndex: 已完成版本里最后一条意图的位置
                 let lastSynthIndex = -1;
                 if (currentVersion && synthIds.size > 0) {
                   for (let idx = intents.length - 1; idx >= 0; idx--) {
                     if (synthIds.has(intents[idx].id)) { lastSynthIndex = idx; break; }
                   }
                 }
+                // pendingLastIndex: 本次合成快照的最后一条意图的位置
+                // (仅在合成进行时有效,用于精确定位"生成中"分界线)
+                let pendingLastIndex = -1;
+                if (isSynthesizing && synthesisPendingIds.size > 0) {
+                  for (let idx = intents.length - 1; idx >= 0; idx--) {
+                    if (synthesisPendingIds.has(intents[idx].id)) { pendingLastIndex = idx; break; }
+                  }
+                }
+
                 const prevVersion = versionsTotal;
                 const nextVersion = versionsTotal + 1;
 
@@ -726,9 +738,12 @@ export default function ProjectShell({
                     />
                   );
 
-                  // ── 分界线 1: 上一个版本"已完成"标记 ──────────────────────────
-                  // 仅当还有新意图在它后面时才显示(否则所有意图都在最新版里,不需要区分)
-                  if (currentVersion && idx === lastSynthIndex && idx < intents.length - 1) {
+                  // ── 分界线 1: 已完成版本标记 ────────────────────────────────
+                  // 合成完成后始终展示，让用户知道每个版本结合了哪些意图。
+                  // 若合成进行中且"已完成"和"生成中"位置相同则跳过(避免重叠)
+                  const doneVisible = currentVersion && idx === lastSynthIndex;
+                  const doneOverlapsActive = isSynthesizing && lastSynthIndex === pendingLastIndex;
+                  if (doneVisible && !doneOverlapsActive) {
                     cards.push(
                       <div key="synth-done" className="board-synth-boundary board-synth-done">
                         <span className="board-synth-badge board-synth-badge-done">
@@ -742,8 +757,10 @@ export default function ProjectShell({
                     );
                   }
 
-                  // ── 分界线 2: 新版本"生成中"标记 (合成进行时, 放在最后一条意图下方) ─
-                  if (isSynthesizing && idx === intents.length - 1) {
+                  // ── 分界线 2: 生成中标记 ─────────────────────────────────────
+                  // 精确定位在本次合成快照的最后一条意图下方；
+                  // 用户在合成过程中新增的意图出现在此线下方，等待下次合成。
+                  if (isSynthesizing && idx === pendingLastIndex) {
                     cards.push(
                       <div key="synth-ing" className="board-synth-boundary board-synth-ing">
                         <span className="board-synth-badge board-synth-badge-active">
@@ -852,7 +869,11 @@ export default function ProjectShell({
               onVersionCreated={handleVersionCreated}
               onExitPreview={handleExitPreview}
               activeTensionCount={activeTensions.length}
-              onSynthesisStart={() => setIsSynthesizing(true)}
+              onSynthesisStart={() => {
+                setIsSynthesizing(true);
+                // 快照本次合成时用了哪些 intentIds，新增的意图将落在分界线下方
+                setSynthesisPendingIds(new Set(intents.map(i => i.id)));
+              }}
             />
           </div>
         </section>
