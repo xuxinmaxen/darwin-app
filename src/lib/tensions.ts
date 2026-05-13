@@ -46,6 +46,18 @@ export async function findActiveTensionFor(projectId: string, scope: string, int
   return null;
 }
 
+/** 查任意状态 (含 resolved) 的 tension — 用于"已调和过的冲突不再重复识别"的去重判断 */
+export async function findAnyTensionFor(projectId: string, scope: string, intentIds: string[]): Promise<Tension | null> {
+  const fingerprint = [...intentIds].sort().join(',');
+  const { data } = await db().from('tensions').select('*').eq('project_id', projectId).eq('scope', scope);
+  for (const row of (data ?? []) as TensionRow[]) {
+    let ids: string[] = [];
+    try { ids = JSON.parse(row.intent_ids); } catch { /* ignore */ }
+    if ([...ids].sort().join(',') === fingerprint) return rowToTension(row);
+  }
+  return null;
+}
+
 export type CreateTensionInput = {
   projectId: string; scope: string; intentIds: string[];
   variant: TensionVariant; options: TensionOption[];

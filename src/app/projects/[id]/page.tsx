@@ -7,7 +7,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { getProject, listCollaborators } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
-import { getLatestVersion, countVersions } from '@/lib/versions';
+import { getLatestVersion, countVersions, listVersionsMetadata } from '@/lib/versions';
 import { listActiveTensions } from '@/lib/tensions';
 import { describeLLM } from '@/lib/llm';
 import { currentUser } from '@/lib/auth';
@@ -25,11 +25,12 @@ export default async function ProjectDetailPage({ params }: Params) {
   const project = await getProject(id);
   if (!project) notFound();
 
-  const [intents, initialVersion, versionsTotal, collaborators, activeTensions] =
+  const [intents, initialVersion, versionsTotal, versionsMeta, collaborators, activeTensions] =
     await Promise.all([
       listIntentsByProject(id),
       getLatestVersion(id),
       countVersions(id),
+      listVersionsMetadata(id),
       listCollaborators(id),
       listActiveTensions(id),
     ]);
@@ -42,6 +43,7 @@ export default async function ProjectDetailPage({ params }: Params) {
       claudeReady={llm.hasKey}
       initialVersion={initialVersion}
       versionsTotal={versionsTotal}
+      versionsMeta={versionsMeta}
       collaborators={collaborators}
       activeTensions={activeTensions}
       currentUser={{

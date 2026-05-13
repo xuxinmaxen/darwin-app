@@ -19,7 +19,7 @@ import { getProject } from './projects';
 import { listIntentsByProject } from './intents';
 import {
   listActiveTensions,
-  findActiveTensionFor,
+  findAnyTensionFor,
   createTension,
 } from './tensions';
 import { callLLMJSON, llmProvider } from './llm';
@@ -57,8 +57,9 @@ export async function detectTensionsForProject(
   for (const [scope, scopedIntents] of groups) {
     if (scopedIntents.length < 2) continue;
 
-    // 已有 active tension 覆盖相同 intentIds 集合 → 跳过
-    const existing = await findActiveTensionFor(
+    // 已有任意状态 (active / resolved) tension 覆盖相同 intentIds 集合 → 跳过
+    // 这样团队调和过一次的冲突，刷新或退出再进入都不会被识别为新分歧
+    const existing = await findAnyTensionFor(
       projectId,
       scope,
       scopedIntents.map(i => i.id)

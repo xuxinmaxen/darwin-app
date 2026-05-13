@@ -258,6 +258,23 @@ export default function NewProjectButton({
       finalBackground = parts.join('\n\n');
     }
 
+    // 导入参考 → 生成一条 owner 种子意图，进入项目就能看到
+    let seedIntent: { statement: string } | undefined;
+    if (sourceMode === 'import') {
+      if (type === 'html' && importedHtmlRef) {
+        const ref = importedHtmlRef.title
+          ? `「${importedHtmlRef.title}」(${importedHtmlRef.url})`
+          : importedHtmlRef.url;
+        seedIntent = {
+          statement: `请基于 ${ref} 这份落地页的结构、文案和视觉语言来合成本项目，意图后续可由团队增量调整。`,
+        };
+      } else if (type === 'ppt' && importedFile) {
+        seedIntent = {
+          statement: `请基于上传的 ${importedFile.name} 的内容和结构来合成本 PPT，意图后续可由团队增量调整。`,
+        };
+      }
+    }
+
     startTransition(async () => {
       try {
         const res = await fetch('/api/projects', {
@@ -269,6 +286,7 @@ export default function NewProjectButton({
             background: finalBackground || undefined,
             conflictMode,
             collaboratorIds: Array.from(collaboratorIds),
+            ...(seedIntent ? { seedIntent } : {}),
           }),
         });
         const json = await res.json();

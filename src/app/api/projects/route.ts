@@ -12,6 +12,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listProjects, createProject } from '@/lib/projects';
+import { createIntent } from '@/lib/intents';
 import { currentUserId } from '@/lib/auth';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
@@ -35,6 +36,11 @@ const CreateBody = z.object({
   background: z.string().max(60000).optional(),
   conflictMode: z.enum(['discuss', 'ai_decide']).default('discuss'),
   collaboratorIds: z.array(z.string()).optional(),
+  // 导入参考时 (HTML / PPT)，由客户端附带简短的"种子意图"文案，
+  // 创建项目后自动以 owner 身份发送一条 Reference 类 Intent 到看板
+  seedIntent: z.object({
+    statement: z.string().min(1).max(2000),
+  }).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -57,6 +63,26 @@ export async function POST(req: NextRequest) {
       ownerId,
       collaboratorIds: body.collaboratorIds,
     });
+
+    // 导入流程: 自动以 owner 身份在意图看板挂一条 Reference Intent
+    // 把"基于 X 复刻"这个意图显性化, 用户进入项目就能看到 (类型/scope/weight 直接给, 跳过 LLM extract)
+    if (body.seedIntent?.statement) {
+      try {
+        await createIntent({
+          projectId: project.id,
+          authorId: ownerId,
+          authorKind: 'human',
+          statement: body.seedIntent.statement,
+          type: 'Reference',
+          scope: 'global',
+          weight: 'should',
+          rationale: '导入参考创建项目时自动生成的种子意图',
+        });
+      } catch (err) {
+        console.warn('[projects.create] seed intent failed:', err);
+      }
+    }
+
     revalidatePath('/');
     revalidatePath('/memory');
     revalidatePath('/employees');

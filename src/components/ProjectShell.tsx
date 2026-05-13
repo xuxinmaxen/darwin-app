@@ -38,7 +38,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import Heartbeat from '@/components/Heartbeat';
 import PrefCandidateToast from '@/components/PrefCandidateToast';
 import type { PrefCandidate } from '@/lib/types';
-import type { Version } from '@/lib/versions';
+import type { Version, VersionMeta } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
 import type { Tension, Thread, ThreadMessage } from '@/lib/types';
 
@@ -64,6 +64,7 @@ export default function ProjectShell({
   claudeReady,
   initialVersion,
   versionsTotal: initialVersionsTotal,
+  versionsMeta: initialVersionsMeta,
   collaborators,
   activeTensions: initialActiveTensions,
   currentUser,
@@ -73,6 +74,7 @@ export default function ProjectShell({
   claudeReady: boolean;
   initialVersion: Version | null;
   versionsTotal: number;
+  versionsMeta: VersionMeta[];
   collaborators: Employee[];
   activeTensions: Tension[];
   currentUser?: CurrentUserMini;
@@ -84,6 +86,8 @@ export default function ProjectShell({
   const [versionPanelOpen, setVersionPanelOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [versionsTotal, setVersionsTotal] = useState(initialVersionsTotal);
+  // 所有版本元数据 — 用来在看板渲染每个历史版本的"vN 已完成"分界线
+  const [versionsMeta, setVersionsMeta] = useState<VersionMeta[]>(initialVersionsMeta);
   const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
   // synthesisPendingIds 已由边界线逻辑简化为 intents.length-1,保留 state 防 TS 报错
@@ -169,20 +173,26 @@ export default function ProjectShell({
   // 冲突列表默认折叠, 点 statusbar 展开/收起 (多个 tension 时挤画布, 默认收起)
   const [tensionExpanded, setTensionExpanded] = useState<boolean>(false);
 
-  // 有新意图加入时自动滚到看板底部
+  // 有新意图加入时 / 合成启动时 自动滚到看板底部，确保最新内容和分界线可见
   const prevIntentsLenRef = useRef(intents.length);
+  function scrollBoardToBottom() {
+    requestAnimationFrame(() => {
+      boardListRef.current?.scrollTo({
+        top: boardListRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
+    });
+  }
   useEffect(() => {
     if (intents.length > prevIntentsLenRef.current) {
-      // rAF 确保 React 已完成 DOM 更新后再计算 scrollHeight
-      requestAnimationFrame(() => {
-        boardListRef.current?.scrollTo({
-          top: boardListRef.current.scrollHeight,
-          behavior: 'smooth',
-        });
-      });
+      scrollBoardToBottom();
     }
     prevIntentsLenRef.current = intents.length;
   }, [intents.length]);
+  // 合成启动 → 滚到底部把"vN 合成中…"分界线展示出来
+  useEffect(() => {
+    if (isSynthesizing) scrollBoardToBottom();
+  }, [isSynthesizing]);
 
   const handleConsensusModalClose = () => {
     setConsensusOpen(false);
@@ -216,9 +226,15 @@ export default function ProjectShell({
   const handleVersionCreated = (v: Version) => {
     setCurrentVersion(v);
     setVersionsTotal(n => n + 1);
+    // 把新版本元数据追加到列表 (不含 content) — 让看板能渲染它对应的"vN 已完成"分界线
+    setVersionsMeta(prev => {
+      if (prev.some(m => m.id === v.id)) return prev; // 去重 (polling + SSE 都可能调到这里)
+      const { content: _, ...meta } = v;
+      void _;
+      return [...prev, meta as VersionMeta];
+    });
     setIsSynthesizing(false);
     setSynthesisPendingIds(new Set());
-    // 合成完成 → 清除 localStorage,避免下次进入页面误以为合成还在跑
     if (typeof window !== 'undefined') localStorage.removeItem(SYNTH_KEY);
   };
 
@@ -790,21 +806,20 @@ export default function ProjectShell({
               </div>
             ) : (
               (() => {
-                // 上一个完成版本包含的 intentIds
-                const synthIds = new Set(currentVersion?.intentIds ?? []);
-                // lastSynthIndex: 已完成版本里最后一条意图的位置
-                let lastSynthIndex = -1;
-                if (currentVersion && synthIds.size > 0) {
-                  for (let idx = intents.length - 1; idx >= 0; idx--) {
-                    if (synthIds.has(intents[idx].id)) { lastSynthIndex = idx; break; }
+                // 计算每个历史版本的"最后一条意图"位置 → 分界线插入位置
+                // versionsMeta 已按 createdAt ASC 排序; 数组下标 + 1 即版本号
+                const versionLastIdx: { versionNum: number; lastIdx: number }[] = [];
+                versionsMeta.forEach((vmeta, vIdx) => {
+                  const idSet = new Set(vmeta.intentIds);
+                  let lastIdx = -1;
+                  for (let i = intents.length - 1; i >= 0; i--) {
+                    if (idSet.has(intents[i].id)) { lastIdx = i; break; }
                   }
-                }
-                // pendingLastIndex: 生成中分界线位置
-                // 始终放在当前最后一条可见意图下方，避免因快照时机导致 agent 意图出现在线下方
-                // 真实包含的意图由服务端在合成时读 DB 决定，客户端快照会有竞态，不再使用快照定位
-                const pendingLastIndex = isSynthesizing ? intents.length - 1 : -1;
+                  if (lastIdx >= 0) versionLastIdx.push({ versionNum: vIdx + 1, lastIdx });
+                });
 
-                const prevVersion = versionsTotal;
+                // 合成中分界线位置 — 始终在最后一条可见意图下方
+                const pendingLastIndex = isSynthesizing ? intents.length - 1 : -1;
                 const nextVersion = versionsTotal + 1;
 
                 const cards: React.ReactNode[] = [];
@@ -822,34 +837,32 @@ export default function ProjectShell({
                     />
                   );
 
-                  // ── 分界线 1: 已完成版本标记 ────────────────────────────────
-                  // 合成完成后始终展示，让用户知道每个版本结合了哪些意图。
-                  // 若合成进行中且"已完成"和"生成中"位置相同则跳过(避免重叠)
-                  const doneVisible = currentVersion && idx === lastSynthIndex;
-                  const doneOverlapsActive = isSynthesizing && lastSynthIndex === pendingLastIndex;
-                  if (doneVisible && !doneOverlapsActive) {
+                  // ── 所有历史版本的"已完成"分界线 ────────────────────────────
+                  // 每个版本 vN 在它"最后一条 intent"之后渲染。
+                  // 合成进行中且当前位置和合成中分界线重叠 → 跳过避免叠加
+                  for (const { versionNum, lastIdx } of versionLastIdx) {
+                    if (lastIdx !== idx) continue;
+                    if (isSynthesizing && lastIdx === pendingLastIndex) continue;
                     cards.push(
-                      <div key="synth-done" className="board-synth-boundary board-synth-done">
+                      <div key={`synth-done-v${versionNum}`} className="board-synth-boundary board-synth-done">
                         <span className="board-synth-badge board-synth-badge-done">
                           <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden>
                             <path d="M2.5 6.5L5 9l4.5-5" strokeLinecap="round" strokeLinejoin="round" />
                           </svg>
-                          v{prevVersion} 已完成
+                          v{versionNum} 已完成
                         </span>
                         <div className="board-synth-line board-synth-line-done" />
                       </div>
                     );
                   }
 
-                  // ── 分界线 2: 生成中标记 ─────────────────────────────────────
-                  // 精确定位在本次合成快照的最后一条意图下方；
-                  // 用户在合成过程中新增的意图出现在此线下方，等待下次合成。
+                  // ── 合成中分界线 ─────────────────────────────────────
                   if (isSynthesizing && idx === pendingLastIndex) {
                     cards.push(
                       <div key="synth-ing" className="board-synth-boundary board-synth-ing">
                         <span className="board-synth-badge board-synth-badge-active">
                           <span className="board-synth-pulse" aria-hidden />
-                          v{nextVersion} 生成中…
+                          v{nextVersion} 合成中…
                         </span>
                         <div className="board-synth-line board-synth-line-active" />
                       </div>

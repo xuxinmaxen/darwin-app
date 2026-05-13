@@ -173,7 +173,7 @@ export async function* synthesizeStream(
 ): AsyncGenerator<SynthesisEvent> {
   // 模板模式 / 无 LLM 时: 快速返回整块 HTML
   if (process.env.DARWIN_DISABLE_CLAUDE === '1' || !llmProvider()) {
-    yield { type: 'thinking', message: '使用本地模板生成…' };
+    yield { type: 'thinking', message: '使用本地模板合成…' };
     const html = renderTemplate(project, intents);
     yield { type: 'chunk', content: html };
     yield { type: 'complete', source: 'template', mode: 'full', html };
@@ -237,7 +237,7 @@ export async function* synthesizeStream(
 
   // 全量合成路径
   const intentWord = intents.length === 1 ? '条意图' : `条意图`;
-  yield { type: 'thinking', message: `AI 正在综合 ${intents.length} ${intentWord},生成完整产物…` };
+  yield { type: 'thinking', message: `AI 正在综合 ${intents.length} ${intentWord},合成完整产物…` };
 
   try {
     let html = '';
