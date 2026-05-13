@@ -242,22 +242,26 @@ export default function NewProjectButton({
       }
     }
 
-    // background 只保留用户自己写的内容,不再倾倒导入正文 (导入正文走 seedHtml 直接进 v1)
+    // background 只保留用户自己写的内容; 导入 HTML 的 rawHtml 走 referenceHtml 字段,
+    // 服务端会把它包进 marker 拼到 background 里给 LLM 当复刻蓝本。
     const finalBackground = background.trim();
 
-    // 导入参考 → 生成种子意图 + 种子 HTML (HTML 项目直接作为 v1, 不调用 LLM)
+    // 导入参考 → 生成种子意图 + 参考 HTML (HTML 项目: LLM 第一次合成时按原页复刻)
     let seedIntent: { statement: string } | undefined;
-    let seedHtml: string | undefined;
+    let referenceHtml: string | undefined;
+    let referenceUrl: string | undefined;
+    let referenceTitle: string | undefined;
     if (sourceMode === 'import') {
       if (type === 'html' && importedHtmlRef) {
-        const ref = importedHtmlRef.title
+        const refLabel = importedHtmlRef.title
           ? `「${importedHtmlRef.title}」(${importedHtmlRef.url})`
           : importedHtmlRef.url;
         seedIntent = {
-          statement: `从 ${ref} 复刻本项目作为起点,后续意图在此基础上增量修改。`,
+          statement: `请按照 ${refLabel} 的结构、文案、视觉风格复刻一份作为本项目的起点, 后续意图在此基础上增量调整。`,
         };
-        // 关键: 把抓取到的原始 HTML 直接作为 v1 入库
-        seedHtml = importedHtmlRef.rawHtml || undefined;
+        referenceHtml = importedHtmlRef.rawHtml || undefined;
+        referenceUrl = importedHtmlRef.url;
+        referenceTitle = importedHtmlRef.title ?? undefined;
       } else if (type === 'ppt' && importedFile) {
         seedIntent = {
           statement: `请基于上传的 ${importedFile.name} 的内容和结构来合成本 PPT,意图后续可由团队增量调整。`,
@@ -277,7 +281,7 @@ export default function NewProjectButton({
             conflictMode,
             collaboratorIds: Array.from(collaboratorIds),
             ...(seedIntent ? { seedIntent } : {}),
-            ...(seedHtml ? { seedHtml } : {}),
+            ...(referenceHtml ? { referenceHtml, referenceUrl, referenceTitle } : {}),
           }),
         });
         const json = await res.json();
@@ -423,7 +427,7 @@ export default function NewProjectButton({
                       {' '}({(importedHtmlRef.rawHtmlBytes / 1024).toFixed(0)} KB)
                       {importedHtmlRef.rawHtmlTruncated && ' [超 500KB 已截断]'}
                       <br />
-                      进入项目即看到原页面复刻为 v1,后续意图触发 AI 增量修改。
+                      AI 合成 v1 时会以此为蓝本复刻结构、文案与风格,后续意图在此基础上调整。
                     </div>
                   )}
                 </div>

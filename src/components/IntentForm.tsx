@@ -13,7 +13,9 @@ import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Employee } from '@/lib/employees';
 
-const AGENT_REACT_REFRESH_DELAY_MS = 8000;
+// Agent 反应安全兜底: LLM 偶尔卡 20-30s, 给宽一点不要太早强制收尾。
+// 真实情况下 Promise.allSettled 会先 fire-and-forget 完成。
+const AGENT_REACT_REFRESH_DELAY_MS = 25_000;
 
 const URL_RE = /https?:\/\/[^\s"'<>]+/g;
 
@@ -195,26 +197,39 @@ export default function IntentForm({
     setThinkingAgents(agents);
     // 通知父组件: Agent 反应开始 → 阻断自动合成，防止分界线在 agent 意图出现前就定位
     onAgentsReacting?.(true);
-    const inflight = agents.map(a =>
+    // 用 set 跟踪还没回的 agent — 每个 agent 单独 settle 时立刻 refresh,
+    // 不要堆到最后才让用户看到。
+    const pending = new Set(agents.map(a => a.id));
+    const settle = (agentId: string) => {
+      pending.delete(agentId);
+      // 增量 refresh: agent 一发言就让看板更新, 不必等其他 agent
+      router.refresh();
+      if (pending.size === 0) {
+        setThinkingAgents([]);
+        onAgentsReacting?.(false);
+        if (refreshTimerRef.current) {
+          clearTimeout(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+      } else {
+        // 缩 thinking chip,只显示还没回的
+        setThinkingAgents(prev => prev.filter(a => pending.has(a.id)));
+      }
+    };
+    for (const a of agents) {
       fetch(`/api/projects/${projectId}/agent-react`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          agentEmployeeId: a.id,
-          triggerIntentId,
-        }),
-      }).catch(() => {/* swallow per-agent errors, others may still react */})
-    );
-    // 等所有 agent 决定完(或全失败), 再 refresh 看板
-    Promise.allSettled(inflight).finally(() => {
-      setThinkingAgents([]);
-      // refresh 后父组件能看到 agent 意图，此时再放开自动合成
-      router.refresh();
-      onAgentsReacting?.(false);
-    });
-    // 兜底: 万一 LLM 卡死, 8s 后强制释放
+        body: JSON.stringify({ agentEmployeeId: a.id, triggerIntentId }),
+      })
+        .catch(() => {/* 单 agent 失败不致命 */})
+        .finally(() => settle(a.id));
+    }
+    // 兜底: 万一 LLM 卡死, 一定时间后强制收尾
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
+      if (pending.size === 0) return;
+      pending.clear();
       setThinkingAgents([]);
       router.refresh();
       onAgentsReacting?.(false);

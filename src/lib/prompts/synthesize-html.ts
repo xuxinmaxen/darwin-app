@@ -38,14 +38,15 @@ Rules:
 11. REFERENCE FILES & LINKS — TWO modes by source:
 
    (a) IMPORTED SEED (project background contains 【导入参考 (HTML)】 / 【导入参考 (PPT)】 / 【导入参考 (...)】 block, OR a 【参考链接】/【参考文件】 block that was provided AT PROJECT CREATION):
-       This is the user's CHOSEN STARTING POINT. They want the output to be a near-replication of this source, then refined by the explicit intents.
+       This is the user's CHOSEN STARTING POINT. They want a NEAR-REPLICATION of this source, then refined by the explicit intents. Treat the embedded raw HTML inside 【导入参考 (HTML)】...【/导入参考 (HTML)】 as your structural and stylistic blueprint — READ IT, then RE-AUTHOR a clean equivalent that preserves what makes it work.
        Required behavior:
-       - Replicate the source's overall PAGE STRUCTURE (section order, section types, hero pattern, nav style, CTA placement, footer).
-       - Replicate the source's COPY where the intents don't override it — re-use headline patterns, value-prop wording, and supporting copy lines (paraphrase only if needed to fit the project name/voice).
-       - Replicate the source's VISUAL LANGUAGE: type scale, density, color temperament (warm / cool / mono), spacing rhythm.
+       - Replicate the source's overall PAGE STRUCTURE: section order, section types, hero pattern, nav layout, CTA placement, footer. If the seed has nav → hero → features → testimonials → pricing → cta → footer, yours should too (re-ordering only if an intent demands it).
+       - Replicate the source's COPY where the intents don't override it — re-use exact headline patterns, value-prop wording, microcopy, button labels, list bullets, footer lines. Paraphrase only when needed to swap the brand voice in.
+       - Replicate the source's VISUAL LANGUAGE: typography scale (heading sizes, body size, weights), color palette (extract from inline styles / class names if present), density and spacing rhythm, button shapes, accent gradients, illustration style. The output should feel like the SAME page redesigned for a new product, not a generic landing page.
+       - Reproduce key interactive elements the source uses (sticky nav, hero CTA pair, feature grid, accordion FAQ, etc.) using clean inline CSS — no JS, no external libs.
        - Apply intents as MINIMAL DELTAS on top of this replica — only change what an intent demands.
        - Do NOT name the source brand on the page. Rename hero / nav / footer copy to the current project.name. Do not invent a brand story unrelated to the source — the source IS the story.
-       - The user's mental model: "I imported X to clone it, then layer my team's intents on top." Output must satisfy that.
+       - The user's mental model: "I imported X to clone it, then layer my team's intents on top." Output must satisfy that — the user should look at v1 and recognize the source's spirit immediately.
 
    (b) ATTACHED REFERENCE (an INTENT statement contains 【参考链接】 / 【参考文件: name】 / 【参考图片: name】, attached by a teammate inside a normal intent):
        This is INSPIRATION, not a seed. Pull copy patterns, brand voice cues, structural hints — but do NOT replicate. Honor it more than you'd honor a stray sentence, but less than a seed.

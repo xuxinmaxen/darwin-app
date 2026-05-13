@@ -24,12 +24,13 @@ import type { Version } from '@/lib/versions';
 import { TYPE_LABEL } from '@/lib/type-meta';
 
 // 冲突检测异步运行 (fire-and-forget), 有分歧时 activeTensionCount > 0 会阻断合成。
-// debounce 给检测足够时间后再触发合成, 通常 LLM 8-12s 内返回。
+// agent 反应也通过 agentsReacting 阻断, 反应结束后立刻放开。
+// 反应已经在 IntentForm 内 Promise.allSettled, debounce 只需短一些兜底防抖动。
 const AUTO_SYNC_DEBOUNCE_MS = Number(
   typeof window !== 'undefined'
     ? undefined
     : process?.env?.DARWIN_AUTOSYNC_DEBOUNCE_MS
-) || 10_000;
+) || 2_500;
 
 /** 在合成产物里注入 <base target="_blank"> 防止 iframe 内链接导航破坏当前页面 */
 function injectBaseTarget(html: string): string {
@@ -309,6 +310,9 @@ export default function ProjectCanvas({
     if (!currentVersion) return;
     if (intents.length === 0) return;
     if (autoSyncing) return;
+    // 父组件维护的"合成中"标志 (跨刷新通过 localStorage 持久化) — 服务端可能还在跑,
+    // 这里再起一次会重复消耗 LLM token + 让用户看到产物在两条流之间跳变。
+    if (isSynthesizing) return;
     // 有未解决冲突时不合成 — 等待分歧解决后再触发
     if (activeTensionCount > 0) return;
     // Agent 反应进行中 — 等待 agent 意图全部落入客户端再合成,确保分界线位置正确
@@ -323,7 +327,7 @@ export default function ProjectCanvas({
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intents, currentVersion, project.id, autoSyncing, agentsReacting]);
+  }, [intents, currentVersion, project.id, autoSyncing, agentsReacting, isSynthesizing]);
 
   /** 流式合成核心 — SSE 消费者 */
   async function runSynthesisStream(intentHash: string, isFirstSynth = false) {

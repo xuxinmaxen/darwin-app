@@ -26,7 +26,9 @@ const Body = z.object({
   agentEmployeeId: z.string().min(1),
 });
 
-const SPEAK_TIMEOUT_MS = 30_000;
+// 60s 而非 30s: cc-switch/Hermes gateway 偶尔 35-45s 才返回,30s 卡得太死。
+// 用户在 UI 看到的是 thinkingAgents chip,卡 45s 内可接受。
+const SPEAK_TIMEOUT_MS = 60_000;
 
 type Params = { params: Promise<{ id: string }> };
 

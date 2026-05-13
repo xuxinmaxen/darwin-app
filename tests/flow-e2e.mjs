@@ -102,10 +102,11 @@ let tensionId = '';
   }, COOKIE);
   ok('add opposing pricing intent B', r2.status === 201, `status=${r2.status}`);
 
-  // Wait for LLM tension detection (fire-and-forget, up to 15s)
-  console.log('  … waiting up to 15s for tension detection');
+  // Wait for LLM tension detection (fire-and-forget). cc-switch/Hermes 偶尔 20s+,
+  // 给 45s 余量,避免把 gateway 偶发慢当成回归。
+  console.log('  … waiting up to 45s for tension detection');
   let detected = false;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 15; i++) {
     await wait(3000);
     const r = await api('GET', `/api/projects/${projectId}/tensions`, null, COOKIE);
     if (r.json?.tensions?.some(t => t.status === 'active' && t.scope === 'pricing')) {

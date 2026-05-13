@@ -1,14 +1,18 @@
 /**
- * Import HTML seed flow — 验证"导入即 v1, 不调 LLM"链路
+ * Import HTML seed flow — 验证"导入即复刻蓝本, LLM 生成 v1"链路
+ *
+ * 设计 (2026-05-13 修订):
+ *   早期版本是 "rawHtml 直接作为 v1 入库", 但用户反馈想要 AI 用自己的方式
+ *   复刻一遍 (保证所有版本都过同一条合成路径)。因此现在的链路:
  *
  * 1. /api/import/html 返回 rawHtml + sanitize 应去掉 <script> / onXXX
  *    且注入 <base href> 让相对路径解析
- * 2. /api/projects POST 带 seedHtml + seedIntent 时:
+ * 2. /api/projects POST 带 referenceHtml + referenceUrl/title + seedIntent 时:
  *    a. 项目创建成功
- *    b. 种子意图入库
- *    c. v1 入库, content == seedHtml, intentIds 含种子意图
- * 3. 进入项目读 GET /synthesize 立即拿到 v1 (无需点开始合成)
- * 4. seedHtml 字段长度上限 (500KB)
+ *    b. 种子意图 (Reference scope=global) 入库
+ *    c. project.background 含 【导入参考 (HTML)】 marker + 来源 + 压缩后 rawHtml
+ *    d. 未自动写入 v1 — 由用户点"开始合成"触发 LLM
+ * 3. referenceHtml 字段长度上限 (500KB)
  */
 
 const BASE = 'http://localhost:3000';
@@ -72,15 +76,17 @@ console.log('\n=== T-2: sanitize strips <script> and on-handlers ===');
   ok('rawHtml has no javascript: urls', !/javascript:/i.test(rh));
 }
 
-// ─── 3. 项目创建带 seedHtml → v1 直接入库 ──────────────────
-console.log('\n=== T-3: create project with seedHtml → v1 saved without LLM ===');
+// ─── 3. 项目创建带 referenceHtml → 复刻蓝本进 background, 不自动建 v1 ──
+console.log('\n=== T-3: create project with referenceHtml → background gets blueprint, no auto v1 ===');
 let PROJECT_ID = null;
 {
-  const seedHtml = `<!doctype html><html><head><base href="https://example.com/" target="_blank"><title>Cloned</title></head><body><h1>Hello from import</h1><p>This is the seeded HTML.</p></body></html>`;
+  const referenceHtml = `<!doctype html><html><head><base href="https://example.com/" target="_blank"><title>Cloned</title></head><body><h1>Hello from import</h1><p>This is the seeded HTML.</p></body></html>`;
   const createRes = await api('POST', '/api/projects', {
-    name: `ImportSeedHtml-${Date.now()}`, type: 'html', conflictMode: 'discuss',
+    name: `ImportRef-${Date.now()}`, type: 'html', conflictMode: 'discuss',
     seedIntent: { statement: '从 example.com 复刻本项目作为起点。' },
-    seedHtml,
+    referenceHtml,
+    referenceUrl: 'https://example.com/',
+    referenceTitle: 'Example Domain',
   }, COOKIE);
   ok('create project 201', createRes.status === 201);
   PROJECT_ID = createRes.json?.project?.id;
@@ -92,21 +98,29 @@ let PROJECT_ID = null;
     const intents = intentsRes.json?.intents ?? [];
     ok('seed intent persisted', intents.length === 1);
 
-    // v1 在 — 这是关键: import 流程不点开始合成也能直接拿到 v1
+    // 关键: 不直接生成 v1 — 现在所有版本都由 LLM 在用户点"开始合成"时生成
     const synthRes = await api('GET', `/api/projects/${PROJECT_ID}/synthesize`, null, COOKIE);
-    const v1 = synthRes.json?.version;
-    ok('v1 saved at project creation', !!v1?.id, 'version null');
-    ok('v1 content === seedHtml', v1?.content === seedHtml, 'content mismatch');
-    ok('v1 intentIds contains seed intent', Array.isArray(v1?.intentIds) && v1.intentIds.length === 1);
+    ok('no auto v1 saved (LLM must generate)', synthRes.json?.version === null,
+       `expected null, got ${JSON.stringify(synthRes.json?.version)?.slice(0, 100)}`);
 
-    // 验证版本数 = 1
+    // 项目 background 应含复刻蓝本 marker
+    const projRes = await api('GET', `/api/projects`, null, COOKIE);
+    const proj = (projRes.json?.projects ?? []).find(p => p.id === PROJECT_ID);
+    ok('project background has 【导入参考 (HTML)】 marker',
+       (proj?.background || '').includes('【导入参考 (HTML)】'));
+    ok('project background carries source URL',
+       (proj?.background || '').includes('example.com'));
+    ok('project background carries condensed html',
+       (proj?.background || '').includes('Hello from import'));
+
+    // 验证版本数 = 0
     const versionsRes = await api('GET', `/api/projects/${PROJECT_ID}/versions`, null, COOKIE);
-    ok('versions list has 1', (versionsRes.json?.versions ?? []).length === 1);
+    ok('versions list empty (no auto v1)', (versionsRes.json?.versions ?? []).length === 0);
   }
 }
 
-// ─── 4. 不带 seedHtml (blank 模式) — 不应该创建版本 ─────────
-console.log('\n=== T-4: blank project (no seedHtml) → no auto v1 ===');
+// ─── 4. 不带 referenceHtml (blank 模式) — 不应该创建版本 ────
+console.log('\n=== T-4: blank project (no referenceHtml) → no auto v1 ===');
 {
   const createRes = await api('POST', '/api/projects', {
     name: `Blank-${Date.now()}`, type: 'html', conflictMode: 'discuss',
@@ -121,15 +135,15 @@ console.log('\n=== T-4: blank project (no seedHtml) → no auto v1 ===');
   }
 }
 
-// ─── 5. seedHtml 长度上限 ──────────────────────────────────
-console.log('\n=== T-5: seedHtml > 500KB → rejected by zod ===');
+// ─── 5. referenceHtml 长度上限 ─────────────────────────────
+console.log('\n=== T-5: referenceHtml > 500KB → rejected by zod ===');
 {
   const tooLarge = '<!doctype html><html><body>' + 'a'.repeat(500_500) + '</body></html>';
   const r = await api('POST', '/api/projects', {
     name: `TooBig-${Date.now()}`, type: 'html', conflictMode: 'discuss',
-    seedHtml: tooLarge,
+    referenceHtml: tooLarge,
   }, COOKIE);
-  ok('500KB+ seedHtml rejected', r.status === 400, `got status=${r.status}`);
+  ok('500KB+ referenceHtml rejected', r.status === 400, `got status=${r.status}`);
 }
 
 // ─── Cleanup ───────────────────────────────────────────────
