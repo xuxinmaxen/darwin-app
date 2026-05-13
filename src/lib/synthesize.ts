@@ -11,7 +11,7 @@
  */
 
 import type { Project, Intent } from './types';
-import { callLLM, llmProvider } from './llm';
+import { callLLM, callLLMStream, llmProvider } from './llm';
 import {
   buildSynthesizeSystem,
   buildSynthesizeUser,
@@ -19,6 +19,17 @@ import {
   looksLikeValidHtml,
   stripCodeFences,
 } from './prompts/synthesize-html';
+
+// ─── SSE event types ──────────────────────────────────────
+export type SynthesisEvent =
+  | { type: 'thinking'; message: string }
+  /** 从 LLM 流出的 HTML 文本片段 */
+  | { type: 'chunk'; content: string }
+  /** LLM 输出结束 — 包含最终清洗过的完整 HTML（route handler 用来入库） */
+  | { type: 'complete'; source: 'llm' | 'template'; mode: 'full' | 'incremental'; html: string }
+  /** 版本已入库 — 客户端用来更新 currentVersion 状态 */
+  | { type: 'saved'; version: Record<string, unknown>; mode: string }
+  | { type: 'error'; message: string };
 
 export type SynthesisResult = {
   content: string;
@@ -149,6 +160,132 @@ function timeout(ms: number): Promise<never> {
   return new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`Claude 调用超时 ${ms}ms`)), ms)
   );
+}
+
+// ─── Streaming synthesis ─────────────────────────────────
+// 每个 SynthesisEvent 通过 AsyncGenerator yield 出来,
+// route handler 把它们编码成 SSE 并 flush 到客户端。
+
+export async function* synthesizeStream(
+  project: Project,
+  intents: Intent[],
+  existing?: { html: string; intentIds: string[] } | null
+): AsyncGenerator<SynthesisEvent> {
+  // 模板模式 / 无 LLM 时: 快速返回整块 HTML
+  if (process.env.DARWIN_DISABLE_CLAUDE === '1' || !llmProvider()) {
+    yield { type: 'thinking', message: '使用本地模板生成…' };
+    const html = renderTemplate(project, intents);
+    yield { type: 'chunk', content: html };
+    yield { type: 'complete', source: 'template', mode: 'full', html };
+    return;
+  }
+
+  const maxTokens = Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 5000;
+
+  // 增量更新路径
+  if (existing?.html) {
+    const prevIds = new Set(existing.intentIds);
+    const newIntents = intents.filter(i => !prevIds.has(i.id));
+    if (newIntents.length > 0 && newIntents.length < intents.length) {
+      yield { type: 'thinking', message: `AI 正在把 ${newIntents.length} 条新意图融入产物…` };
+      try {
+        let html = '';
+        let fenceState: 'unknown' | 'stripped' | 'plain' = 'unknown';
+        let fenceBuffer = '';
+        for await (const chunk of callLLMStream({
+          system: buildSynthesizeSystem(project),
+          user: buildIncrementalUpdateUser(newIntents, existing.html),
+          cacheSystem: true,
+          maxTokens,
+          temperature: 0.2,
+        })) {
+          // 剥 ```html 代码围栏 (流式版本)
+          if (fenceState === 'unknown') {
+            fenceBuffer += chunk;
+            if (fenceBuffer.length >= 20) {
+              fenceState = fenceBuffer.trimStart().startsWith('```') ? 'stripped' : 'plain';
+              const stripped = fenceState === 'stripped'
+                ? fenceBuffer.replace(/^```(?:html)?\s*\n?/i, '')
+                : fenceBuffer;
+              html += stripped;
+              yield { type: 'chunk', content: stripped };
+              fenceBuffer = '';
+            }
+          } else {
+            html += chunk;
+            yield { type: 'chunk', content: chunk };
+          }
+        }
+        // 处理未 flush 的 fence buffer
+        if (fenceBuffer) {
+          const stripped = fenceState === 'stripped'
+            ? fenceBuffer.replace(/^```(?:html)?\s*\n?/i, '')
+            : fenceBuffer;
+          html += stripped;
+          yield { type: 'chunk', content: stripped };
+        }
+        html = stripCodeFences(html);
+        if (!looksLikeValidHtml(html)) throw new Error('LLM 增量更新返回不是 HTML');
+        yield { type: 'complete', source: 'llm', mode: 'incremental', html };
+        return;
+      } catch (err) {
+        yield { type: 'thinking', message: '增量更新失败,切换全量合成…' };
+        // fall through to full synthesis
+      }
+    }
+  }
+
+  // 全量合成路径
+  const intentWord = intents.length === 1 ? '条意图' : `条意图`;
+  yield { type: 'thinking', message: `AI 正在综合 ${intents.length} ${intentWord},生成完整产物…` };
+
+  try {
+    let html = '';
+    let fenceState: 'unknown' | 'stripped' | 'plain' = 'unknown';
+    let fenceBuffer = '';
+
+    for await (const chunk of callLLMStream({
+      system: buildSynthesizeSystem(project),
+      user: buildSynthesizeUser(intents),
+      cacheSystem: true,
+      maxTokens,
+      temperature: 0.4,
+    })) {
+      if (fenceState === 'unknown') {
+        fenceBuffer += chunk;
+        if (fenceBuffer.length >= 20) {
+          fenceState = fenceBuffer.trimStart().startsWith('```') ? 'stripped' : 'plain';
+          const stripped = fenceState === 'stripped'
+            ? fenceBuffer.replace(/^```(?:html)?\s*\n?/i, '')
+            : fenceBuffer;
+          html += stripped;
+          yield { type: 'chunk', content: stripped };
+          fenceBuffer = '';
+        }
+      } else {
+        html += chunk;
+        yield { type: 'chunk', content: chunk };
+      }
+    }
+    if (fenceBuffer) {
+      const stripped = fenceState === 'stripped'
+        ? fenceBuffer.replace(/^```(?:html)?\s*\n?/i, '')
+        : fenceBuffer;
+      html += stripped;
+      yield { type: 'chunk', content: stripped };
+    }
+    html = stripCodeFences(html);
+    if (!looksLikeValidHtml(html)) {
+      throw new Error(`LLM 返回不是 HTML (前 100 字符: ${html.slice(0, 100)})`);
+    }
+    yield { type: 'complete', source: 'llm', mode: 'full', html };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    yield { type: 'thinking', message: `LLM 失败,使用模板兜底: ${msg.slice(0, 80)}` };
+    const html = renderTemplate(project, intents);
+    yield { type: 'chunk', content: html };
+    yield { type: 'complete', source: 'template', mode: 'full', html };
+  }
 }
 
 // ─── Template fallback ────────────────────────────────────

@@ -140,6 +140,35 @@ export default function ProjectCanvas({
   const [lastSyncMode, setLastSyncMode] = useState<'full' | 'incremental' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // ─── 流式合成状态 ──────────────────────────────────────────
+  /** 流式过程中 AI 当前的状态说明 */
+  const [thinkingMsg, setThinkingMsg] = useState<string>('');
+  /** 流式期间实时渲染到 iframe 的 HTML (每 400ms 更新一次) */
+  const [streamingHtml, setStreamingHtml] = useState<string>('');
+  /** 正在进行流式合成 */
+  const [streamActive, setStreamActive] = useState(false);
+
+  // 用 ref 积累 chunk 文本,避免每个 chunk 触发 setState
+  const streamBufRef = useRef('');
+  // 定时把 ref 里的内容同步到 state (→ iframe 刷新)
+  const streamIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startStreamInterval() {
+    if (streamIntervalRef.current) return;
+    streamIntervalRef.current = setInterval(() => {
+      if (streamBufRef.current) {
+        setStreamingHtml(injectBaseTarget(streamBufRef.current));
+      }
+    }, 400);
+  }
+
+  function stopStreamInterval() {
+    if (streamIntervalRef.current) {
+      clearInterval(streamIntervalRef.current);
+      streamIntervalRef.current = null;
+    }
+  }
+
   // 上一次合成时的 intent 指纹 — 跟 currentVersion 一起更新
   const lastSyncedHashRef = useRef<string | null>(
     currentVersion ? hashIds(currentVersion.intentIds) : null
@@ -288,48 +317,94 @@ export default function ProjectCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intents, currentVersion, project.id, autoSyncing]);
 
-  async function runSynthesis(intentHash: string) {
-    setAutoSyncing(true);
+  /** 流式合成核心 — SSE 消费者 */
+  async function runSynthesisStream(intentHash: string, isFirstSynth = false) {
     setError(null);
-    // 立刻通知父组件:合成已启动 → 看板可以提前显示分界线
+    setThinkingMsg('连接 AI…');
+    setStreamActive(true);
+    streamBufRef.current = '';
+    startStreamInterval();
     onSynthesisStart?.();
+
     try {
       const res = await fetch(`/api/projects/${project.id}/synthesize`, {
         method: 'POST',
+        headers: { Accept: 'text/event-stream' },
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        setError(json.error || `请求失败 (${res.status})`);
-        return;
+
+      if (!res.ok || !res.body) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json.error || `请求失败 (${res.status})`);
       }
-      lastSyncedHashRef.current = intentHash;
-      setLastSyncMode(json.mode ?? 'full');
-      onVersionCreated(json.version);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buf += decoder.decode(value, { stream: true });
+        // 解析 SSE 行: 每条事件以 \n\n 结尾
+        const lines = buf.split('\n\n');
+        buf = lines.pop() ?? '';
+
+        for (const block of lines) {
+          const dataLine = block.split('\n').find(l => l.startsWith('data: '));
+          if (!dataLine) continue;
+          try {
+            const evt = JSON.parse(dataLine.slice(6));
+            if (evt.type === 'thinking') {
+              setThinkingMsg(evt.message);
+            } else if (evt.type === 'chunk') {
+              streamBufRef.current += evt.content;
+            } else if (evt.type === 'complete') {
+              // LLM 输出结束,立刻刷新一次 iframe 显示最终内容
+              streamBufRef.current = evt.html;
+              setStreamingHtml(injectBaseTarget(evt.html));
+              setThinkingMsg('保存版本中…');
+            } else if (evt.type === 'saved') {
+              // 版本入库完成
+              stopStreamInterval();
+              lastSyncedHashRef.current = intentHash;
+              setLastSyncMode((evt.mode as 'full' | 'incremental') ?? 'full');
+              onVersionCreated(evt.version as Version);
+              setThinkingMsg('');
+              setStreamActive(false);
+              setStreamingHtml('');
+              streamBufRef.current = '';
+            } else if (evt.type === 'error') {
+              throw new Error(evt.message);
+            }
+          } catch {
+            // 单条 SSE 解析失败不致命,跳过
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      stopStreamInterval();
       setAutoSyncing(false);
+      if (streamActive) {
+        setStreamActive(false);
+        setThinkingMsg('');
+        setStreamingHtml('');
+        streamBufRef.current = '';
+      }
     }
+  }
+
+  async function runSynthesis(intentHash: string) {
+    setAutoSyncing(true);
+    await runSynthesisStream(intentHash);
   }
 
   function handleFirstSynthesize() {
     setError(null);
-    onSynthesisStart?.();
     startFirstTransition(async () => {
-      try {
-        const res = await fetch(`/api/projects/${project.id}/synthesize`, {
-          method: 'POST',
-        });
-        const json = await res.json();
-        if (!res.ok || !json.ok) {
-          setError(json.error || `请求失败 (${res.status})`);
-          return;
-        }
-        lastSyncedHashRef.current = hashIntents(intents);
-        onVersionCreated(json.version);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
+      await runSynthesisStream(hashIntents(intents), true);
     });
   }
 
@@ -410,12 +485,23 @@ export default function ProjectCanvas({
 
   // 实际渲染的 version: 预览中走 preview,否则走当前
   const displayVersion = previewVersion ?? currentVersion;
-  const displayContent = displayVersion.content;
+  // 流式合成期间优先显示实时 HTML;否则显示已保存版本
+  const displayContent = (streamActive && streamingHtml) ? streamingHtml : displayVersion.content;
   const displaySource = displayVersion.source;
   const isPreviewing = previewVersion !== null;
 
   return (
-    <div className="canvas-result">
+    <div className="canvas-result" style={{ position: 'relative' }}>
+      {/* AI Thinking 覆盖层 — 流式合成期间显示 */}
+      {streamActive && (
+        <div className="canvas-thinking-overlay">
+          <span className="canvas-thinking-pulse" />
+          <span className="canvas-thinking-msg">{thinkingMsg || 'AI 正在合成…'}</span>
+          {/* 进度扫光条 */}
+          <span className="canvas-thinking-bar" />
+        </div>
+      )}
+
       {isPreviewing && (
         <div className="canvas-preview-banner">
           <span className="ver-preview-badge">预览</span>
@@ -434,16 +520,16 @@ export default function ProjectCanvas({
 
       {project.type === 'html' ? (
         <iframe
-          key={displayVersion.id}
+          key={streamActive ? 'streaming' : displayVersion.id}
           ref={iframeRef}
           onLoad={handleIframeLoad}
-          className="canvas-frame"
-          srcDoc={injectBaseTarget(displayContent)}
+          className={`canvas-frame${streamActive ? ' canvas-frame-streaming' : ''}`}
+          srcDoc={displayContent.startsWith('<!') || displayContent.startsWith('<html') ? displayContent : injectBaseTarget(displayContent)}
           title={`${project.name} · synthesized preview`}
           sandbox="allow-same-origin"
         />
       ) : (
-        <pre className="canvas-md">{displayContent}</pre>
+        <pre className="canvas-md">{streamActive ? streamBufRef.current || displayContent : displayContent}</pre>
       )}
 
       <div className="canvas-result-foot">

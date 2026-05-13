@@ -88,6 +88,19 @@ export async function callLLM(opts: CallOpts): Promise<string> {
   return provider === 'openai' ? callOpenAI(opts) : callAnthropic(opts);
 }
 
+/** 流式版本: 每个 text chunk 通过 AsyncGenerator yield 出来 */
+export async function* callLLMStream(opts: CallOpts): AsyncGenerator<string> {
+  const provider = llmProvider();
+  if (!provider) {
+    throw new Error('No LLM API key set');
+  }
+  if (provider === 'openai') {
+    yield* callOpenAIStream(opts);
+  } else {
+    yield* callAnthropicStream(opts);
+  }
+}
+
 /** Strip ```json / ``` fences and JSON.parse. */
 export async function callLLMJSON<T = unknown>(opts: CallOpts): Promise<T> {
   const raw = await callLLM(opts);
@@ -108,27 +121,47 @@ export async function callLLMJSON<T = unknown>(opts: CallOpts): Promise<T> {
 
 // ─── Anthropic ────────────────────────────────────────────
 
-async function callAnthropic(opts: CallOpts): Promise<string> {
+function getAnthropicClient() {
   if (!_anthropic) {
     _anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY!,
       baseURL: process.env.ANTHROPIC_BASE_URL?.trim() || undefined,
     });
   }
-  // fast tier → haiku (快 3-5x); full tier → 主模型
-  const model = opts.tier === 'fast'
+  return _anthropic;
+}
+
+function getOpenAIClient() {
+  if (!_openai) {
+    _openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY!,
+      baseURL: process.env.OPENAI_BASE_URL?.trim() || undefined,
+    });
+  }
+  return _openai;
+}
+
+function anthropicModel(tier?: 'fast' | 'full') {
+  return tier === 'fast'
     ? (process.env.CLAUDE_MODEL_HAIKU?.trim() || process.env.CLAUDE_MODEL_DEFAULT?.trim() || 'claude-haiku-4-5')
     : (process.env.CLAUDE_MODEL_DEFAULT?.trim() || 'claude-sonnet-4-5');
+}
+
+function openaiModel(tier?: 'fast' | 'full') {
+  return tier === 'fast'
+    ? (process.env.OPENAI_MODEL_FAST?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini')
+    : (process.env.OPENAI_MODEL?.trim() || 'gpt-4o');
+}
+
+async function callAnthropic(opts: CallOpts): Promise<string> {
+  const client = getAnthropicClient();
+  const model = anthropicModel(opts.tier);
   const systemBlocks = [
     opts.cacheSystem
-      ? {
-          type: 'text' as const,
-          text: opts.system,
-          cache_control: { type: 'ephemeral' as const },
-        }
+      ? { type: 'text' as const, text: opts.system, cache_control: { type: 'ephemeral' as const } }
       : { type: 'text' as const, text: opts.system },
   ];
-  const response = await _anthropic.messages.create({
+  const response = await client.messages.create({
     model,
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0,
@@ -136,26 +169,42 @@ async function callAnthropic(opts: CallOpts): Promise<string> {
     messages: [{ role: 'user', content: opts.user }],
   });
   const block = response.content[0];
-  if (block.type !== 'text') {
-    throw new Error(`Anthropic returned ${block.type} block, expected text`);
-  }
+  if (block.type !== 'text') throw new Error(`Anthropic returned ${block.type} block, expected text`);
   return block.text;
+}
+
+async function* callAnthropicStream(opts: CallOpts): AsyncGenerator<string> {
+  const client = getAnthropicClient();
+  const model = anthropicModel(opts.tier);
+  const systemBlocks = [
+    opts.cacheSystem
+      ? { type: 'text' as const, text: opts.system, cache_control: { type: 'ephemeral' as const } }
+      : { type: 'text' as const, text: opts.system },
+  ];
+  const stream = client.messages.stream({
+    model,
+    max_tokens: opts.maxTokens ?? 1024,
+    temperature: opts.temperature ?? 0,
+    system: systemBlocks,
+    messages: [{ role: 'user', content: opts.user }],
+  });
+  for await (const event of stream) {
+    if (
+      event.type === 'content_block_delta' &&
+      event.delta.type === 'text_delta' &&
+      event.delta.text
+    ) {
+      yield event.delta.text;
+    }
+  }
 }
 
 // ─── OpenAI (and OpenAI-compatible cc-switch / 国产中转) ─
 
 async function callOpenAI(opts: CallOpts): Promise<string> {
-  if (!_openai) {
-    _openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-      baseURL: process.env.OPENAI_BASE_URL?.trim() || undefined,
-    });
-  }
-  // fast tier → 小模型 (快 3-5x,适合 50-300 token 输出); full → 主模型
-  const model = opts.tier === 'fast'
-    ? (process.env.OPENAI_MODEL_FAST?.trim() || process.env.OPENAI_MODEL?.trim() || 'gpt-4o-mini')
-    : (process.env.OPENAI_MODEL?.trim() || 'gpt-4o');
-  const response = await _openai.chat.completions.create({
+  const client = getOpenAIClient();
+  const model = openaiModel(opts.tier);
+  const response = await client.chat.completions.create({
     model,
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0,
@@ -167,4 +216,23 @@ async function callOpenAI(opts: CallOpts): Promise<string> {
   const text = response.choices[0]?.message?.content;
   if (!text) throw new Error('OpenAI 返回内容为空');
   return text;
+}
+
+async function* callOpenAIStream(opts: CallOpts): AsyncGenerator<string> {
+  const client = getOpenAIClient();
+  const model = openaiModel(opts.tier);
+  const stream = await client.chat.completions.create({
+    model,
+    max_tokens: opts.maxTokens ?? 1024,
+    temperature: opts.temperature ?? 0,
+    messages: [
+      { role: 'system', content: opts.system },
+      { role: 'user', content: opts.user },
+    ],
+    stream: true,
+  });
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content ?? '';
+    if (delta) yield delta;
+  }
 }
