@@ -492,12 +492,13 @@ export default function ProjectCanvas({
 
   return (
     <div className="canvas-result" style={{ position: 'relative' }}>
-      {/* AI Thinking 覆盖层 — 流式合成期间显示 */}
-      {streamActive && (
+      {/* AI Thinking 覆盖层 — 流式合成 + 首次合成期间显示 */}
+      {(streamActive || isFirstPending) && (
         <div className="canvas-thinking-overlay">
           <span className="canvas-thinking-pulse" />
-          <span className="canvas-thinking-msg">{thinkingMsg || 'AI 正在合成…'}</span>
-          {/* 进度扫光条 */}
+          <span className="canvas-thinking-msg">
+            {thinkingMsg || (isFirstPending && !streamActive ? '连接 AI…' : 'AI 正在合成…')}
+          </span>
           <span className="canvas-thinking-bar" />
         </div>
       )}
@@ -534,14 +535,8 @@ export default function ProjectCanvas({
 
       <div className="canvas-result-foot">
         <div className="canvas-result-meta">
-          {autoSyncing ? (
-            <span className="canvas-syncing">
-              <span className="canvas-syncing-pulse" />
-              {lastSyncMode === 'incremental'
-                ? 'AI 正在按新 Intent 增量更新…'
-                : 'AI 正在合成新版本…'}
-            </span>
-          ) : isStale && activeTensionCount > 0 ? (
+          {/* autoSyncing/streamActive 的进度已由顶部 thinking overlay 展示,底部不再重复 */}
+          {(autoSyncing || streamActive) ? null : isStale && activeTensionCount > 0 ? (
             <span className="canvas-stale canvas-stale-blocked">
               <span className="canvas-stale-dot" />
               有 {activeTensionCount} 个分歧待解决，解决后自动合成新版本</span>

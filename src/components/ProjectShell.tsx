@@ -101,6 +101,10 @@ export default function ProjectShell({
     contributorCount: number;
   } | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
+  // Agent 学习通知 (发布后出现)
+  const [agentLearningToasts, setAgentLearningToasts] = useState<
+    { id: number; name: string; phase: 'learning' | 'done' }[]
+  >([]);
 
   // 每次对立调和后弹一次"共识时刻"
   const [consensusOpen, setConsensusOpen] = useState(false);
@@ -113,9 +117,20 @@ export default function ProjectShell({
   } | null>(null);
   // 模态关闭后再 reload, 让用户看到"共识时刻"再让产物重合成
   const pendingReloadRef = useRef(false);
+  // 意图看板列表 ref — 有新意图时自动滚到底部
+  const boardListRef = useRef<HTMLDivElement | null>(null);
 
   // 冲突列表默认折叠, 点 statusbar 展开/收起 (多个 tension 时挤画布, 默认收起)
   const [tensionExpanded, setTensionExpanded] = useState<boolean>(false);
+
+  // 有新意图加入时自动滚到看板底部
+  const prevIntentsLenRef = useRef(intents.length);
+  useEffect(() => {
+    if (intents.length > prevIntentsLenRef.current) {
+      boardListRef.current?.scrollTo({ top: boardListRef.current.scrollHeight, behavior: 'smooth' });
+    }
+    prevIntentsLenRef.current = intents.length;
+  }, [intents.length]);
 
   const handleConsensusModalClose = () => {
     setConsensusOpen(false);
@@ -573,6 +588,20 @@ export default function ProjectShell({
           json.stats?.contributorCount ?? collaboratorsState.length,
       });
       setCelebrationOpen(true);
+      // 发布后 — 给每个 Agent 协作者弹一个"学习中"通知，1.5s 后变"已学习"
+      const agentNames: string[] = json.stats?.agentNames ?? [];
+      if (agentNames.length > 0) {
+        const toasts = agentNames.map((name: string, i: number) => ({
+          id: Date.now() + i, name, phase: 'learning' as const,
+        }));
+        setAgentLearningToasts(toasts);
+        setTimeout(() => {
+          setAgentLearningToasts(prev =>
+            prev.map(t => ({ ...t, phase: 'done' as const }))
+          );
+        }, 1800);
+        setTimeout(() => setAgentLearningToasts([]), 5500);
+      }
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -697,7 +726,7 @@ export default function ProjectShell({
             </button>
           </div>
 
-          <div className={`board-list ${anyHover ? 'is-prov-active' : ''}`}>
+          <div ref={boardListRef} className={`board-list ${anyHover ? 'is-prov-active' : ''}`}>
             {intents.length === 0 ? (
               <div className="board-empty">
                 <strong>说一句你想要什么</strong>
@@ -935,8 +964,21 @@ export default function ProjectShell({
         }}
       />
 
-      {prefCandidates.length > 0 && (
+      {(prefCandidates.length > 0 || agentLearningToasts.length > 0) && (
         <div className="pref-toast-stack">
+          {/* Agent 学习通知 — 发布后短暂显示 */}
+          {agentLearningToasts.map(t => (
+            <div key={t.id} className={`agent-learn-toast${t.phase === 'done' ? ' done' : ''}`}>
+              <span className={`agent-learn-icon${t.phase === 'learning' ? ' spinning' : ''}`}>
+                {t.phase === 'learning' ? '⟳' : '⚡'}
+              </span>
+              <span className="agent-learn-text">
+                {t.phase === 'learning'
+                  ? `${t.name} 正在吸收本项目的决策偏好…`
+                  : `${t.name} 已学习完成，偏好库已更新`}
+              </span>
+            </div>
+          ))}
           {prefCandidates.map(c => (
             <PrefCandidateToast
               key={c.id}

@@ -19,6 +19,7 @@ import { getLatestVersion, publishVersion } from '@/lib/versions';
 import { markPublished, getProject, listCollaborators } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { listTensions } from '@/lib/tensions';
+import { recomputeAgentTags } from '@/lib/agent-tags';
 
 const Body = z.object({ versionId: z.string().optional() });
 
@@ -65,8 +66,26 @@ export async function POST(req: Request, { params }: Params) {
       listCollaborators(id),
     ]);
 
+    // 发布后 fire-and-forget: 所有 Agent 协作者重新计算标签 (学习本项目的决策偏好)
+    const agentCollaborators = collaborators.filter(c => c.kind === 'agent');
+    if (agentCollaborators.length > 0) {
+      setTimeout(() => {
+        Promise.allSettled(
+          agentCollaborators.map(a =>
+            recomputeAgentTags(a.id).catch(err =>
+              console.warn(`[publish] recomputeAgentTags(${a.id}) failed:`, err)
+            )
+          )
+        ).catch(() => {/* swallow */});
+      }, 500);
+    }
+
     revalidatePath(`/projects/${id}`);
     revalidatePath('/');
+
+    const consensusCount = tensions.filter(
+      t => t.status === 'resolved' && t.resolution?.selectedOptionKey !== 'stale'
+    ).length;
 
     return NextResponse.json({
       ok: true,
@@ -74,11 +93,11 @@ export async function POST(req: Request, { params }: Params) {
       stats: {
         intents: intents.length,
         intentIds: published.intentIds.length,
-        // 'stale' 是 Intent 撤回触发的自动撤销, 不是真共识
-        consensusCount: tensions.filter(
-          t => t.status === 'resolved' && t.resolution?.selectedOptionKey !== 'stale'
-        ).length,
+        consensusCount,
         contributorCount: collaborators.length,
+        // 告诉前端有几个 Agent 在学习,用于显示学习通知
+        agentLearningCount: agentCollaborators.length,
+        agentNames: agentCollaborators.map(a => a.name),
       },
     });
   } catch (err) {
