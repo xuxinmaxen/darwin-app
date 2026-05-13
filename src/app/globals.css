@@ -1556,25 +1556,35 @@ body {
   transition: opacity 0.3s;
 }
 
-/* ── AI Thinking 覆盖层 ────────────────────────────── */
+/* ── 统一 AI Thinking 覆盖层 (三阶段) ─────────────── */
 .canvas-thinking-overlay {
   position: absolute;
   top: 0; left: 0; right: 0;
   z-index: 10;
   display: flex; align-items: center; gap: 10px;
   padding: 9px 16px;
-  background: linear-gradient(
-    135deg,
-    rgba(79, 70, 229, 0.92) 0%,
-    rgba(124, 58, 237, 0.90) 100%
-  );
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: #fff;
   font-size: 12.5px; font-weight: 500;
   letter-spacing: -0.005em;
   overflow: hidden;
+  transition: background 0.4s;
 }
+
+/* 阶段 1: 冲突检测中 — 蓝 */
+.canvas-thinking-overlay--detect {
+  background: linear-gradient(135deg, rgba(37,99,235,0.92) 0%, rgba(79,70,229,0.88) 100%);
+}
+/* 阶段 2: 发现冲突,等待解决 — 琥珀 */
+.canvas-thinking-overlay--conflict {
+  background: linear-gradient(135deg, rgba(180,83,9,0.93) 0%, rgba(217,119,6,0.90) 100%);
+}
+/* 阶段 3: 合成中 — 紫 */
+.canvas-thinking-overlay--synth {
+  background: linear-gradient(135deg, rgba(79,70,229,0.92) 0%, rgba(124,58,237,0.90) 100%);
+}
+
 .canvas-thinking-pulse {
   width: 8px; height: 8px; border-radius: 50%;
   background: rgba(255,255,255,0.9);
@@ -1589,7 +1599,17 @@ body {
   flex: 1;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* 扫光进度条 */
+/* 冲突数角标 */
+.canvas-thinking-badge {
+  flex-shrink: 0;
+  min-width: 20px; height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.25);
+  font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* 扫光进度条 — 合成阶段 */
 .canvas-thinking-bar {
   position: absolute;
   bottom: 0; left: -100%; right: 0;

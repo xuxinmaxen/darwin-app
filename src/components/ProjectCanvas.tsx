@@ -490,16 +490,36 @@ export default function ProjectCanvas({
   const displaySource = displayVersion.source;
   const isPreviewing = previewVersion !== null;
 
+  // ─── Thinking overlay 阶段判断 ──────────────────────────
+  // 阶段 1 (detect): 有新意图未合成 → 正在检测冲突中 (等待 10s debounce + 5s poll)
+  // 阶段 2 (conflict): 检测到冲突,等待解决
+  // 阶段 3 (synth): 冲突已解决 / 无冲突,正在流式合成
+  const isSynthPhase = streamActive || isFirstPending;
+  const isConflictPhase = isStale && activeTensionCount > 0 && !isSynthPhase;
+  const isDetectPhase  = isStale && activeTensionCount === 0 && !isSynthPhase;
+
+  const overlayVariant = isSynthPhase ? 'synth' : isConflictPhase ? 'conflict' : 'detect';
+  const overlayMsg = isSynthPhase
+    ? (thinkingMsg || (isFirstPending && !streamActive ? '连接 AI…' : 'AI 正在合成…'))
+    : isConflictPhase
+    ? `发现 ${activeTensionCount} 个意图冲突 — 解决后 AI 将自动合成新版本`
+    : 'AI 正在检测意图冲突…';
+
+  const showOverlay = isSynthPhase || isConflictPhase || isDetectPhase;
+
   return (
     <div className="canvas-result" style={{ position: 'relative' }}>
-      {/* AI Thinking 覆盖层 — 流式合成 + 首次合成期间显示 */}
-      {(streamActive || isFirstPending) && (
-        <div className="canvas-thinking-overlay">
+      {/* 统一 Thinking 覆盖层: 冲突检测 → 冲突阻塞 → 流式合成 */}
+      {showOverlay && (
+        <div className={`canvas-thinking-overlay canvas-thinking-overlay--${overlayVariant}`}>
           <span className="canvas-thinking-pulse" />
-          <span className="canvas-thinking-msg">
-            {thinkingMsg || (isFirstPending && !streamActive ? '连接 AI…' : 'AI 正在合成…')}
-          </span>
-          <span className="canvas-thinking-bar" />
+          <span className="canvas-thinking-msg">{overlayMsg}</span>
+          {/* 扫光条:仅合成阶段显示 */}
+          {isSynthPhase && <span className="canvas-thinking-bar" />}
+          {/* 冲突阶段:显示冲突数角标 */}
+          {isConflictPhase && (
+            <span className="canvas-thinking-badge">{activeTensionCount}</span>
+          )}
         </div>
       )}
 
@@ -535,17 +555,8 @@ export default function ProjectCanvas({
 
       <div className="canvas-result-foot">
         <div className="canvas-result-meta">
-          {/* autoSyncing/streamActive 的进度已由顶部 thinking overlay 展示,底部不再重复 */}
-          {(autoSyncing || streamActive) ? null : isStale && activeTensionCount > 0 ? (
-            <span className="canvas-stale canvas-stale-blocked">
-              <span className="canvas-stale-dot" />
-              有 {activeTensionCount} 个分歧待解决，解决后自动合成新版本</span>
-          ) : isStale ? (
-            <span className="canvas-stale">
-              <span className="canvas-stale-dot" />
-              检测到意图变化，正在等待冲突检测完成后合成…
-            </span>
-          ) : error ? (
+          {/* 所有 AI 工作阶段 (检测/冲突/合成) 均由顶部 thinking overlay 统一展示 */}
+          {showOverlay ? null : error ? (
             <span className="canvas-sync-error">
               <span>⚠️ 上次自动合成失败</span>
               <button
