@@ -119,6 +119,8 @@ export default function ProjectShell({
   const pendingReloadRef = useRef(false);
   // 意图看板列表 ref — 有新意图时自动滚到底部
   const boardListRef = useRef<HTMLDivElement | null>(null);
+  // Agent 反应进行中 → 阻断自动合成,防止分界线在 agent 意图可见前就定位
+  const [agentsReacting, setAgentsReacting] = useState(false);
 
   // 冲突列表默认折叠, 点 statusbar 展开/收起 (多个 tension 时挤画布, 默认收起)
   const [tensionExpanded, setTensionExpanded] = useState<boolean>(false);
@@ -127,7 +129,13 @@ export default function ProjectShell({
   const prevIntentsLenRef = useRef(intents.length);
   useEffect(() => {
     if (intents.length > prevIntentsLenRef.current) {
-      boardListRef.current?.scrollTo({ top: boardListRef.current.scrollHeight, behavior: 'smooth' });
+      // rAF 确保 React 已完成 DOM 更新后再计算 scrollHeight
+      requestAnimationFrame(() => {
+        boardListRef.current?.scrollTo({
+          top: boardListRef.current.scrollHeight,
+          behavior: 'smooth',
+        });
+      });
     }
     prevIntentsLenRef.current = intents.length;
   }, [intents.length]);
@@ -817,6 +825,7 @@ export default function ProjectShell({
             agents={agentCollaborators}
             currentUserCls={currentUser?.cls ?? 'xu'}
             currentUserShort={currentUser?.short ?? '我'}
+            onAgentsReacting={setAgentsReacting}
           />
         </aside>
 
@@ -903,9 +912,10 @@ export default function ProjectShell({
               onVersionCreated={handleVersionCreated}
               onExitPreview={handleExitPreview}
               activeTensionCount={activeTensions.length}
+              agentsReacting={agentsReacting}
               onSynthesisStart={() => {
                 setIsSynthesizing(true);
-                // 快照本次合成时用了哪些 intentIds，新增的意图将落在分界线下方
+                // 快照时 agent 已全部反应完毕，分界线位置与实际合成内容一致
                 setSynthesisPendingIds(new Set(intents.map(i => i.id)));
               }}
             />

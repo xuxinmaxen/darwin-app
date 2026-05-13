@@ -119,6 +119,7 @@ export default function ProjectCanvas({
   onVersionCreated,
   onExitPreview,
   activeTensionCount = 0,
+  agentsReacting = false,
   onSynthesisStart,
 }: {
   project: Project;
@@ -132,6 +133,8 @@ export default function ProjectCanvas({
   onVersionCreated: (v: Version) => void;
   onExitPreview?: () => void;
   activeTensionCount?: number;
+  /** Agent 反应进行中 → 阻断自动合成,等 agent 意图全部进入客户端后再开始 */
+  agentsReacting?: boolean;
   /** 合成开始时立刻通知父组件,让看板提前显示分界线 */
   onSynthesisStart?: () => void;
 }) {
@@ -305,6 +308,8 @@ export default function ProjectCanvas({
     if (autoSyncing) return;
     // 有未解决冲突时不合成 — 等待分歧解决后再触发
     if (activeTensionCount > 0) return;
+    // Agent 反应进行中 — 等待 agent 意图全部落入客户端再合成,确保分界线位置正确
+    if (agentsReacting) return;
 
     const currentHash = hashIntents(intents);
     if (currentHash === lastSyncedHashRef.current) return;
@@ -315,7 +320,7 @@ export default function ProjectCanvas({
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intents, currentVersion, project.id, autoSyncing]);
+  }, [intents, currentVersion, project.id, autoSyncing, agentsReacting]);
 
   /** 流式合成核心 — SSE 消费者 */
   async function runSynthesisStream(intentHash: string, isFirstSynth = false) {

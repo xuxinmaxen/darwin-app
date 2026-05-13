@@ -39,12 +39,14 @@ export default function IntentForm({
   agents = [],
   currentUserCls = 'xu',
   currentUserShort = '我',
+  onAgentsReacting,
 }: {
   projectId: string;
   agents?: Employee[];
-  /** 用于头像渲染; 由父组件传入已登录用户信息 */
   currentUserCls?: string;
   currentUserShort?: string;
+  /** Agent 反应进行中 (true) / 结束 (false),供父组件阻断自动合成 */
+  onAgentsReacting?: (reacting: boolean) => void;
 }) {
   const router = useRouter();
   const [statement, setStatement] = useState('');
@@ -191,6 +193,8 @@ export default function IntentForm({
   function fireAgentReactions(triggerIntentId: string) {
     if (agents.length === 0) return;
     setThinkingAgents(agents);
+    // 通知父组件: Agent 反应开始 → 阻断自动合成，防止分界线在 agent 意图出现前就定位
+    onAgentsReacting?.(true);
     const inflight = agents.map(a =>
       fetch(`/api/projects/${projectId}/agent-react`, {
         method: 'POST',
@@ -204,13 +208,16 @@ export default function IntentForm({
     // 等所有 agent 决定完(或全失败), 再 refresh 看板
     Promise.allSettled(inflight).finally(() => {
       setThinkingAgents([]);
+      // refresh 后父组件能看到 agent 意图，此时再放开自动合成
       router.refresh();
+      onAgentsReacting?.(false);
     });
-    // 兜底: 万一 LLM 卡死, 8s 后强制 refresh
+    // 兜底: 万一 LLM 卡死, 8s 后强制释放
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     refreshTimerRef.current = setTimeout(() => {
       setThinkingAgents([]);
       router.refresh();
+      onAgentsReacting?.(false);
     }, AGENT_REACT_REFRESH_DELAY_MS);
   }
 

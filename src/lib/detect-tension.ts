@@ -44,10 +44,10 @@ export async function detectTensionsForProject(
   const musts = intents.filter(i => i.weight === 'must');
 
   // 按 scope 分组 (用 scope 头作为 key, e.g. "pricing.team" → "pricing")
+  // global 意图之间同样可以直接对立 (如"按原站重绘" vs "不要按原站重绘"),不再跳过
   const groups = new Map<string, Intent[]>();
   for (const i of musts) {
-    if (i.scope === 'global') continue; // global 跟谁都不对立
-    const head = i.scope.split('.')[0];
+    const head = i.scope === 'global' ? 'global' : i.scope.split('.')[0];
     const list = groups.get(head) ?? [];
     list.push(i);
     groups.set(head, list);
