@@ -968,6 +968,7 @@ export default function ProjectShell({
               onExitPreview={handleExitPreview}
               activeTensionCount={activeTensions.length}
               agentsReacting={agentsReacting}
+              isSynthesizing={isSynthesizing}
               onSynthesisStart={() => {
                 setIsSynthesizing(true);
                 setSynthesisPendingIds(new Set(intents.map(i => i.id)));

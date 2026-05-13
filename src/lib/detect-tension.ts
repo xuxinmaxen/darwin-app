@@ -124,10 +124,20 @@ async function detectScopeTension(args: {
         ? 'agents'
         : 'human';
 
+    // 二次去重: LLM 实际挑出的 pair 可能跟入参集合不同;
+    // 在 createTension 前再用挑出的 pair 查一次,避免并发 detect 重复建 tension。
+    const pickedIds = [out.partyAIntentId, out.partyBIntentId];
+    const recheck = await findAnyTensionFor(
+      args.intents[0].projectId,
+      args.scope,
+      pickedIds
+    );
+    if (recheck) return false;
+
     const created = await createTension({
       projectId: args.intents[0].projectId,
       scope: args.scope,
-      intentIds: [out.partyAIntentId, out.partyBIntentId],
+      intentIds: pickedIds,
       variant,
       options: out.options,
     });

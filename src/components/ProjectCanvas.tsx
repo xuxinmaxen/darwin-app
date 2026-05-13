@@ -120,6 +120,7 @@ export default function ProjectCanvas({
   onExitPreview,
   activeTensionCount = 0,
   agentsReacting = false,
+  isSynthesizing = false,
   onSynthesisStart,
 }: {
   project: Project;
@@ -135,6 +136,8 @@ export default function ProjectCanvas({
   activeTensionCount?: number;
   /** Agent 反应进行中 → 阻断自动合成,等 agent 意图全部进入客户端后再开始 */
   agentsReacting?: boolean;
+  /** 父组件维护的合成中状态,跨页面刷新可恢复 (基于 localStorage) */
+  isSynthesizing?: boolean;
   /** 合成开始时立刻通知父组件,让看板提前显示分界线 */
   onSynthesisStart?: () => void;
 }) {
@@ -403,18 +406,26 @@ export default function ProjectCanvas({
 
   async function runSynthesis(intentHash: string) {
     setAutoSyncing(true);
+    // 立即通知父组件 → 看板分界线、isSynthesizing 状态、localStorage 同步生效
+    // 不等 runSynthesisStream 的 async 入口
+    onSynthesisStart?.();
     await runSynthesisStream(intentHash);
   }
 
   function handleFirstSynthesize() {
     setError(null);
+    // 同步触发 → 看板"v1 合成中"分界线立即可见,canvas 切换到合成视图
+    onSynthesisStart?.();
     startFirstTransition(async () => {
       await runSynthesisStream(hashIntents(intents), true);
     });
   }
 
-  // ─── State 1: 没有 Intent ────────────────────────────────
-  if (intents.length === 0 && !currentVersion) {
+  // 任何合成活动 (新点开始 / SSE 流式 / 跨刷新恢复的 isSynthesizing)
+  const isAnySynthActive = isFirstPending || streamActive || isSynthesizing;
+
+  // ─── State 1: 没有 Intent,且没有合成在跑 ────────────────────
+  if (intents.length === 0 && !currentVersion && !isAnySynthActive) {
     return (
       <div className="canvas-empty">
         <div className="canvas-empty-illu">
@@ -432,8 +443,8 @@ export default function ProjectCanvas({
     );
   }
 
-  // ─── State 2: 有 Intent,首次没合成 ───────────────────────
-  if (!currentVersion) {
+  // ─── State 2: 有 Intent,首次没合成,且当前没在合成 ───────────
+  if (!currentVersion && !isAnySynthActive) {
     return (
       <div className="canvas-cta">
         <div className="canvas-cta-illu">
@@ -472,45 +483,72 @@ export default function ProjectCanvas({
 
         {error && <div className="canvas-cta-error">{error}</div>}
 
-        {project.background && (
-          <div className="canvas-cta-meta">
-            <strong>项目背景</strong>
-            <p>{project.background}</p>
-          </div>
-        )}
+        {project.background && (() => {
+          // 导入参考的项目 background 含 ~8000 字原文,直接倾倒太干扰。
+          // 检测到 import marker 时只显示一段简短提示;否则照常展示用户写的背景。
+          const bg = project.background;
+          const hasImportMarker = bg.includes('【导入参考');
+          if (hasImportMarker) {
+            const sourceMatch = bg.match(/来源:\s*(\S+)/);
+            const titleMatch = bg.match(/标题:\s*([^\n]+)/);
+            return (
+              <div className="canvas-cta-meta">
+                <strong>已导入参考材料</strong>
+                <p>
+                  {titleMatch ? `「${titleMatch[1].trim()}」` : sourceMatch ? sourceMatch[1] : '导入页面'}
+                  {' '}— AI 合成 v1 时会以此为蓝本复刻，再叠加意图调整。
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div className="canvas-cta-meta">
+              <strong>项目背景</strong>
+              <p>{bg}</p>
+            </div>
+          );
+        })()}
       </div>
     );
   }
 
-  // ─── State 3: 有版本 ──────────────────────────────────────
+  // ─── State 3: 有版本 OR 合成中 ──────────────────────────────────────
   const isStale =
     intents.length > 0 &&
     hashIntents(intents) !== lastSyncedHashRef.current &&
     !autoSyncing;
 
-  // 实际渲染的 version: 预览中走 preview,否则走当前
+  // 实际渲染的 version: 预览中走 preview,否则走当前 (首次合成时可能为 null)
   const displayVersion = previewVersion ?? currentVersion;
-  // 流式合成期间优先显示实时 HTML;否则显示已保存版本
-  const displayContent = (streamActive && streamingHtml) ? streamingHtml : displayVersion.content;
-  const displaySource = displayVersion.source;
   const isPreviewing = previewVersion !== null;
+  // 占位 HTML:首次合成、刷新恢复 (无 currentVersion 时) 提供一个空 iframe 让 overlay 覆盖
+  const PLACEHOLDER_HTML = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#FAF9F5;}</style></head><body></body></html>';
+  // 流式合成期间优先显示实时 HTML;否则显示已保存版本;都没有就放占位
+  const displayContent = (streamActive && streamingHtml)
+    ? streamingHtml
+    : (displayVersion?.content ?? PLACEHOLDER_HTML);
+  const displaySource = displayVersion?.source;
 
   // ─── Thinking overlay 阶段判断 ──────────────────────────
   // 阶段 1 (detect): 有新意图未合成 → 正在检测冲突中 (等待 10s debounce + 5s poll)
   // 阶段 2 (conflict): 检测到冲突,等待解决
   // 阶段 3 (synth): 冲突已解决 / 无冲突,正在流式合成
+  // 阶段 3b (resumed): 刷新后恢复的合成中状态 (无 SSE,等服务端结果)
   const isSynthPhase = streamActive || isFirstPending;
-  const isConflictPhase = isStale && activeTensionCount > 0 && !isSynthPhase;
-  const isDetectPhase  = isStale && activeTensionCount === 0 && !isSynthPhase;
+  const isResumedPhase = isSynthesizing && !isSynthPhase && !displayVersion;
+  const isConflictPhase = isStale && activeTensionCount > 0 && !isSynthPhase && !isResumedPhase;
+  const isDetectPhase  = isStale && activeTensionCount === 0 && !isSynthPhase && !isResumedPhase;
 
-  const overlayVariant = isSynthPhase ? 'synth' : isConflictPhase ? 'conflict' : 'detect';
-  const overlayMsg = isSynthPhase
+  const overlayVariant = (isSynthPhase || isResumedPhase) ? 'synth' : isConflictPhase ? 'conflict' : 'detect';
+  const overlayMsg = isResumedPhase
+    ? 'AI 仍在后台合成中,稍候即可看到结果…'
+    : isSynthPhase
     ? (thinkingMsg || (isFirstPending && !streamActive ? '连接 AI…' : 'AI 正在合成…'))
     : isConflictPhase
     ? `发现 ${activeTensionCount} 个意图冲突 — 解决后 AI 将自动合成新版本`
     : 'AI 正在检测意图冲突…';
 
-  const showOverlay = isSynthPhase || isConflictPhase || isDetectPhase;
+  const showOverlay = isSynthPhase || isConflictPhase || isDetectPhase || isResumedPhase;
 
   return (
     <div className="canvas-result" style={{ position: 'relative' }}>
@@ -546,10 +584,10 @@ export default function ProjectCanvas({
 
       {project.type === 'html' ? (
         <iframe
-          key={streamActive ? 'streaming' : displayVersion.id}
+          key={streamActive ? 'streaming' : (displayVersion?.id ?? 'resumed')}
           ref={iframeRef}
           onLoad={handleIframeLoad}
-          className={`canvas-frame${streamActive ? ' canvas-frame-streaming' : ''}`}
+          className={`canvas-frame${(streamActive || isResumedPhase) ? ' canvas-frame-streaming' : ''}`}
           srcDoc={displayContent.startsWith('<!') || displayContent.startsWith('<html') ? displayContent : injectBaseTarget(displayContent)}
           title={`${project.name} · synthesized preview`}
           sandbox="allow-same-origin"
@@ -572,7 +610,7 @@ export default function ProjectCanvas({
                 重试
               </button>
             </span>
-          ) : (
+          ) : displayVersion ? (
             <>
               <span
                 className={`canvas-source-pill canvas-source-${displaySource || 'template'}`}
@@ -595,7 +633,7 @@ export default function ProjectCanvas({
                 })}
               </span>
             </>
-          )}
+          ) : null}
         </div>
 
         {intents.length === 0 && !isPreviewing && (
