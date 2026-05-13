@@ -130,8 +130,12 @@ export default function IntentCard({
             type="button"
             className="intent-del-cancel"
             onClick={() => setConfirming(false)}
+            title="取消删除"
+            aria-label="取消删除"
           >
-            取消
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+              <path d="M3 3l6 6M9 3l-6 6" strokeLinecap="round" />
+            </svg>
           </button>
         )}
         {onDiscuss && !confirming && (
@@ -140,11 +144,11 @@ export default function IntentCard({
             className="intent-discuss"
             onClick={() => onDiscuss(intent)}
             title="围绕这条 Intent 发起讨论"
+            aria-label="发起讨论"
           >
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5}>
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
               <path d="M2 4.5a2.5 2.5 0 0 1 2.5-2.5h3A2.5 2.5 0 0 1 10 4.5v2A2.5 2.5 0 0 1 7.5 9H5L3 10.5V9a2.5 2.5 0 0 1-1-2v-2.5z" strokeLinejoin="round" />
             </svg>
-            讨论
           </button>
         )}
         <button
@@ -152,9 +156,16 @@ export default function IntentCard({
           className={`intent-del${confirming ? ' confirming' : ''}`}
           onClick={handleDeleteClick}
           disabled={isPending}
-          title={confirming ? '再点一次确认删除' : '删除这条 Intent'}
+          title={isPending ? '删除中' : confirming ? '再点一次确认删除' : '删除这条 Intent'}
+          aria-label={isPending ? '删除中' : confirming ? '确认删除' : '删除'}
         >
-          {isPending ? '删除中…' : confirming ? '确认删除' : '删除'}
+          {isPending ? (
+            <span className="intent-del-spinner" aria-hidden />
+          ) : (
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+              <path d="M3 4h6v6.5a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5V4zM2 4h8M5 2h2v2H5z" strokeLinejoin="round" />
+            </svg>
+          )}
         </button>
       </div>
       {error && <div className="intent-error">{error}</div>}

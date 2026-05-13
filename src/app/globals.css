@@ -950,7 +950,7 @@ body {
   transition: grid-template-columns 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .main.drawer-closed { grid-template-columns: 300px minmax(0, 1fr) 0; }
-.main.main-v1 { grid-template-columns: 320px minmax(0, 1fr); }
+.main.main-v1 { grid-template-columns: 360px minmax(0, 1fr); }
 
 .board {
   background: var(--glass-bg-faint);
@@ -1149,35 +1149,64 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   max-width: 180px;
 }
-.intent-meta { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.intent-meta {
+  display: flex; flex-wrap: nowrap; gap: 4px; align-items: center;
+  min-width: 0;
+}
+/* 标签 (Constraint / global / should) 可压缩 + 按钮永远可见 */
+.intent-meta .tag {
+  flex-shrink: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.intent-meta .intent-discuss,
+.intent-meta .intent-del,
+.intent-meta .intent-del-cancel {
+  flex-shrink: 0;
+}
 .intent-del {
-  margin-left: auto; font-size: 10.5px; color: var(--text-3);
+  margin-left: auto; color: var(--text-3);
   background: transparent; border: 0; cursor: pointer;
-  padding: 2px 6px; border-radius: 5px;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px;
   font-family: inherit;
   transition: all 0.15s;
 }
+.intent-del svg { width: 12px; height: 12px; }
 .intent-del:hover { background: #FEF2F2; color: #B91C1C; }
-.intent-del:disabled { opacity: 0.4; cursor: not-allowed; }
+.intent-del:disabled { opacity: 0.5; cursor: not-allowed; }
 .intent-del.confirming {
-  background: #DC2626; color: #fff; font-weight: 600;
+  background: #DC2626; color: #fff;
   animation: shake 0.4s ease;
 }
 .intent-del.confirming:hover { background: #B91C1C; color: #fff; }
+.intent-del-spinner {
+  width: 11px; height: 11px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .intent-del-cancel {
-  font-size: 10.5px; color: var(--text-3);
+  color: var(--text-3);
   background: transparent; border: 0; cursor: pointer;
-  padding: 2px 6px; border-radius: 5px;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px;
   font-family: inherit;
   margin-left: auto;
 }
+.intent-del-cancel svg { width: 11px; height: 11px; }
 .intent-del-cancel:hover { background: var(--panel-2); color: var(--text); }
 .intent-discuss {
   margin-left: auto;
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10.5px; color: var(--text-3);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--text-3);
   background: transparent; border: 0; cursor: pointer;
-  padding: 2px 6px; border-radius: 5px;
+  width: 22px; height: 22px;
+  border-radius: 5px;
   font-family: inherit;
   transition: all 0.15s;
 }
@@ -1186,7 +1215,7 @@ body {
   background: var(--accent-soft, rgba(79, 70, 229, 0.08));
   color: var(--accent-text, #4F46E5);
 }
-.intent-discuss svg { width: 10px; height: 10px; }
+.intent-discuss svg { width: 12px; height: 12px; }
 .intent.intent-confirming {
   border-color: #FECACA;
   box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.08);
@@ -1697,8 +1726,8 @@ body {
 .modal-title { font-size: 16px; font-weight: 600; letter-spacing: -0.012em; margin: 0 0 2px; }
 .modal-sub { font-size: 12px; color: var(--text-3); margin: 0; }
 .modal-body {
-  padding: 18px 22px;
-  display: flex; flex-direction: column; gap: 16px;
+  padding: 14px 22px;
+  display: flex; flex-direction: column; gap: 12px;
   flex: 1 1 auto; min-height: 0;
   overflow-y: auto;
 }
@@ -1761,8 +1790,9 @@ body {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
 }
 .source-pick {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 12px 14px; border-radius: 10px;
+  min-width: 0;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px; border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--panel);
   text-align: left; cursor: pointer; font-family: inherit;
@@ -1778,11 +1808,12 @@ body {
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.10);
 }
 .source-pick-title {
-  font-size: 13px; font-weight: 600; color: var(--text);
+  font-size: 12.5px; font-weight: 600; color: var(--text);
 }
 .source-pick.active .source-pick-title { color: var(--accent-text); }
 .source-pick-desc {
-  font-size: 11.5px; color: var(--text-2); line-height: 1.5;
+  font-size: 11px; color: var(--text-2); line-height: 1.5;
+  word-break: break-word; overflow-wrap: break-word;
 }
 .source-pick:disabled { opacity: 0.55; cursor: not-allowed; }
 
@@ -1791,8 +1822,9 @@ body {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
 }
 .conflict-mode-opt {
-  display: flex; flex-direction: column; gap: 5px;
-  padding: 12px 14px; border-radius: 10px;
+  min-width: 0; /* 防 grid 列被内容撑宽溢出 modal */
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 12px; border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--panel);
   text-align: left; cursor: pointer; font-family: inherit;
@@ -1807,12 +1839,19 @@ body {
   background: linear-gradient(135deg, rgba(79,70,229,0.08), rgba(168,85,247,0.08));
   box-shadow: 0 0 0 3px rgba(79,70,229,0.10);
 }
-.conflict-mode-icon { font-size: 15px; line-height: 1; }
+.conflict-mode-icon { font-size: 14px; line-height: 1; }
 .conflict-mode-title {
-  font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.005em;
+  font-size: 12.5px; font-weight: 600; color: var(--text); letter-spacing: -0.005em;
 }
 .conflict-mode-opt.active .conflict-mode-title { color: var(--accent-text); }
-.conflict-mode-desc { font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
+.conflict-mode-desc {
+  font-size: 11px; color: var(--text-2); line-height: 1.45;
+  word-break: break-word; overflow-wrap: break-word;
+  display: flex; flex-direction: column;
+}
+.conflict-mode-desc-line {
+  display: block;
+}
 .conflict-mode-opt:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .import-url-row {

@@ -25,8 +25,11 @@ import {
   isValidAgentReactOutput,
 } from './prompts/agent-react';
 
-/** human → react Agent 最多走几跳。链超过这个深度就强制沉默。 */
-export const MAX_CHAIN_DEPTH = 2;
+/** human → react Agent 最多走几跳。链超过这个深度就强制沉默。
+ * 设为 1: Agent 只对真人输入做一次反应,不会再串联反应其他 Agent 的输出。
+ * 这样意图源头只来自"真人主动输入" + "真人输入触发的一轮 agent 反应",
+ * 避免后台静默继续合成 v2/v3/... 直到 chain 自然终止。 */
+export const MAX_CHAIN_DEPTH = 1;
 
 const REACT_TIMEOUT_MS = 25_000;
 

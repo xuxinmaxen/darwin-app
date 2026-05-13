@@ -236,7 +236,7 @@ export default function ProjectCard({
                   >
                     <span className="conflict-mode-icon">💬</span>
                     <span className="conflict-mode-title">开讨论</span>
-                    <span className="conflict-mode-desc">AI 给调和方案，团队在讨论框里仲裁。</span>
+                    <span className="conflict-mode-desc">AI给调和方案，团队讨论仲裁。</span>
                   </button>
                   <button
                     type="button"
@@ -246,7 +246,7 @@ export default function ProjectCard({
                   >
                     <span className="conflict-mode-icon">✦</span>
                     <span className="conflict-mode-title">AI 评分决策</span>
-                    <span className="conflict-mode-desc">AI 自动评分选最佳方案，直接产出决议。</span>
+                    <span className="conflict-mode-desc">AI自动判断最佳方案，产出决议。</span>
                   </button>
                 </div>
               </div>

@@ -35,7 +35,22 @@ Rules:
    - A product-screenshot mockup in the hero is allowed, but it must clearly look like an embedded screenshot (chrome bar, drop shadow, max-width), not the page's own chrome.
 9. If two intents conflict (e.g. "技术专业感" + "活泼俏皮"), surface BOTH visually — e.g. professional structure with one playful accent — rather than picking a side. The job is synthesis, not arbitration.
 10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
-11. REFERENCE FILES: if an intent statement or project background contains a block like 【参考文件: name】 / 【导入参考 (HTML)】 / 【导入参考 (...)】, treat that block's body as AUTHORITATIVE source material. Pull copy, structure cues, section names and brand voice from it. Do NOT plagiarize verbatim large paragraphs, but DO honor the imported content as the seed — the page should clearly read as a derived/refined version of the imported source rather than ignoring it. If multiple reference blocks conflict with explicit intents, intents win on scope/weight rules above, but imported text style should still influence tone.
+11. REFERENCE FILES & LINKS — TWO modes by source:
+
+   (a) IMPORTED SEED (project background contains 【导入参考 (HTML)】 / 【导入参考 (PPT)】 / 【导入参考 (...)】 block, OR a 【参考链接】/【参考文件】 block that was provided AT PROJECT CREATION):
+       This is the user's CHOSEN STARTING POINT. They want the output to be a near-replication of this source, then refined by the explicit intents.
+       Required behavior:
+       - Replicate the source's overall PAGE STRUCTURE (section order, section types, hero pattern, nav style, CTA placement, footer).
+       - Replicate the source's COPY where the intents don't override it — re-use headline patterns, value-prop wording, and supporting copy lines (paraphrase only if needed to fit the project name/voice).
+       - Replicate the source's VISUAL LANGUAGE: type scale, density, color temperament (warm / cool / mono), spacing rhythm.
+       - Apply intents as MINIMAL DELTAS on top of this replica — only change what an intent demands.
+       - Do NOT name the source brand on the page. Rename hero / nav / footer copy to the current project.name. Do not invent a brand story unrelated to the source — the source IS the story.
+       - The user's mental model: "I imported X to clone it, then layer my team's intents on top." Output must satisfy that.
+
+   (b) ATTACHED REFERENCE (an INTENT statement contains 【参考链接】 / 【参考文件: name】 / 【参考图片: name】, attached by a teammate inside a normal intent):
+       This is INSPIRATION, not a seed. Pull copy patterns, brand voice cues, structural hints — but do NOT replicate. Honor it more than you'd honor a stray sentence, but less than a seed.
+
+   In BOTH modes: if a reference conflicts with an explicit intent, the intent wins on scope/weight. If the reference is from a competitor or unrelated brand, never NAME them on the page even if their text bleeds through.
 
 Output:
 - ONLY the HTML document. No prose before or after. No markdown fences.

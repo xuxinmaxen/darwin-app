@@ -378,8 +378,8 @@ export default function NewProjectButton({
                     </span>
                     <span className="source-pick-desc">
                       {type === 'html'
-                        ? '把目标页拉进来,AI 在它基础上迭代'
-                        : '把已有 PPT 作为参考底稿'}
+                        ? 'AI 以它为蓝本复刻,再叠加团队意图'
+                        : 'AI 以它为蓝本复刻,再叠加团队意图'}
                     </span>
                   </button>
                 </div>
@@ -387,7 +387,7 @@ export default function NewProjectButton({
 
               {sourceMode === 'import' && type === 'html' && (
                 <div className="field">
-                  <label className="field-label" htmlFor="np-url">参考 HTML 链接</label>
+                  <label className="field-label" htmlFor="np-url">要复刻的 HTML 链接</label>
                   <div className="import-url-row">
                     <input
                       id="np-url" className="field-input" type="url"
@@ -399,16 +399,20 @@ export default function NewProjectButton({
                     <button type="button" className="ws-btn ws-btn-ghost"
                       onClick={handleImportUrl}
                       disabled={isPending || importing || !importUrl.trim()}
+                      title="抓取目标页的标题与正文,作为 AI 合成 v1 的复刻蓝本"
                     >
-                      {importing ? '拉取中…' : '拉取'}
+                      {importing ? '抓取中…' : '抓取页面'}
                     </button>
+                  </div>
+                  <div className="field-hint" style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)' }}>
+                    抓取目标页的结构和正文 → AI 合成首版时按其布局/copy 复刻 → 之后用 Intent 微调
                   </div>
                   {importError && <div className="import-error">⚠️ {importError}</div>}
                   {importedHtmlRef && (
                     <div className="import-ok">
-                      ✓ 已拉取{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
-                      {' '}· {importedHtmlRef.text.length} 字
-                      {importedHtmlRef.truncated && ' (已截断)'}
+                      ✓ 已抓取{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
+                      {importedHtmlRef.truncated && ' (内容过长,已截断 8000 字)'}
+                      ,合成 v1 时 AI 会按这个页面复刻
                     </div>
                   )}
                 </div>
@@ -440,7 +444,7 @@ export default function NewProjectButton({
                   >
                     <span className="conflict-mode-icon">💬</span>
                     <span className="conflict-mode-title">开讨论</span>
-                    <span className="conflict-mode-desc">AI 给调和方案，团队在讨论框里仲裁。</span>
+                    <span className="conflict-mode-desc">AI给调和方案，团队讨论仲裁。</span>
                   </button>
                   <button type="button"
                     className={`conflict-mode-opt${conflictMode === 'ai_decide' ? ' active' : ''}`}
@@ -448,7 +452,7 @@ export default function NewProjectButton({
                   >
                     <span className="conflict-mode-icon">✦</span>
                     <span className="conflict-mode-title">AI 评分决策</span>
-                    <span className="conflict-mode-desc">AI 自动评分选最佳方案，直接产出决议。</span>
+                    <span className="conflict-mode-desc">AI自动判断最佳方案，产出决议。</span>
                   </button>
                 </div>
               </div>

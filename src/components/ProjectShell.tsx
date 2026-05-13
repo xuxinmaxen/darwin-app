@@ -661,6 +661,9 @@ export default function ProjectShell({
           isPublished={isPublished}
           publishing={publishing}
           onPublishClick={handlePublish}
+          projectType={project.type}
+          projectId={project.id}
+          hasVersion={currentVersion !== null}
         />
 
         <ThemeToggle />

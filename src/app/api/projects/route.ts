@@ -31,7 +31,8 @@ export async function GET() {
 const CreateBody = z.object({
   name: z.string().min(1).max(120),
   type: z.enum(['html', 'ppt', 'doc', 'design']),
-  background: z.string().max(4000).optional(),
+  // 容纳导入 HTML/PPT 等参考材料 (项目背景里包含拉取的原文 ~8000 字 + 用户描述)
+  background: z.string().max(60000).optional(),
   conflictMode: z.enum(['discuss', 'ai_decide']).default('discuss'),
   collaboratorIds: z.array(z.string()).optional(),
 });

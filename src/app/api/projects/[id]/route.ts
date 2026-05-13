@@ -36,7 +36,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
 const PatchBody = z.object({
   name: z.string().min(1).max(120).optional(),
   type: z.enum(['html', 'ppt', 'doc', 'design']).optional(),
-  background: z.string().max(4000).nullable().optional(),
+  // 与 POST /api/projects 对齐: 容纳导入 HTML / 长文档
+  background: z.string().max(60000).nullable().optional(),
   status: z
     .enum(['draft', 'collaborating', 'tension', 'converged', 'published'])
     .optional(),

@@ -26,6 +26,12 @@ type Attachment = {
   imageUrl?: string;
   /** URL 链接预览 */
   linkUrl?: string;
+  /** URL 拉取状态: pending(拉取中) / ok / failed */
+  linkFetchStatus?: 'pending' | 'ok' | 'failed';
+  /** URL 抽取到的页面标题 (可选,用于 chip 显示) */
+  linkTitle?: string | null;
+  /** URL 内容是否被截断 (>8000 字) */
+  linkTruncated?: boolean;
 };
 
 export default function IntentForm({
@@ -99,12 +105,60 @@ export default function IntentForm({
     }
   }
 
-  // 粘贴 URL
+  // 粘贴 URL — 先添加 pending chip, 后台异步拉取页面正文
+  // 拉取成功后, attachment.text 会被替换为含正文的【参考链接】块,
+  // LLM 才真的能"读到"链接里的内容并参照其风格/copy 合成产物
   function handlePasteUrl(url: string) {
+    let alreadyExists = false;
     setAttachments(prev => {
-      if (prev.some(a => a.linkUrl === url)) return prev; // 去重
-      return [...prev, { name: url, isText: true, linkUrl: url, text: `【参考链接】${url}` }];
+      if (prev.some(a => a.linkUrl === url)) { alreadyExists = true; return prev; }
+      return [
+        ...prev,
+        {
+          name: url, isText: true, linkUrl: url,
+          text: `【参考链接】${url}\n(正在拉取页面内容…)`,
+          linkFetchStatus: 'pending',
+        },
+      ];
     });
+    if (alreadyExists) return;
+    // 后台拉取正文,完成后更新 attachment
+    void (async () => {
+      try {
+        const res = await fetch('/api/import/html', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          setAttachments(prev => prev.map(a => a.linkUrl === url ? {
+            ...a, linkFetchStatus: 'failed',
+            text: `【参考链接】${url}\n(拉取失败: ${json.error || res.status}; LLM 只能看到链接本身,无法读取正文)`,
+          } : a));
+          return;
+        }
+        const body = [
+          `【参考链接】来源: ${json.url}`,
+          json.title ? `标题: ${json.title}` : '',
+          '',
+          json.text,
+          json.truncated ? '[内容已截断 8000 字]' : '',
+        ].filter(Boolean).join('\n');
+        setAttachments(prev => prev.map(a => a.linkUrl === url ? {
+          ...a, linkFetchStatus: 'ok',
+          linkTitle: json.title ?? null,
+          linkTruncated: !!json.truncated,
+          text: body,
+        } : a));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setAttachments(prev => prev.map(a => a.linkUrl === url ? {
+          ...a, linkFetchStatus: 'failed',
+          text: `【参考链接】${url}\n(拉取失败: ${msg}; LLM 只能看到链接本身,无法读取正文)`,
+        } : a));
+      }
+    })();
   }
 
   // textarea paste 事件: 图片 / URL 都走这里
@@ -177,7 +231,9 @@ export default function IntentForm({
             ? `【参考图片: ${a.name}】${urlToEmbed}`
             : `【参考图片: ${a.name}】(图片已附上，请结合用户描述进行合成)`);
         } else if (a.linkUrl) {
-          refs.push(`【参考链接】${a.linkUrl}`);
+          // 已拉取页面正文时,把整段【参考链接】块 (含 source / title / 正文) 给 LLM
+          // 没拉到 / 还在拉时,a.text 已含拉取状态说明,LLM 至少知道发生了什么
+          refs.push(a.text ?? `【参考链接】${a.linkUrl}`);
         } else if (a.isText && a.text) {
           refs.push(`【参考文件: ${a.name}】\n${a.text}`);
         } else {
@@ -237,6 +293,8 @@ export default function IntentForm({
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
+                // URL 拉取中,Enter 也不放行,否则 LLM 看不到链接正文
+                if (attachments.some(a => a.linkFetchStatus === 'pending')) return;
                 submit();
               }
             }}
@@ -261,8 +319,19 @@ export default function IntentForm({
                   </svg>
                 )}
                 <span className="quickbar-chip-name">
-                  {a.linkUrl ? new URL(a.linkUrl).hostname : a.name}
+                  {a.linkUrl ? (a.linkTitle || new URL(a.linkUrl).hostname) : a.name}
                 </span>
+                {a.linkUrl && a.linkFetchStatus === 'pending' && (
+                  <span className="quickbar-chip-kind" title="AI 正在拉取该链接的页面正文">读取中…</span>
+                )}
+                {a.linkUrl && a.linkFetchStatus === 'ok' && (
+                  <span className="quickbar-chip-kind" title={a.linkTruncated ? '已抽取正文 (8000 字截断)' : '已抽取正文'}>
+                    已读 ✓{a.linkTruncated ? ' (截断)' : ''}
+                  </span>
+                )}
+                {a.linkUrl && a.linkFetchStatus === 'failed' && (
+                  <span className="quickbar-chip-kind" title="AI 只能看到链接本身,无法读取正文">读取失败</span>
+                )}
                 {!a.imageUrl && !a.linkUrl && (
                   <span className="quickbar-chip-kind">{a.isText ? '文本' : '文件'}</span>
                 )}
@@ -303,10 +372,24 @@ export default function IntentForm({
           <button
             type="button"
             className="quickbar-submit"
-            disabled={isPending || (!statement.trim() && attachments.length === 0)}
+            disabled={
+              isPending ||
+              (!statement.trim() && attachments.length === 0) ||
+              // 有 URL 拉取中 → 不允许提交,否则 LLM 收到的是空链接
+              attachments.some(a => a.linkFetchStatus === 'pending')
+            }
             onClick={submit}
+            title={
+              attachments.some(a => a.linkFetchStatus === 'pending')
+                ? '正在抽取链接正文,稍等一下再提交,AI 才能"读到"链接里的内容'
+                : undefined
+            }
           >
-            {isPending ? '提交中…' : '提交'}
+            {isPending
+              ? '提交中…'
+              : attachments.some(a => a.linkFetchStatus === 'pending')
+              ? '读取链接中…'
+              : '提交'}
           </button>
         </div>
       </div>

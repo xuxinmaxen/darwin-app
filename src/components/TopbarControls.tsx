@@ -1,22 +1,16 @@
 'use client';
 
+import { useState } from 'react';
+
 /**
- * 顶栏右侧控制簇 — 溯源 / 版本 / 发布
- *
- * 对应 v0 demo 的 #btn-prov / #btn-versions / #btn-publish。
- * 状态和数据由 ProjectShell 管,本组件纯 presentational。
- *
- * 三个按钮的 enable 规则:
- *   - 溯源:    始终可点 (即使没合成,也只是 toggle 一个空的状态)
- *   - 版本:    只有 versionsTotal > 0 才 enable
- *   - 发布:    canPublish 由父组件计算 (≥1 个版本 + 不在合成中 + 未发布)
+ * 顶栏右侧控制簇 — 溯源 / 版本 / 导出 / 发布
  */
 
 type Props = {
   traceMode: boolean;
   onTraceToggle: () => void;
 
-  versionLabel: string;       // 'v0' / 'v3' / etc.
+  versionLabel: string;
   versionsTotal: number;
   versionPanelOpen: boolean;
   onVersionsToggle: () => void;
@@ -25,6 +19,12 @@ type Props = {
   isPublished: boolean;
   publishing: boolean;
   onPublishClick: () => void;
+
+  /** 项目类型 — 决定导出格式 */
+  projectType: 'html' | 'ppt' | 'doc' | 'design';
+  projectId: string;
+  /** 有合成版本才允许导出 */
+  hasVersion: boolean;
 };
 
 export default function TopbarControls({
@@ -38,7 +38,40 @@ export default function TopbarControls({
   isPublished,
   publishing,
   onPublishClick,
+  projectType,
+  projectId,
+  hasVersion,
 }: Props) {
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    if (!hasVersion || exporting) return;
+    const format = projectType === 'html' ? 'html' : 'pptx';
+    setExporting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export?format=${format}`);
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(j.error || '导出失败');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Content-Disposition 里的 filename 浏览器会自动用;这里做兜底
+      a.download = format === 'html' ? `output.html` : `output.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="topbar-controls">
       <button
@@ -67,6 +100,38 @@ export default function TopbarControls({
         </svg>
         <span className="ctrl-version-label">{versionLabel}</span>
       </button>
+
+      {/* 导出按钮 — 落地页导出 .html, PPT 导出 .pptx */}
+      {(projectType === 'html' || projectType === 'ppt') && (
+        <button
+          type="button"
+          className="ctrl"
+          onClick={handleExport}
+          disabled={!hasVersion || exporting}
+          title={
+            !hasVersion
+              ? '合成出第一版后才能导出'
+              : projectType === 'html'
+              ? '导出为 HTML 文件到本地'
+              : '导出为 PPTX 文件到本地'
+          }
+        >
+          {exporting ? (
+            <>
+              <span className="ctrl-spinner" />
+              导出中…
+            </>
+          ) : (
+            <>
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M7 9V2M4 6l3 3 3-3" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M2 11h10" strokeLinecap="round" />
+              </svg>
+              导出
+            </>
+          )}
+        </button>
+      )}
 
       <button
         type="button"
