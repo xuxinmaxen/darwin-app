@@ -3,8 +3,7 @@
 /**
  * Intent 卡片（看板里）— Client Component。
  *
- * 删除走「点一次进入确认态 → 再点确认才真删」的内联交互,
- * 比 native confirm() 视觉更连贯,也避免无意误删。
+ * 删除点击 → 弹出二次确认弹窗 (modal-backdrop alertdialog)。
  */
 
 import { useState, useTransition } from 'react';
@@ -50,25 +49,19 @@ export default function IntentCard({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [confirming, setConfirming] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleDeleteClick() {
-    if (!confirming) {
-      setConfirming(true);
-      // 5 秒不点确认就退出确认态,避免卡住
-      window.setTimeout(() => setConfirming(false), 5000);
-      return;
-    }
+  function handleDeleteConfirmed() {
     setError(null);
     startTransition(async () => {
       const res = await fetch(`/api/intents/${intent.id}`, { method: 'DELETE' });
       if (res.ok) {
+        setConfirmOpen(false);
         router.refresh();
       } else {
         const json = await res.json().catch(() => ({}));
         setError(json.error || '删除失败');
-        setConfirming(false);
       }
     });
   }
@@ -85,90 +78,119 @@ export default function IntentCard({
   const name = author?.name ?? fallback.name;
   const role = author?.role ?? fallback.role;
 
+  // 弹窗里显示 intent 的简短预览
+  const previewText = (userText || intent.statement).slice(0, 80);
+
   return (
-    <div
-      className={`intent${confirming ? ' intent-confirming' : ''}${isHovered ? ' is-prov-hover' : ''}${isDimmed ? ' is-prov-dim' : ''}`}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-    >
-      <div className="intent-head">
-        <span className={`avatar ${avatarCls}`}>{short}</span>
-        <span className="intent-author">{name}</span>
-        <span className="intent-role">/ {role}</span>
-        {/* suppressHydrationWarning: 服务端 vs 客户端渲染相差一分钟时,React 会警告 */}
-        <span className="intent-time" suppressHydrationWarning>
-          {formatTime(intent.createdAt)}
-        </span>
-      </div>
-      {userText && <p className="intent-body">{userText}</p>}
-      {(attachments.length > 0 || hasImportRef) && (
-        <div className="intent-attach-row">
-          {attachments.map((name, i) => (
-            <span key={`a-${i}`} className="intent-attach-chip" title={`AI 已读取参考文件: ${name}`}>
-              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                <path d="M7.5 2.5L3 7a2 2 0 1 0 2.83 2.83L10 5.65a3 3 0 0 0-4.24-4.24L1.5 5.67" strokeLinecap="round" />
-              </svg>
-              <span className="intent-attach-name">{name}</span>
-            </span>
-          ))}
-          {hasImportRef && attachments.length === 0 && (
-            <span className="intent-attach-chip" title="AI 已读取导入的参考内容">
-              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                <path d="M3 2.5h4.5L10 5v4.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
-              </svg>
-              <span className="intent-attach-name">导入参考</span>
-            </span>
-          )}
+    <>
+      <div
+        className={`intent${isHovered ? ' is-prov-hover' : ''}${isDimmed ? ' is-prov-dim' : ''}`}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        <div className="intent-head">
+          <span className={`avatar ${avatarCls}`}>{short}</span>
+          <span className="intent-author">{name}</span>
+          <span className="intent-role">/ {role}</span>
+          {/* suppressHydrationWarning: 服务端 vs 客户端渲染相差一分钟时,React 会警告 */}
+          <span className="intent-time" suppressHydrationWarning>
+            {formatTime(intent.createdAt)}
+          </span>
         </div>
-      )}
-      <div className="intent-meta">
-        <span className="tag">{intent.type}</span>
-        <span className="tag scope">{intent.scope}</span>
-        <span className={`tag ${intent.weight}`}>{intent.weight}</span>
-        {confirming && !isPending && (
+        {userText && <p className="intent-body">{userText}</p>}
+        {(attachments.length > 0 || hasImportRef) && (
+          <div className="intent-attach-row">
+            {attachments.map((nm, i) => (
+              <span key={`a-${i}`} className="intent-attach-chip" title={`AI 已读取参考文件: ${nm}`}>
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                  <path d="M7.5 2.5L3 7a2 2 0 1 0 2.83 2.83L10 5.65a3 3 0 0 0-4.24-4.24L1.5 5.67" strokeLinecap="round" />
+                </svg>
+                <span className="intent-attach-name">{nm}</span>
+              </span>
+            ))}
+            {hasImportRef && attachments.length === 0 && (
+              <span className="intent-attach-chip" title="AI 已读取导入的参考内容">
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                  <path d="M3 2.5h4.5L10 5v4.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1z" strokeLinejoin="round" />
+                </svg>
+                <span className="intent-attach-name">导入参考</span>
+              </span>
+            )}
+          </div>
+        )}
+        <div className="intent-meta">
+          <span className="tag">{intent.type}</span>
+          <span className="tag scope">{intent.scope}</span>
+          <span className={`tag ${intent.weight}`}>{intent.weight}</span>
+          {onDiscuss && (
+            <button
+              type="button"
+              className="intent-discuss"
+              onClick={() => onDiscuss(intent)}
+              title="围绕这条 Intent 发起讨论"
+              aria-label="发起讨论"
+            >
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M2 4.5a2.5 2.5 0 0 1 2.5-2.5h3A2.5 2.5 0 0 1 10 4.5v2A2.5 2.5 0 0 1 7.5 9H5L3 10.5V9a2.5 2.5 0 0 1-1-2v-2.5z" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
-            className="intent-del-cancel"
-            onClick={() => setConfirming(false)}
-            title="取消删除"
-            aria-label="取消删除"
+            className="intent-del"
+            onClick={() => setConfirmOpen(true)}
+            disabled={isPending}
+            title="删除这条 Intent"
+            aria-label="删除"
           >
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-              <path d="M3 3l6 6M9 3l-6 6" strokeLinecap="round" />
-            </svg>
-          </button>
-        )}
-        {onDiscuss && !confirming && (
-          <button
-            type="button"
-            className="intent-discuss"
-            onClick={() => onDiscuss(intent)}
-            title="围绕这条 Intent 发起讨论"
-            aria-label="发起讨论"
-          >
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-              <path d="M2 4.5a2.5 2.5 0 0 1 2.5-2.5h3A2.5 2.5 0 0 1 10 4.5v2A2.5 2.5 0 0 1 7.5 9H5L3 10.5V9a2.5 2.5 0 0 1-1-2v-2.5z" strokeLinejoin="round" />
-            </svg>
-          </button>
-        )}
-        <button
-          type="button"
-          className={`intent-del${confirming ? ' confirming' : ''}`}
-          onClick={handleDeleteClick}
-          disabled={isPending}
-          title={isPending ? '删除中' : confirming ? '再点一次确认删除' : '删除这条 Intent'}
-          aria-label={isPending ? '删除中' : confirming ? '确认删除' : '删除'}
-        >
-          {isPending ? (
-            <span className="intent-del-spinner" aria-hidden />
-          ) : (
             <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
               <path d="M3 4h6v6.5a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5V4zM2 4h8M5 2h2v2H5z" strokeLinejoin="round" />
             </svg>
-          )}
-        </button>
+          </button>
+        </div>
+        {error && <div className="intent-error">{error}</div>}
       </div>
-      {error && <div className="intent-error">{error}</div>}
-    </div>
+
+      {confirmOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => !isPending && setConfirmOpen(false)}
+        >
+          <div
+            className="modal-panel"
+            onClick={e => e.stopPropagation()}
+            role="alertdialog"
+          >
+            <header className="modal-head">
+              <h2 className="modal-title">删除这条 Intent？</h2>
+              <p className="modal-sub">
+                「{previewText}{previewText.length >= 80 ? '…' : ''}」
+                <br />
+                删除后无法恢复,合成产物里的对应 section 会在下一次重合成时调整。
+              </p>
+            </header>
+            {error && <div className="modal-error">{error}</div>}
+            <footer className="modal-foot">
+              <button
+                type="button"
+                className="ws-btn ws-btn-ghost"
+                onClick={() => setConfirmOpen(false)}
+                disabled={isPending}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="ws-btn ws-btn-danger-solid"
+                onClick={handleDeleteConfirmed}
+                disabled={isPending}
+              >
+                {isPending ? '删除中…' : '确认删除'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -96,7 +96,16 @@ export default function NewProjectButton({
   const [sourceMode, setSourceMode] = useState<SourceMode>('blank');
   const [importUrl, setImportUrl] = useState('');
   const [importedHtmlRef, setImportedHtmlRef] = useState<
-    { url: string; title: string | null; text: string; truncated: boolean } | null
+    {
+      url: string;
+      title: string | null;
+      text: string;
+      truncated: boolean;
+      /** 原始 HTML — 用于作为 v1 直接入库,不走 LLM 重生成 */
+      rawHtml: string;
+      rawHtmlBytes: number;
+      rawHtmlTruncated: boolean;
+    } | null
   >(null);
   const [importedFile, setImportedFile] = useState<
     { name: string; isText: boolean; text?: string; note?: string } | null
@@ -133,6 +142,9 @@ export default function NewProjectButton({
         title: json.title,
         text: json.text,
         truncated: json.truncated,
+        rawHtml: json.rawHtml ?? '',
+        rawHtmlBytes: json.rawHtmlBytes ?? 0,
+        rawHtmlTruncated: !!json.rawHtmlTruncated,
       });
       // 若用户没填项目名, 用页面标题自动填一个
       if (!name && json.title) setName(json.title);
@@ -230,47 +242,25 @@ export default function NewProjectButton({
       }
     }
 
-    // 把导入参考拼到 background 里, 项目背景 + 导入正文统一交给 LLM
-    let finalBackground = background.trim();
-    if (sourceMode === 'import') {
-      const parts: string[] = [];
-      if (finalBackground) parts.push(finalBackground);
-      if (type === 'html' && importedHtmlRef) {
-        parts.push(
-          `【导入参考 (HTML)】来源: ${importedHtmlRef.url}` +
-            (importedHtmlRef.title ? `\n标题: ${importedHtmlRef.title}` : '') +
-            `\n\n${importedHtmlRef.text}` +
-            (importedHtmlRef.truncated ? '\n\n[内容已截断 8000 字]' : '')
-        );
-      }
-      if (type === 'ppt' && importedFile) {
-        if (importedFile.isText && importedFile.text) {
-          parts.push(
-            `【导入参考 (${importedFile.name})】\n\n${importedFile.text}`
-          );
-        } else {
-          parts.push(
-            `【导入参考】文件名: ${importedFile.name}` +
-              (importedFile.note ? `\n说明: ${importedFile.note}` : '')
-          );
-        }
-      }
-      finalBackground = parts.join('\n\n');
-    }
+    // background 只保留用户自己写的内容,不再倾倒导入正文 (导入正文走 seedHtml 直接进 v1)
+    const finalBackground = background.trim();
 
-    // 导入参考 → 生成一条 owner 种子意图，进入项目就能看到
+    // 导入参考 → 生成种子意图 + 种子 HTML (HTML 项目直接作为 v1, 不调用 LLM)
     let seedIntent: { statement: string } | undefined;
+    let seedHtml: string | undefined;
     if (sourceMode === 'import') {
       if (type === 'html' && importedHtmlRef) {
         const ref = importedHtmlRef.title
           ? `「${importedHtmlRef.title}」(${importedHtmlRef.url})`
           : importedHtmlRef.url;
         seedIntent = {
-          statement: `请基于 ${ref} 这份落地页的结构、文案和视觉语言来合成本项目，意图后续可由团队增量调整。`,
+          statement: `从 ${ref} 复刻本项目作为起点,后续意图在此基础上增量修改。`,
         };
+        // 关键: 把抓取到的原始 HTML 直接作为 v1 入库
+        seedHtml = importedHtmlRef.rawHtml || undefined;
       } else if (type === 'ppt' && importedFile) {
         seedIntent = {
-          statement: `请基于上传的 ${importedFile.name} 的内容和结构来合成本 PPT，意图后续可由团队增量调整。`,
+          statement: `请基于上传的 ${importedFile.name} 的内容和结构来合成本 PPT,意图后续可由团队增量调整。`,
         };
       }
     }
@@ -287,6 +277,7 @@ export default function NewProjectButton({
             conflictMode,
             collaboratorIds: Array.from(collaboratorIds),
             ...(seedIntent ? { seedIntent } : {}),
+            ...(seedHtml ? { seedHtml } : {}),
           }),
         });
         const json = await res.json();
@@ -428,9 +419,11 @@ export default function NewProjectButton({
                   {importError && <div className="import-error">⚠️ {importError}</div>}
                   {importedHtmlRef && (
                     <div className="import-ok">
-                      ✓ 已抓取{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
-                      {importedHtmlRef.truncated && ' (内容过长,已截断 8000 字)'}
-                      ,合成 v1 时 AI 会按这个页面复刻
+                      ✓ 已抓取原始 HTML{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
+                      {' '}({(importedHtmlRef.rawHtmlBytes / 1024).toFixed(0)} KB)
+                      {importedHtmlRef.rawHtmlTruncated && ' [超 500KB 已截断]'}
+                      <br />
+                      进入项目即看到原页面复刻为 v1,后续意图触发 AI 增量修改。
                     </div>
                   )}
                 </div>

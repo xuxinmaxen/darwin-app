@@ -13,6 +13,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listProjects, createProject } from '@/lib/projects';
 import { createIntent } from '@/lib/intents';
+import { createVersion } from '@/lib/versions';
 import { currentUserId } from '@/lib/auth';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
@@ -41,6 +42,9 @@ const CreateBody = z.object({
   seedIntent: z.object({
     statement: z.string().min(1).max(2000),
   }).optional(),
+  // 导入 HTML 时: 把抓取到的原始 HTML 作为 v1 直接入库, 不调用 LLM 重生成
+  // 后续意图触发增量更新, AI 在此基础上做最小修改
+  seedHtml: z.string().max(500_000).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -64,11 +68,11 @@ export async function POST(req: NextRequest) {
       collaboratorIds: body.collaboratorIds,
     });
 
-    // 导入流程: 自动以 owner 身份在意图看板挂一条 Reference Intent
-    // 把"基于 X 复刻"这个意图显性化, 用户进入项目就能看到 (类型/scope/weight 直接给, 跳过 LLM extract)
+    // 导入流程: 种子意图 + 种子 HTML 都在创建时一起入库
+    let seedIntentId: string | null = null;
     if (body.seedIntent?.statement) {
       try {
-        await createIntent({
+        const intent = await createIntent({
           projectId: project.id,
           authorId: ownerId,
           authorKind: 'human',
@@ -78,8 +82,24 @@ export async function POST(req: NextRequest) {
           weight: 'should',
           rationale: '导入参考创建项目时自动生成的种子意图',
         });
+        seedIntentId = intent.id;
       } catch (err) {
         console.warn('[projects.create] seed intent failed:', err);
+      }
+    }
+
+    // 关键: 抓取到的原始 HTML 直接作为 v1 入库,不调用 LLM。
+    // 用户进入项目即看到原页面 1:1 复刻,后续意图触发 incremental 修改。
+    if (body.seedHtml && body.type === 'html') {
+      try {
+        await createVersion({
+          projectId: project.id,
+          format: project.type,
+          content: body.seedHtml,
+          intentIds: seedIntentId ? [seedIntentId] : [],
+        });
+      } catch (err) {
+        console.warn('[projects.create] seed version failed:', err);
       }
     }
 

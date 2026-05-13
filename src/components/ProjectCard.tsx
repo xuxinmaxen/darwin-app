@@ -51,7 +51,6 @@ export default function ProjectCard({
   const [conflictMode, setConflictMode] = useState<'discuss' | 'ai_decide'>(project.conflictMode as 'discuss' | 'ai_decide');
   const [background, setBackground] = useState(project.background ?? '');
   const [error, setError] = useState<string | null>(null);
-  const [confirming, setConfirming] = useState(false);
 
   // 协作者选择状态 (编辑时)
   const [editCollabIds, setEditCollabIds] = useState<Set<string>>(
@@ -104,17 +103,13 @@ export default function ProjectCard({
     });
   }
 
-  function handleDelete() {
-    if (!confirming) {
-      setConfirming(true);
-      setTimeout(() => setConfirming(false), 5000);
-      return;
-    }
+  function handleDeleteConfirmed() {
     startTransition(async () => {
       try {
         const res = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' });
         const json = await res.json();
         if (!res.ok || !json.ok) { setError(json.error || '删除失败'); return; }
+        setMode('idle');
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -135,10 +130,10 @@ export default function ProjectCard({
           >{EDIT_ICON}</button>
           <button
             type="button"
-            className={`card-action-btn danger${confirming ? ' confirming' : ''}`}
-            onClick={e => { e.preventDefault(); handleDelete(); }}
+            className="card-action-btn danger"
+            onClick={e => { e.preventDefault(); setMode('confirm-delete'); }}
             disabled={isPending}
-            title={confirming ? '再点一次确认删除' : '删除项目'}
+            title="删除项目"
           >{isPending ? '…' : DELETE_ICON}</button>
         </div>
 
@@ -359,17 +354,7 @@ export default function ProjectCard({
             {error && <div className="modal-error">{error}</div>}
             <footer className="modal-foot">
               <button type="button" className="ws-btn ws-btn-ghost" onClick={closeModal} disabled={isPending}>取消</button>
-              <button type="button" className="ws-btn ws-btn-danger-solid" onClick={() => {
-                startTransition(async () => {
-                  try {
-                    const res = await fetch(`/api/projects/${project.id}`, { method: 'DELETE' });
-                    const json = await res.json();
-                    if (!res.ok || !json.ok) { setError(json.error || '删除失败'); return; }
-                    setMode('idle');
-                    router.refresh();
-                  } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-                });
-              }} disabled={isPending}>
+              <button type="button" className="ws-btn ws-btn-danger-solid" onClick={handleDeleteConfirmed} disabled={isPending}>
                 {isPending ? '删除中…' : '确认删除'}
               </button>
             </footer>

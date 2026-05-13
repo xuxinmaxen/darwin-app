@@ -3,15 +3,14 @@
  *
  * Body: { url: string }
  *
- * 服务端拉 URL 内容, 提取可见文本 (去 script/style/HTML tags),
- * 返回给客户端作为新建项目时的"参考底稿"。
- *
- * 不存盘 — 调用方拿到 text 后自己决定塞到哪里 (一般是 project.background)。
+ * 服务端抓取 URL 完整 HTML, 返回:
+ *   - rawHtml: 注入 <base href> 后的原始 HTML (剥掉 <script> 防 XSS), 用作 v1 种子
+ *   - text:    剥纯文本预览 (供 LLM 在增量更新时理解上下文)
+ *   - title:   <title> 内容,用于种子意图文案
  *
  * 限制:
- *   - 仅支持 http(s)
- *   - 单次请求 8s 超时
- *   - 抽取后内容截断到 8000 字 (再多 LLM 也读不完)
+ *   - 仅支持 http(s), 8s 超时
+ *   - rawHtml 上限 500KB, text 上限 8000 字
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -23,6 +22,40 @@ const Body = z.object({
 
 const FETCH_TIMEOUT_MS = 8_000;
 const MAX_TEXT_CHARS = 8_000;
+const MAX_RAW_HTML_BYTES = 500_000;
+
+/** 在 <head> 注入 <base href + target> — 让相对资源路径解析到原始域、链接默认新窗口打开 */
+function injectBase(html: string, sourceUrl: string): string {
+  const tag = `<base href="${escapeAttr(sourceUrl)}" target="_blank">`;
+  if (/<base\b/i.test(html)) {
+    // 已存在 <base>, 替换 (避免重复)
+    return html.replace(/<base\b[^>]*>/i, tag);
+  }
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${tag}`);
+  }
+  // 没 head, 简单 wrap
+  return `<head>${tag}</head>${html}`;
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/** 剥掉 script/iframe/onXXX 属性 — 安全防线 (iframe 还有 sandbox 兜底) */
+function sanitizeHtml(html: string): string {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<script\b[^>]*\/?>/gi, '')
+    .replace(/<iframe\b[\s\S]*?<\/iframe>/gi, '')
+    // 移除内联事件 (onclick, onload, ...) 防 XSS
+    .replace(/\s+on[a-z]+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*'[^']*'/gi, '')
+    .replace(/\s+on[a-z]+\s*=\s*[^\s>]+/gi, '')
+    // 移除 javascript: URL
+    .replace(/(href|src)\s*=\s*"javascript:[^"]*"/gi, '$1="#"')
+    .replace(/(href|src)\s*=\s*'javascript:[^']*'/gi, "$1='#'");
+}
 
 export async function POST(req: NextRequest) {
   let body: z.infer<typeof Body>;
@@ -74,7 +107,11 @@ export async function POST(req: NextRequest) {
     clearTimeout(t);
   }
 
-  // 极简 HTML → text: 去 script/style 块 + 去标签 + 折叠空白
+  // 提取标题 (best-effort) — 在 sanitize 前抓,避免被剥
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].trim().slice(0, 120) : null;
+
+  // 极简 HTML → text 预览: 给 LLM 增量更新做 context (rawHtml 也会一起送过去)
   const cleaned = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -93,9 +130,11 @@ export async function POST(req: NextRequest) {
   const truncated = cleaned.length > MAX_TEXT_CHARS;
   const text = truncated ? cleaned.slice(0, MAX_TEXT_CHARS) + '…' : cleaned;
 
-  // 提取标题 (best-effort)
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = titleMatch ? titleMatch[1].trim().slice(0, 120) : null;
+  // 原始 HTML — sanitize 后注入 base, 限制 500KB
+  let rawHtml = sanitizeHtml(html);
+  rawHtml = injectBase(rawHtml, body.url);
+  const rawHtmlTruncated = rawHtml.length > MAX_RAW_HTML_BYTES;
+  if (rawHtmlTruncated) rawHtml = rawHtml.slice(0, MAX_RAW_HTML_BYTES);
 
   return NextResponse.json({
     ok: true,
@@ -105,5 +144,8 @@ export async function POST(req: NextRequest) {
     text,
     truncated,
     chars: text.length,
+    rawHtml,
+    rawHtmlBytes: rawHtml.length,
+    rawHtmlTruncated,
   });
 }
