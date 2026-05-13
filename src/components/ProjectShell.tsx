@@ -86,8 +86,52 @@ export default function ProjectShell({
   const [versionsTotal, setVersionsTotal] = useState(initialVersionsTotal);
   const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
-  // 开始合成时快照当时的 intentIds，用于在生成中状态下精确定位分界线
+  // synthesisPendingIds 已由边界线逻辑简化为 intents.length-1,保留 state 防 TS 报错
   const [synthesisPendingIds, setSynthesisPendingIds] = useState<Set<string>>(new Set());
+
+  // ─── localStorage 持久化合成状态 ─────────────────────────
+  const SYNTH_KEY = `darwin_synth_${project.id}`;
+
+  // 页面加载时恢复合成状态 (刷新/重新进入均有效)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem(SYNTH_KEY);
+    if (!stored) return;
+    try {
+      const { startedAt } = JSON.parse(stored) as { startedAt: number; intentIds: string[] };
+      // 超过 5 分钟视为过期
+      if (Date.now() - startedAt > 5 * 60 * 1000) {
+        localStorage.removeItem(SYNTH_KEY);
+        return;
+      }
+      // 合成仍可能在服务端运行,恢复"合成中"UI
+      setIsSynthesizing(true);
+    } catch {
+      localStorage.removeItem(SYNTH_KEY);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
+
+  // 合成进行中 + 没有活跃 SSE (streamActive 在 ProjectCanvas 内管理,这里用 isSynthesizing 兜底轮询)
+  // 每 2s 轮询一次 GET /synthesize,发现新版本立刻渲染
+  useEffect(() => {
+    if (!isSynthesizing) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/projects/${project.id}/synthesize`);
+        const json = await res.json();
+        if (cancelled) return;
+        if (json.ok && json.version && json.version.id !== currentVersion?.id) {
+          handleVersionCreated(json.version as Version);
+          if (typeof window !== 'undefined') localStorage.removeItem(SYNTH_KEY);
+        }
+      } catch { /* swallow */ }
+    };
+    const iv = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(iv); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSynthesizing, project.id, currentVersion?.id]);
   const [previewVersion, setPreviewVersion] = useState<Version | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<'draft' | 'published'>(
@@ -173,7 +217,9 @@ export default function ProjectShell({
     setCurrentVersion(v);
     setVersionsTotal(n => n + 1);
     setIsSynthesizing(false);
-    setSynthesisPendingIds(new Set()); // 清空待合成快照
+    setSynthesisPendingIds(new Set());
+    // 合成完成 → 清除 localStorage,避免下次进入页面误以为合成还在跑
+    if (typeof window !== 'undefined') localStorage.removeItem(SYNTH_KEY);
   };
 
   const handlePreview = async (versionId: string) => {
@@ -753,14 +799,10 @@ export default function ProjectShell({
                     if (synthIds.has(intents[idx].id)) { lastSynthIndex = idx; break; }
                   }
                 }
-                // pendingLastIndex: 本次合成快照的最后一条意图的位置
-                // (仅在合成进行时有效,用于精确定位"生成中"分界线)
-                let pendingLastIndex = -1;
-                if (isSynthesizing && synthesisPendingIds.size > 0) {
-                  for (let idx = intents.length - 1; idx >= 0; idx--) {
-                    if (synthesisPendingIds.has(intents[idx].id)) { pendingLastIndex = idx; break; }
-                  }
-                }
+                // pendingLastIndex: 生成中分界线位置
+                // 始终放在当前最后一条可见意图下方，避免因快照时机导致 agent 意图出现在线下方
+                // 真实包含的意图由服务端在合成时读 DB 决定，客户端快照会有竞态，不再使用快照定位
+                const pendingLastIndex = isSynthesizing ? intents.length - 1 : -1;
 
                 const prevVersion = versionsTotal;
                 const nextVersion = versionsTotal + 1;
@@ -915,8 +957,14 @@ export default function ProjectShell({
               agentsReacting={agentsReacting}
               onSynthesisStart={() => {
                 setIsSynthesizing(true);
-                // 快照时 agent 已全部反应完毕，分界线位置与实际合成内容一致
                 setSynthesisPendingIds(new Set(intents.map(i => i.id)));
+                // 持久化到 localStorage: 刷新页面后仍能恢复"合成中"状态
+                if (typeof window !== 'undefined') {
+                  localStorage.setItem(SYNTH_KEY, JSON.stringify({
+                    startedAt: Date.now(),
+                    intentIds: intents.map(i => i.id),
+                  }));
+                }
               }}
             />
           </div>

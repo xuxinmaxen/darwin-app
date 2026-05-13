@@ -112,44 +112,51 @@ async function handleStreamPost(projectId: string): Promise<Response> {
     ? { html: latestVersion.content, intentIds: latestVersion.intentIds }
     : null;
 
+  /** 安全 enqueue — 客户端断开后 controller 可能已关闭,捕获错误让合成继续 */
+  function safeEnqueue(controller: ReadableStreamDefaultController<Uint8Array>, event: SynthesisEvent) {
+    try { controller.enqueue(sseChunk(event)); } catch { /* client disconnected, continue */ }
+  }
+
   const readable = new ReadableStream({
     async start(controller) {
+      let finalHtml = '';
+      let finalSource: 'llm' | 'template' = 'template';
+      let finalMode: 'full' | 'incremental' = 'full';
       try {
-        let finalHtml = '';
-        let finalSource: 'llm' | 'template' = 'template';
-        let finalMode: 'full' | 'incremental' = 'full';
-
         for await (const event of synthesizeStream(project, intents, existing)) {
-          controller.enqueue(sseChunk(event));
+          safeEnqueue(controller, event);
           if (event.type === 'complete') {
             finalHtml = event.html;
             finalSource = event.source;
             finalMode = event.mode;
           }
         }
+      } catch (err) {
+        safeEnqueue(controller, { type: 'error', message: errMsg(err) });
+      }
 
-        // 保存版本到 DB
-        if (finalHtml) {
+      // 版本入库 — 即使客户端已断开也要完成,让轮询能找到新版本
+      if (finalHtml) {
+        try {
           const version = await createVersion({
             projectId,
             format: project.type,
             content: finalHtml,
             intentIds: intents.map(i => i.id),
           });
-          // 发送已入库的版本元数据给客户端
-          controller.enqueue(sseChunk({
+          safeEnqueue(controller, {
             type: 'saved',
             version: { ...version, source: finalSource },
             mode: finalMode,
-          }));
+          });
           revalidatePath(`/projects/${projectId}`);
           revalidatePath('/');
+        } catch (err) {
+          safeEnqueue(controller, { type: 'error', message: `保存版本失败: ${errMsg(err)}` });
         }
-      } catch (err) {
-        controller.enqueue(sseChunk({ type: 'error', message: errMsg(err) }));
-      } finally {
-        controller.close();
       }
+
+      try { controller.close(); } catch { /* already closed */ }
     },
   });
 

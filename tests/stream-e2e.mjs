@@ -67,7 +67,7 @@ console.log('\n=== T-1: SSE content-type ===');
   const decoder = new TextDecoder();
   let buf = '';
   let timedOut = false;
-  const deadline = Date.now() + 180_000; // 3 min max
+  const deadline = Date.now() + 300_000; // 5 min max (LLM synthesis can take 60-120s)
 
   while (Date.now() < deadline) {
     const { done, value } = await reader.read();
