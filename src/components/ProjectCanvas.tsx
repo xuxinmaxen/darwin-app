@@ -224,6 +224,9 @@ export default function ProjectCanvas({
   onSynthesisStart,
   resumePartialHtml = null,
   resumeThinkingMsg = null,
+  recentSynthFailureAt = null,
+  synthFailureMsg = null,
+  onRetrySynth,
 }: {
   project: Project;
   intents: Intent[];
@@ -246,6 +249,12 @@ export default function ProjectCanvas({
   resumePartialHtml?: string | null;
   /** 跨刷新接力: 服务端最新的 thinking 文案 */
   resumeThinkingMsg?: string | null;
+  /** 最近一次合成失败时间戳 — 阻断自动重试死循环 (在 10 min 窗口内) */
+  recentSynthFailureAt?: number | null;
+  /** 失败原因, 用于 UI 横幅 */
+  synthFailureMsg?: string | null;
+  /** 用户点 "重新合成" → 父组件清状态 */
+  onRetrySynth?: () => void;
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
@@ -414,6 +423,9 @@ export default function ProjectCanvas({
   }, [iframeReady, traceMode, intents]);
 
   // ─── 自动重合成 ──────────────────────────────────────────
+  // 失败后冷却窗口: 防止 "失败 → 自动重试 → 又超时失败" 死循环.
+  const SYNTH_FAILURE_COOLDOWN_MS = 10 * 60 * 1000;
+
   useEffect(() => {
     if (!currentVersion) return;
     if (intents.length === 0) return;
@@ -425,6 +437,8 @@ export default function ProjectCanvas({
     if (activeTensionCount > 0) return;
     // Agent 反应进行中 — 等待 agent 意图全部落入客户端再合成,确保分界线位置正确
     if (agentsReacting) return;
+    // 最近合成失败过 → 不自动重试; 用户点 "重新合成" 显式触发
+    if (recentSynthFailureAt && Date.now() - recentSynthFailureAt < SYNTH_FAILURE_COOLDOWN_MS) return;
 
     const currentHash = hashIntents(intents);
     if (currentHash === lastSyncedHashRef.current) return;
@@ -435,7 +449,7 @@ export default function ProjectCanvas({
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intents, currentVersion, project.id, autoSyncing, agentsReacting, isSynthesizing]);
+  }, [intents, currentVersion, project.id, autoSyncing, agentsReacting, isSynthesizing, recentSynthFailureAt]);
 
   /** 流式合成核心 — SSE 消费者 */
   async function runSynthesisStream(intentHash: string, isFirstSynth = false) {
@@ -664,8 +678,12 @@ export default function ProjectCanvas({
   // 阶段 3 (synth): 冲突已解决 / 无冲突,正在流式合成
   // 阶段 3b (resumed): 刷新后恢复的合成中状态 (有服务端 partial, 走轮询)
   const isSynthPhase = streamActive || isFirstPending;
-  const isConflictPhase = isStale && activeTensionCount > 0 && !isSynthPhase && !isResumedPhase;
-  const isDetectPhase  = isStale && activeTensionCount === 0 && !isSynthPhase && !isResumedPhase;
+  // 在失败冷却期 → detect/conflict overlay 都不显示 (auto-sync 已 gate, 显示出来误导)
+  const inFailureCooldown =
+    !!recentSynthFailureAt &&
+    Date.now() - recentSynthFailureAt < SYNTH_FAILURE_COOLDOWN_MS;
+  const isConflictPhase = isStale && activeTensionCount > 0 && !isSynthPhase && !isResumedPhase && !inFailureCooldown;
+  const isDetectPhase  = isStale && activeTensionCount === 0 && !isSynthPhase && !isResumedPhase && !inFailureCooldown;
 
   const overlayVariant = (isSynthPhase || isResumedPhase) ? 'synth' : isConflictPhase ? 'conflict' : 'detect';
   const overlayMsg = isResumedPhase
@@ -680,6 +698,39 @@ export default function ProjectCanvas({
 
   return (
     <div className="canvas-result" style={{ position: 'relative' }}>
+      {/* 失败 banner — 合成被超时/出错杀掉后给用户清晰反馈和重试入口 */}
+      {inFailureCooldown && !isSynthPhase && (
+        <div className="canvas-failure-banner" role="alert" style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 16px',
+          background: 'linear-gradient(90deg, #FEF2F2, #FFFBEB)',
+          borderBottom: '1px solid #FCA5A5',
+          color: '#7F1D1D', fontSize: 13, lineHeight: 1.4,
+        }}>
+          <span style={{ flexShrink: 0 }}>⚠</span>
+          <span style={{ flex: 1 }}>
+            上次合成中断{synthFailureMsg ? `: ${synthFailureMsg}` : ''}。已暂停自动重试,你可以继续添加意图,然后手动点击下方按钮重新合成。
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              onRetrySynth?.();
+              // 主动触发: 用 runSynthesis (流式 SSE)
+              const hash = hashIntents(intents);
+              void runSynthesis(hash);
+            }}
+            style={{
+              flexShrink: 0, padding: '6px 14px', borderRadius: 6,
+              border: 0, background: '#1A1A1C', color: '#fff',
+              fontSize: 12, fontWeight: 500, cursor: 'pointer',
+            }}
+          >
+            重新合成
+          </button>
+        </div>
+      )}
+
       {/* 统一 Thinking 覆盖层: 冲突检测 → 冲突阻塞 → 流式合成 */}
       {showOverlay && (
         <div className={`canvas-thinking-overlay canvas-thinking-overlay--${overlayVariant}`}>

@@ -109,6 +109,18 @@ export default function ProjectShell({
   const [synthesisPendingIds, setSynthesisPendingIds] = useState<Set<string>>(
     new Set(initialSynthesisJob?.running ? initialSynthesisJob.intentIds : [])
   );
+  // 最近一次合成失败时间戳 — 用来 gate 自动重试. 之前 bug:
+  // 合成超时被 Vercel 杀 → zombie 清理 → auto-sync useEffect 看 intent_ids
+  // 还是不匹配 → 立刻又触发合成 → 又超时 → 死循环, 用户永远卡 "v_N 合成中".
+  // 现在: 失败后 10 分钟内不自动重试; 用户可以点 "重新合成" 按钮显式触发.
+  const [recentSynthFailureAt, setRecentSynthFailureAt] = useState<number | null>(
+    initialSynthesisJob?.phase === 'error' && initialSynthesisJob?.updatedAt
+      ? new Date(initialSynthesisJob.updatedAt).getTime()
+      : null
+  );
+  const [synthFailureMsg, setSynthFailureMsg] = useState<string | null>(
+    initialSynthesisJob?.phase === 'error' ? initialSynthesisJob.error : null
+  );
 
   // ─── 跨刷新合成接力: 轮询 /synthesize/job ────────────────
   // 服务端 SSE 在写 partial_html, 我们 1.5s 拉一次拿到最新 partial → 喂给 iframe。
@@ -135,14 +147,18 @@ export default function ProjectShell({
         if (cancelled) return;
         if (j.ok && j.version && j.version.id !== currentVersion?.id) {
           handleVersionCreated(j.version as Version);
+          // 成功了 → 清失败痕迹, 允许后续自动同步
+          setRecentSynthFailureAt(null);
+          setSynthFailureMsg(null);
         } else {
-          // 没拿到新版本就保险释放 — phase=error 时也不能死锁
+          // 没拿到新版本 → 合成失败. 释放状态 + 记录失败时间防止自动重试死循环
           setIsSynthesizing(false);
           setResumePartialHtml(null);
           setResumeThinkingMsg(null);
           setSynthesisPendingIds(new Set());
           if (jobError) {
-            setPreviewError(`合成中断: ${jobError}. 可继续添加意图后重试.`);
+            setRecentSynthFailureAt(Date.now());
+            setSynthFailureMsg(jobError);
           }
         }
       } catch { /* 留给下一轮 */ }
@@ -1044,11 +1060,20 @@ export default function ProjectShell({
               onSynthesisStart={() => {
                 setIsSynthesizing(true);
                 setSynthesisPendingIds(new Set(intents.map(i => i.id)));
+                // 用户/重试触发 → 主动清失败痕迹, 让本次合成开始时干净起步
+                setRecentSynthFailureAt(null);
+                setSynthFailureMsg(null);
                 // 服务端 startSynthesisJob 在 POST /synthesize 内同步占口,
                 // 不再需要 localStorage — 跨刷新由 DB 接力。
               }}
               resumePartialHtml={resumePartialHtml}
               resumeThinkingMsg={resumeThinkingMsg}
+              recentSynthFailureAt={recentSynthFailureAt}
+              synthFailureMsg={synthFailureMsg}
+              onRetrySynth={() => {
+                setRecentSynthFailureAt(null);
+                setSynthFailureMsg(null);
+              }}
             />
           </div>
         </section>
