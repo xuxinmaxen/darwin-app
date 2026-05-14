@@ -24,6 +24,10 @@ import {
 
 // Next.js 16: 流式路由必须是动态路由
 export const dynamic = 'force-dynamic';
+// 增量更新 16+ intents 复刻 25KB HTML 时 cc-switch/Hermes 偶尔走到 4-5 分钟.
+// Vercel 默认 10s 会 kill 函数; streaming response 没有 maxDuration 会被截.
+// 300s = Pro plan 上限, 给足时间避免半截入库.
+export const maxDuration = 300;
 
 type Params = { params: Promise<{ id: string }> };
 

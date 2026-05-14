@@ -102,8 +102,13 @@ export default function ProjectShell({
   const [resumeThinkingMsg, setResumeThinkingMsg] = useState<string | null>(
     initialSynthesisJob?.running ? initialSynthesisJob.thinkingMsg : null
   );
-  // synthesisPendingIds 已由边界线逻辑简化为 intents.length-1,保留 state 防 TS 报错
-  const [synthesisPendingIds, setSynthesisPendingIds] = useState<Set<string>>(new Set());
+  // 服务端启动合成时 "凝固" 的 intent id 快照 — 决定 "v_N_ 合成中" 分界线位置。
+  // 这一组 intent 才是 v_N 真正会包含的内容; 期间用户/agent 新加的 intent 显示在分界线下方,
+  // 等 v_N 完成后再作为 v_N+1 的输入。
+  // SSR 拉 /job 拿到; 客户端起手 onSynthesisStart 时本地预填; polling 持续同步.
+  const [synthesisPendingIds, setSynthesisPendingIds] = useState<Set<string>>(
+    new Set(initialSynthesisJob?.running ? initialSynthesisJob.intentIds : [])
+  );
 
   // ─── 跨刷新合成接力: 轮询 /synthesize/job ────────────────
   // 服务端 SSE 在写 partial_html, 我们 1.5s 拉一次拿到最新 partial → 喂给 iframe。
@@ -123,7 +128,7 @@ export default function ProjectShell({
     let confirmedRunning = false;
     const gateOpenAt = Date.now() + 10_000;
 
-    const pickupFinalVersion = async () => {
+    const pickupFinalVersion = async (jobError?: string | null) => {
       try {
         const r = await fetch(`/api/projects/${project.id}/synthesize`);
         const j = await r.json();
@@ -135,6 +140,10 @@ export default function ProjectShell({
           setIsSynthesizing(false);
           setResumePartialHtml(null);
           setResumeThinkingMsg(null);
+          setSynthesisPendingIds(new Set());
+          if (jobError) {
+            setPreviewError(`合成中断: ${jobError}. 可继续添加意图后重试.`);
+          }
         }
       } catch { /* 留给下一轮 */ }
     };
@@ -154,11 +163,20 @@ export default function ProjectShell({
           if (typeof job.thinkingMsg === 'string') {
             setResumeThinkingMsg(prev => prev === job.thinkingMsg ? prev : job.thinkingMsg);
           }
+          // 服务端 "凝固" 的 intent 快照 — 用于看板边界线定位.
+          // 期间用户新加的 intent 不在这个快照里, 会显示在边界线下方.
+          if (Array.isArray(job.intentIds) && job.intentIds.length > 0) {
+            setSynthesisPendingIds(prev => {
+              const next = new Set<string>(job.intentIds as string[]);
+              if (prev.size === next.size && Array.from(prev).every(id => next.has(id))) return prev;
+              return next;
+            });
+          }
         } else {
           // running=false: 只在 "确认过 running 一次" 或 "grace window 已过" 时才收口,
           // 避免服务端还没占口就被客户端误判。
           if (confirmedRunning || Date.now() > gateOpenAt) {
-            await pickupFinalVersion();
+            await pickupFinalVersion(job?.error);
           }
           // 否则: 啥也不做, 等下一轮再问 /job
         }
@@ -855,8 +873,25 @@ export default function ProjectShell({
                   if (lastIdx >= 0) versionLastIdx.push({ versionNum: vIdx + 1, lastIdx });
                 });
 
-                // 合成中分界线位置 — 始终在最后一条可见意图下方
-                const pendingLastIndex = isSynthesizing ? intents.length - 1 : -1;
+                // 合成中分界线位置 — 用服务端凝固的 intent 快照确定:
+                // 当 v_N 正在合成时, 它捕获了一组 intent_ids; 合成期间用户新加的 intent
+                // 不在快照里 → 边界线应该位于"快照内最后一条 intent"之后, 让新增的 intent
+                // 显示在边界线下方, 等 v_N 完成后再作为 v_N+1 的输入.
+                //
+                // 兜底: 如果快照为空 (服务端启动占口前的极短窗口 / 走 template 路径
+                // 没写 DB), 退化到 intents.length-1.
+                let pendingLastIndex = -1;
+                if (isSynthesizing) {
+                  if (synthesisPendingIds.size > 0) {
+                    for (let i = intents.length - 1; i >= 0; i--) {
+                      if (synthesisPendingIds.has(intents[i].id)) {
+                        pendingLastIndex = i;
+                        break;
+                      }
+                    }
+                  }
+                  if (pendingLastIndex < 0) pendingLastIndex = intents.length - 1;
+                }
                 const nextVersion = versionsTotal + 1;
 
                 const cards: React.ReactNode[] = [];

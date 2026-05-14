@@ -40,8 +40,13 @@ export type SynthesisJobSnapshot = {
   error: string | null;
 };
 
-/** 超过这个时间没心跳的 running 任务视为 zombie, GET /job 自动收尾 */
-const ZOMBIE_TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * 超过这个时间没心跳的 running 任务视为 zombie, GET /job 自动收尾.
+ * 正常合成每 ~1.5s 心跳, 2 分钟 (80x 心跳间隔) 没心跳就是函数被 Vercel timeout
+ * 强杀了 (Vercel 流式函数 maxDuration 上限 300s, 也可能更早被基础设施清理).
+ * 不再用 5 min — 那样用户多等 3 分钟才能解锁继续操作.
+ */
+const ZOMBIE_TIMEOUT_MS = 2 * 60 * 1000;
 
 /** chunk 累积到这个长度就 flush 一次 partial_html, 减少 DB 写次数 */
 export const PARTIAL_HTML_FLUSH_INTERVAL_MS = 1500;
