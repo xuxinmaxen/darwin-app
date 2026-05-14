@@ -41,6 +41,7 @@ import type { PrefCandidate } from '@/lib/types';
 import type { Version, VersionMeta } from '@/lib/versions';
 import type { Employee } from '@/lib/employees';
 import type { Tension, Thread, ThreadMessage } from '@/lib/types';
+import type { SynthesisJobSnapshot } from '@/lib/synthesis-state';
 
 const MAX_TOPBAR_AVATARS = 5;
 
@@ -67,6 +68,7 @@ export default function ProjectShell({
   versionsMeta: initialVersionsMeta,
   collaborators,
   activeTensions: initialActiveTensions,
+  initialSynthesisJob,
   currentUser,
 }: {
   project: Project;
@@ -77,6 +79,8 @@ export default function ProjectShell({
   versionsMeta: VersionMeta[];
   collaborators: Employee[];
   activeTensions: Tension[];
+  /** 服务端拉的合成状态快照 — running=true 说明用户刷新前还有合成在跑, UI 直接接手 */
+  initialSynthesisJob: SynthesisJobSnapshot | null;
   currentUser?: CurrentUserMini;
 }) {
   // ─── State ─────────────────────────────────────────────
@@ -89,50 +93,64 @@ export default function ProjectShell({
   // 所有版本元数据 — 用来在看板渲染每个历史版本的"vN 已完成"分界线
   const [versionsMeta, setVersionsMeta] = useState<VersionMeta[]>(initialVersionsMeta);
   const [currentVersion, setCurrentVersion] = useState<Version | null>(initialVersion);
-  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  // SSR 拉到了 running 任务 → 直接进 resume, 无需等客户端再 fetch
+  const [isSynthesizing, setIsSynthesizing] = useState(!!initialSynthesisJob?.running);
+  // 服务端最新 partial HTML — 让 iframe 在刷新瞬间就能继续渲染
+  const [resumePartialHtml, setResumePartialHtml] = useState<string | null>(
+    initialSynthesisJob?.running ? initialSynthesisJob.partialHtml : null
+  );
+  const [resumeThinkingMsg, setResumeThinkingMsg] = useState<string | null>(
+    initialSynthesisJob?.running ? initialSynthesisJob.thinkingMsg : null
+  );
   // synthesisPendingIds 已由边界线逻辑简化为 intents.length-1,保留 state 防 TS 报错
   const [synthesisPendingIds, setSynthesisPendingIds] = useState<Set<string>>(new Set());
 
-  // ─── localStorage 持久化合成状态 ─────────────────────────
-  const SYNTH_KEY = `darwin_synth_${project.id}`;
-
-  // 页面加载时恢复合成状态 (刷新/重新进入均有效)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const stored = localStorage.getItem(SYNTH_KEY);
-    if (!stored) return;
-    try {
-      const { startedAt } = JSON.parse(stored) as { startedAt: number; intentIds: string[] };
-      // 超过 5 分钟视为过期
-      if (Date.now() - startedAt > 5 * 60 * 1000) {
-        localStorage.removeItem(SYNTH_KEY);
-        return;
-      }
-      // 合成仍可能在服务端运行,恢复"合成中"UI
-      setIsSynthesizing(true);
-    } catch {
-      localStorage.removeItem(SYNTH_KEY);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
-
-  // 合成进行中 + 没有活跃 SSE (streamActive 在 ProjectCanvas 内管理,这里用 isSynthesizing 兜底轮询)
-  // 每 2s 轮询一次 GET /synthesize,发现新版本立刻渲染
+  // ─── 跨刷新合成接力: 轮询 /synthesize/job ────────────────
+  // 服务端 SSE 在写 partial_html, 我们 1.5s 拉一次拿到最新 partial → 喂给 iframe。
+  // job 释放 (running=false) 后, 拉一次 /synthesize 拿最终版本入库 UI。
   useEffect(() => {
     if (!isSynthesizing) return;
     let cancelled = false;
+
+    const pickupFinalVersion = async () => {
+      try {
+        const r = await fetch(`/api/projects/${project.id}/synthesize`);
+        const j = await r.json();
+        if (cancelled) return;
+        if (j.ok && j.version && j.version.id !== currentVersion?.id) {
+          handleVersionCreated(j.version as Version);
+        } else {
+          // 没拿到新版本就保险释放 — phase=error 时也不能死锁
+          setIsSynthesizing(false);
+          setResumePartialHtml(null);
+          setResumeThinkingMsg(null);
+        }
+      } catch { /* 留给下一轮 */ }
+    };
+
     const poll = async () => {
       try {
-        const res = await fetch(`/api/projects/${project.id}/synthesize`);
-        const json = await res.json();
-        if (cancelled) return;
-        if (json.ok && json.version && json.version.id !== currentVersion?.id) {
-          handleVersionCreated(json.version as Version);
-          if (typeof window !== 'undefined') localStorage.removeItem(SYNTH_KEY);
+        const r = await fetch(`/api/projects/${project.id}/synthesize/job`);
+        const j = await r.json();
+        if (cancelled || !j.ok) return;
+        const job = j.job;
+        if (job?.running) {
+          // 同步最新 partial + thinking, iframe 会跟着 re-render
+          if (typeof job.partialHtml === 'string' && job.partialHtml) {
+            setResumePartialHtml(prev => prev === job.partialHtml ? prev : job.partialHtml);
+          }
+          if (typeof job.thinkingMsg === 'string') {
+            setResumeThinkingMsg(prev => prev === job.thinkingMsg ? prev : job.thinkingMsg);
+          }
+        } else {
+          // running 收口 → 拉一次最终版本, 退出 resume
+          await pickupFinalVersion();
         }
-      } catch { /* swallow */ }
+      } catch { /* 留给下一轮 */ }
     };
-    const iv = setInterval(poll, 2000);
+
+    void poll();
+    const iv = setInterval(poll, 1500);
     return () => { cancelled = true; clearInterval(iv); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSynthesizing, project.id, currentVersion?.id]);
@@ -235,7 +253,8 @@ export default function ProjectShell({
     });
     setIsSynthesizing(false);
     setSynthesisPendingIds(new Set());
-    if (typeof window !== 'undefined') localStorage.removeItem(SYNTH_KEY);
+    setResumePartialHtml(null);
+    setResumeThinkingMsg(null);
   };
 
   const handlePreview = async (versionId: string) => {
@@ -972,14 +991,11 @@ export default function ProjectShell({
               onSynthesisStart={() => {
                 setIsSynthesizing(true);
                 setSynthesisPendingIds(new Set(intents.map(i => i.id)));
-                // 持久化到 localStorage: 刷新页面后仍能恢复"合成中"状态
-                if (typeof window !== 'undefined') {
-                  localStorage.setItem(SYNTH_KEY, JSON.stringify({
-                    startedAt: Date.now(),
-                    intentIds: intents.map(i => i.id),
-                  }));
-                }
+                // 服务端 startSynthesisJob 在 POST /synthesize 内同步占口,
+                // 不再需要 localStorage — 跨刷新由 DB 接力。
               }}
+              resumePartialHtml={resumePartialHtml}
+              resumeThinkingMsg={resumeThinkingMsg}
             />
           </div>
         </section>

@@ -123,6 +123,8 @@ export default function ProjectCanvas({
   agentsReacting = false,
   isSynthesizing = false,
   onSynthesisStart,
+  resumePartialHtml = null,
+  resumeThinkingMsg = null,
 }: {
   project: Project;
   intents: Intent[];
@@ -137,10 +139,14 @@ export default function ProjectCanvas({
   activeTensionCount?: number;
   /** Agent 反应进行中 → 阻断自动合成,等 agent 意图全部进入客户端后再开始 */
   agentsReacting?: boolean;
-  /** 父组件维护的合成中状态,跨页面刷新可恢复 (基于 localStorage) */
+  /** 父组件维护的合成中状态,跨页面刷新可恢复 (基于 DB) */
   isSynthesizing?: boolean;
   /** 合成开始时立刻通知父组件,让看板提前显示分界线 */
   onSynthesisStart?: () => void;
+  /** 跨刷新接力: 服务端最新的 partial HTML (来自 /job 轮询) */
+  resumePartialHtml?: string | null;
+  /** 跨刷新接力: 服务端最新的 thinking 文案 */
+  resumeThinkingMsg?: string | null;
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
@@ -527,25 +533,31 @@ export default function ProjectCanvas({
   const isPreviewing = previewVersion !== null;
   // 占位 HTML:首次合成、刷新恢复 (无 currentVersion 时) 提供一个空 iframe 让 overlay 覆盖
   const PLACEHOLDER_HTML = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#FAF9F5;}</style></head><body></body></html>';
-  // 流式合成期间优先显示实时 HTML;否则显示已保存版本;都没有就放占位
+
+  // resumed: 刷新后服务端还在跑, ProjectShell 拉 /job 喂下来 partialHtml
+  const isResumedPhase = isSynthesizing && !streamActive && !isFirstPending && !displayVersion;
+
+  // 流式合成期间优先显示实时 HTML;否则 (resumed 阶段) 显示服务端 partial;
+  // 否则显示已保存版本;都没有就放占位
   const displayContent = (streamActive && streamingHtml)
     ? streamingHtml
-    : (displayVersion?.content ?? PLACEHOLDER_HTML);
+    : (isResumedPhase && resumePartialHtml)
+      ? injectBaseTarget(resumePartialHtml)
+      : (displayVersion?.content ?? PLACEHOLDER_HTML);
   const displaySource = displayVersion?.source;
 
   // ─── Thinking overlay 阶段判断 ──────────────────────────
   // 阶段 1 (detect): 有新意图未合成 → 正在检测冲突中 (等待 10s debounce + 5s poll)
   // 阶段 2 (conflict): 检测到冲突,等待解决
   // 阶段 3 (synth): 冲突已解决 / 无冲突,正在流式合成
-  // 阶段 3b (resumed): 刷新后恢复的合成中状态 (无 SSE,等服务端结果)
+  // 阶段 3b (resumed): 刷新后恢复的合成中状态 (有服务端 partial, 走轮询)
   const isSynthPhase = streamActive || isFirstPending;
-  const isResumedPhase = isSynthesizing && !isSynthPhase && !displayVersion;
   const isConflictPhase = isStale && activeTensionCount > 0 && !isSynthPhase && !isResumedPhase;
   const isDetectPhase  = isStale && activeTensionCount === 0 && !isSynthPhase && !isResumedPhase;
 
   const overlayVariant = (isSynthPhase || isResumedPhase) ? 'synth' : isConflictPhase ? 'conflict' : 'detect';
   const overlayMsg = isResumedPhase
-    ? 'AI 仍在后台合成中,稍候即可看到结果…'
+    ? (resumeThinkingMsg || 'AI 仍在后台合成中,刷新前的进度已接力上来…')
     : isSynthPhase
     ? (thinkingMsg || (isFirstPending && !streamActive ? '连接 AI…' : 'AI 正在合成…'))
     : isConflictPhase

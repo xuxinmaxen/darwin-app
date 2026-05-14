@@ -9,6 +9,7 @@ import { getProject, listCollaborators } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { getLatestVersion, countVersions, listVersionsMetadata } from '@/lib/versions';
 import { listActiveTensions } from '@/lib/tensions';
+import { getSynthesisJob } from '@/lib/synthesis-state';
 import { describeLLM } from '@/lib/llm';
 import { currentUser } from '@/lib/auth';
 import ProjectShell from '@/components/ProjectShell';
@@ -25,7 +26,7 @@ export default async function ProjectDetailPage({ params }: Params) {
   const project = await getProject(id);
   if (!project) notFound();
 
-  const [intents, initialVersion, versionsTotal, versionsMeta, collaborators, activeTensions] =
+  const [intents, initialVersion, versionsTotal, versionsMeta, collaborators, activeTensions, initialSynthesisJob] =
     await Promise.all([
       listIntentsByProject(id),
       getLatestVersion(id),
@@ -33,6 +34,7 @@ export default async function ProjectDetailPage({ params }: Params) {
       listVersionsMetadata(id),
       listCollaborators(id),
       listActiveTensions(id),
+      getSynthesisJob(id),
     ]);
   const llm = describeLLM();
 
@@ -46,6 +48,7 @@ export default async function ProjectDetailPage({ params }: Params) {
       versionsMeta={versionsMeta}
       collaborators={collaborators}
       activeTensions={activeTensions}
+      initialSynthesisJob={initialSynthesisJob}
       currentUser={{
         id: user.id,
         name: user.name,

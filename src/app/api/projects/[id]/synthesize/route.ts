@@ -14,6 +14,13 @@ import { getProject } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { synthesize, synthesizeStream, type SynthesisEvent } from '@/lib/synthesize';
 import { createVersion, getLatestVersion } from '@/lib/versions';
+import {
+  startSynthesisJob,
+  updateThinking,
+  updatePartialHtml,
+  finishSynthesisJob,
+  PARTIAL_HTML_FLUSH_INTERVAL_MS,
+} from '@/lib/synthesis-state';
 
 // Next.js 16: 流式路由必须是动态路由
 export const dynamic = 'force-dynamic';
@@ -117,18 +124,50 @@ async function handleStreamPost(projectId: string): Promise<Response> {
     try { controller.enqueue(sseChunk(event)); } catch { /* client disconnected, continue */ }
   }
 
+  // 占口 — 之后即使客户端断, GET /synthesize/job 也能看到 running 状态
+  // 失败不致命: DB 写不了就回退到当前行为 (无跨刷新接力, 不破坏主路径)
+  try {
+    await startSynthesisJob(projectId, intents.map(i => i.id));
+  } catch (err) {
+    console.warn('[synthesize] startSynthesisJob failed (degrading to no-resume):', errMsg(err));
+  }
+
   const readable = new ReadableStream({
     async start(controller) {
       let finalHtml = '';
       let finalSource: 'llm' | 'template' = 'template';
       let finalMode: 'full' | 'incremental' = 'full';
+
+      // partial_html 节流: 累积 chunk, 每 PARTIAL_HTML_FLUSH_INTERVAL_MS 写一次 DB
+      let partialBuf = '';
+      let lastFlushAt = 0;
+      let pendingPartialWrite: Promise<void> | null = null;
+      const maybeFlushPartial = (force = false) => {
+        const now = Date.now();
+        if (!force && now - lastFlushAt < PARTIAL_HTML_FLUSH_INTERVAL_MS) return;
+        if (!partialBuf) return;
+        // fire-and-forget: 上一个还没回来就跳过这次, 下一个 chunk 会再触发
+        if (pendingPartialWrite) return;
+        lastFlushAt = now;
+        const snapshot = partialBuf;
+        pendingPartialWrite = updatePartialHtml(projectId, snapshot)
+          .finally(() => { pendingPartialWrite = null; });
+      };
+
       try {
         for await (const event of synthesizeStream(project, intents, existing)) {
           safeEnqueue(controller, event);
-          if (event.type === 'complete') {
+          if (event.type === 'thinking') {
+            updateThinking(projectId, event.message, 'streaming').catch(() => {});
+          } else if (event.type === 'chunk') {
+            partialBuf += event.content;
+            maybeFlushPartial();
+          } else if (event.type === 'complete') {
             finalHtml = event.html;
             finalSource = event.source;
             finalMode = event.mode;
+            partialBuf = finalHtml;
+            maybeFlushPartial(true);
           }
         }
       } catch (err) {
@@ -137,6 +176,7 @@ async function handleStreamPost(projectId: string): Promise<Response> {
 
       // 版本入库 — 即使客户端已断开也要完成,让轮询能找到新版本
       if (finalHtml) {
+        updateThinking(projectId, '保存版本中…', 'saving').catch(() => {});
         try {
           const version = await createVersion({
             projectId,
@@ -151,9 +191,14 @@ async function handleStreamPost(projectId: string): Promise<Response> {
           });
           revalidatePath(`/projects/${projectId}`);
           revalidatePath('/');
+          await finishSynthesisJob(projectId, { phase: 'done' });
         } catch (err) {
           safeEnqueue(controller, { type: 'error', message: `保存版本失败: ${errMsg(err)}` });
+          await finishSynthesisJob(projectId, { phase: 'error', error: `保存版本失败: ${errMsg(err)}` });
         }
+      } else {
+        // synthesizeStream 抛错或返回空 — 也要释放占口
+        await finishSynthesisJob(projectId, { phase: 'error', error: '合成未产出 HTML' });
       }
 
       try { controller.close(); } catch { /* already closed */ }
