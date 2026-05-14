@@ -49,21 +49,30 @@ const CreateBody = z.object({
   referenceTitle: z.string().max(500).optional(),
 });
 
-const REFERENCE_HTML_BUDGET = 60_000;
+// 加大 budget: 之前 60KB 砍掉太多结构 → LLM 复刻字体/图片/排版细节失真。
+// 250KB 够让 Claude/GPT 看到完整 <head>(全部 <link>/<style>) + 完整 <body> 主结构,
+// 只丢掉极少数 base64 大图。token 成本 ~60-80k, claude-opus-4.6 200k 上下文够。
+const REFERENCE_HTML_BUDGET = 250_000;
 
 /**
- * 把抓到的 rawHtml 压缩到 ~60KB 喂给 LLM:
+ * 把抓到的 rawHtml 压缩到 budget 内喂给 LLM:
  * - 删 base64 内嵌 (img/source/url 起头的 data:base64 字符串占大半空间)
- * - 折叠空白
- * - 截断 (开头 40KB + 末尾 20KB),保留 head/title/footer 关键结构
+ * - 保留所有 <link> / <style> / <img src> 原字串
+ * - 只折叠重复空白 (不动 attribute 内空格)
+ * - 截断时保留开头 (含完整 head) + 末尾 (含 footer)
  */
 function condenseReferenceHtml(raw: string): string {
   let s = raw;
+  // base64 大图替换 (省体积但保留语义 — LLM 知道这里有图)
   s = s.replace(/data:[^"')\s]+;base64,[^"')\s]+/g, 'data:base64:[stripped]');
-  s = s.replace(/\s+/g, ' ');
+  // 注意: 不能粗暴 \s+→' ', 那会破坏 <pre>/<textarea> 内含义。
+  // 只压缩"标签之间"的纯空白和换行
+  s = s.replace(/>\s{2,}</g, '> <');
+  s = s.replace(/\n{3,}/g, '\n\n');
   if (s.length <= REFERENCE_HTML_BUDGET) return s;
-  const head = REFERENCE_HTML_BUDGET - 20_000;
-  return s.slice(0, head) + '\n<!-- ...(reference html truncated)... -->\n' + s.slice(s.length - 20_000);
+  const head = Math.floor(REFERENCE_HTML_BUDGET * 0.75);
+  const tail = REFERENCE_HTML_BUDGET - head;
+  return s.slice(0, head) + '\n<!-- ...(reference html truncated, middle skipped)... -->\n' + s.slice(s.length - tail);
 }
 
 const REF_MARKER_OPEN = '【导入参考 (HTML)】';

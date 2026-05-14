@@ -77,10 +77,13 @@ let PROJ1 = null;
   const v1 = synth.json?.version;
   ok('v1 has id', !!v1?.id);
   ok('v1 has html content', typeof v1?.content === 'string' && v1.content.length > 0);
-  // v1 是 LLM 自己写的, 不是原 rawHtml — content 应不同于 rawHtml (LLM 加自己的 CSS / 重排结构 等)
-  ok('v1 content is NOT identical to rawHtml (LLM regenerated)', v1?.content !== rawHtml, 'content === rawHtml means we accidentally re-introduced direct-insert');
-  // 合成 source 应为 llm (LLM 通了的情况下)
-  ok('v1 source is llm or template (fallback)', v1?.source === 'llm' || v1?.source === 'template');
+  // 合成 source 必须 = llm (复刻模式必须走 LLM, 不接受 template fallback)
+  ok('v1 source = llm', v1?.source === 'llm', `got source=${v1?.source}`);
+  // 复刻保真度 (2026-05-14 #2 优化后): LLM 应保留原页关键元素 —
+  // example.com 的标志性短语 "illustrative examples" 应原样出现在 v1 里。
+  ok('v1 preserves source signature copy',
+     (v1?.content || '').toLowerCase().includes('illustrative examples'),
+     '没有复刻原页的 "illustrative examples" 文案 → 保真度回归');
 
   // 验证版本数 = 1
   const versions = await api('GET', `/api/projects/${PROJ1}/versions`, null, COOKIE);

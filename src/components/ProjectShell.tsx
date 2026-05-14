@@ -108,9 +108,20 @@ export default function ProjectShell({
   // ─── 跨刷新合成接力: 轮询 /synthesize/job ────────────────
   // 服务端 SSE 在写 partial_html, 我们 1.5s 拉一次拿到最新 partial → 喂给 iframe。
   // job 释放 (running=false) 后, 拉一次 /synthesize 拿最终版本入库 UI。
+  //
+  // 注意 race: 用户刚点 "开始合成", 客户端立刻 isSynthesizing=true 触发本 effect,
+  // 但服务端 POST /synthesize 还在网络飞行, 没来得及 startSynthesisJob 占口。
+  // 第一次 /job 拿到 running=false 时不能立刻翻 isSynthesizing 为 false,
+  // 否则板上 "v1 合成中" 分割线会闪一下就没。
+  // 防御策略:
+  //   - 必须先见过 running=true 一次, 才允许靠 /job 的 running=false 收口
+  //   - 否则给一个 grace window (10s), 如果一直没见 running=true 才允许释放
+  //   - SSE 自己会通过 saved event 触发 onVersionCreated 收口, 不依赖 polling
   useEffect(() => {
     if (!isSynthesizing) return;
     let cancelled = false;
+    let confirmedRunning = false;
+    const gateOpenAt = Date.now() + 10_000;
 
     const pickupFinalVersion = async () => {
       try {
@@ -135,6 +146,7 @@ export default function ProjectShell({
         if (cancelled || !j.ok) return;
         const job = j.job;
         if (job?.running) {
+          confirmedRunning = true;
           // 同步最新 partial + thinking, iframe 会跟着 re-render
           if (typeof job.partialHtml === 'string' && job.partialHtml) {
             setResumePartialHtml(prev => prev === job.partialHtml ? prev : job.partialHtml);
@@ -143,8 +155,12 @@ export default function ProjectShell({
             setResumeThinkingMsg(prev => prev === job.thinkingMsg ? prev : job.thinkingMsg);
           }
         } else {
-          // running 收口 → 拉一次最终版本, 退出 resume
-          await pickupFinalVersion();
+          // running=false: 只在 "确认过 running 一次" 或 "grace window 已过" 时才收口,
+          // 避免服务端还没占口就被客户端误判。
+          if (confirmedRunning || Date.now() > gateOpenAt) {
+            await pickupFinalVersion();
+          }
+          // 否则: 啥也不做, 等下一轮再问 /job
         }
       } catch { /* 留给下一轮 */ }
     };

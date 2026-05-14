@@ -239,6 +239,11 @@ export async function* synthesizeStream(
   const intentWord = intents.length === 1 ? '条意图' : `条意图`;
   yield { type: 'thinking', message: `AI 正在综合 ${intents.length} ${intentWord},合成完整产物…` };
 
+  // 导入模式 (background 含【导入参考 (HTML)】) → 强保真复刻, temp 调到 0.15
+  // 普通新建 → 允许 LLM 发挥, temp 0.4
+  const isImportSeed = (project.background ?? '').includes('【导入参考 (HTML)】');
+  const fullTemperature = isImportSeed ? 0.15 : 0.4;
+
   try {
     let html = '';
     let fenceState: 'unknown' | 'stripped' | 'plain' = 'unknown';
@@ -249,7 +254,7 @@ export async function* synthesizeStream(
       user: buildSynthesizeUser(intents),
       cacheSystem: true,
       maxTokens,
-      temperature: 0.4,
+      temperature: fullTemperature,
     })) {
       if (fenceState === 'unknown') {
         fenceBuffer += chunk;

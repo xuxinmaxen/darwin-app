@@ -445,8 +445,9 @@ function PrefModal({
   onSaved: (pref: TeamPref) => void;
 }) {
   const isEdit = !!initial;
-  const [iconKey, setIconKey] = useState<TeamPrefIconKey>(initial?.iconKey ?? 'note');
-  const [category, setCategory] = useState(initial?.category ?? '');
+  // 类别 + 图标合并为单字段: 选中哪个图标决定 category 文案
+  // 旧数据兼容: 如果 initial.category 不在标签里, 用它对应 iconKey 做最佳猜测
+  const [iconKey, setIconKey] = useState<TeamPrefIconKey>(initial?.iconKey ?? 'pen');
   const [body, setBody] = useState(initial?.body ?? '');
   const [source, setSource] = useState(initial?.source ?? '徐鑫');
   const [error, setError] = useState<string | null>(null);
@@ -455,10 +456,7 @@ function PrefModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!category.trim()) {
-      setError('请填写类别');
-      return;
-    }
+    const category = ICON_LABEL[iconKey];
     if (!body.trim()) {
       setError('请填写共识描述');
       return;
@@ -472,7 +470,7 @@ function PrefModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           iconKey,
-          category: category.trim(),
+          category,
           body: body.trim(),
           source: source.trim(),
         }),
@@ -505,7 +503,7 @@ function PrefModal({
         </header>
         <div className="modal-body">
           <div className="field">
-            <label className="field-label">图标分类</label>
+            <label className="field-label">类别</label>
             <div className="icon-picker">
               {(Object.keys(ICON_MAP) as TeamPrefIconKey[]).map(k => (
                 <button
@@ -514,24 +512,13 @@ function PrefModal({
                   className={`icon-opt${iconKey === k ? ' active' : ''}`}
                   onClick={() => setIconKey(k)}
                   title={ICON_LABEL[k]}
+                  disabled={saving}
                 >
                   <span className="icon-opt-glyph">{ICON_MAP[k]}</span>
                   <span className="icon-opt-label">{ICON_LABEL[k]}</span>
                 </button>
               ))}
             </div>
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="pref-cat">类别</label>
-            <input
-              id="pref-cat"
-              className="field-input"
-              type="text"
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              placeholder="例如: 文案风格 / 视觉风格"
-              disabled={saving}
-            />
           </div>
           <div className="field">
             <label className="field-label" htmlFor="pref-body">

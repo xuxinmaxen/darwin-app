@@ -37,16 +37,35 @@ Rules:
 10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
 11. REFERENCE FILES & LINKS — TWO modes by source:
 
-   (a) IMPORTED SEED (project background contains 【导入参考 (HTML)】 / 【导入参考 (PPT)】 / 【导入参考 (...)】 block, OR a 【参考链接】/【参考文件】 block that was provided AT PROJECT CREATION):
-       This is the user's CHOSEN STARTING POINT. They want a NEAR-REPLICATION of this source, then refined by the explicit intents. Treat the embedded raw HTML inside 【导入参考 (HTML)】...【/导入参考 (HTML)】 as your structural and stylistic blueprint — READ IT, then RE-AUTHOR a clean equivalent that preserves what makes it work.
-       Required behavior:
-       - Replicate the source's overall PAGE STRUCTURE: section order, section types, hero pattern, nav layout, CTA placement, footer. If the seed has nav → hero → features → testimonials → pricing → cta → footer, yours should too (re-ordering only if an intent demands it).
-       - Replicate the source's COPY where the intents don't override it — re-use exact headline patterns, value-prop wording, microcopy, button labels, list bullets, footer lines. Paraphrase only when needed to swap the brand voice in.
-       - Replicate the source's VISUAL LANGUAGE: typography scale (heading sizes, body size, weights), color palette (extract from inline styles / class names if present), density and spacing rhythm, button shapes, accent gradients, illustration style. The output should feel like the SAME page redesigned for a new product, not a generic landing page.
-       - Reproduce key interactive elements the source uses (sticky nav, hero CTA pair, feature grid, accordion FAQ, etc.) using clean inline CSS — no JS, no external libs.
-       - Apply intents as MINIMAL DELTAS on top of this replica — only change what an intent demands.
-       - Do NOT name the source brand on the page. Rename hero / nav / footer copy to the current project.name. Do not invent a brand story unrelated to the source — the source IS the story.
-       - The user's mental model: "I imported X to clone it, then layer my team's intents on top." Output must satisfy that — the user should look at v1 and recognize the source's spirit immediately.
+   (a) IMPORTED SEED (project background contains 【导入参考 (HTML)】 ... 【/导入参考 (HTML)】 block):
+       The embedded HTML between those markers is the user's literal target. They imported it intending a HIGH-FIDELITY REPLICATION — fonts, images, colors, layout, copy should all match. Your output should look indistinguishable from the source when rendered, except for the changes that explicit intents demand (typically brand rename).
+
+       Operating mode: act as a fidelity-preserving editor, NOT a re-designer. Default action on every byte is "keep". Only deviate when an intent explicitly demands it.
+
+       MUST preserve verbatim (do not paraphrase, restyle, or strip):
+       - Every <img src="..."> URL exactly as written — CDN URLs are how the user gets the original images. Do NOT replace with placeholders, SVGs, emojis, or generic images.
+       - Every <link rel="stylesheet" href="..."> and <link rel="preconnect" ...> — these load Google Fonts / external CSS that give the page its typography. Keep them.
+       - Every <style> block content — these contain the actual visual design. Copy them. If you must edit, edit minimally.
+       - Every @font-face declaration, @import, and font-family value — fonts are part of the brand and must carry through.
+       - All inline style="..." attributes, all CSS variable definitions (--var: value), all class names. Class names map to external CSS; renaming them breaks the design.
+       - All color hex / rgb / hsl values, all gradient definitions, all box-shadow / border / radius values.
+       - All svg paths, all data: URIs (even if base64 was stripped to a placeholder, preserve the surrounding tag).
+       - Text COPY: headlines, paragraphs, button labels, navigation items, footer text, microcopy. Only change copy that an intent's statement explicitly names (e.g., "rename Nohi to wohi everywhere" → only literal "Nohi" → "wohi" substitution).
+       - The original <!DOCTYPE>, <html lang="">, and <head> structure including all <meta> tags.
+
+       MAY adjust (only when an intent specifies):
+       - Brand name strings (case-sensitive substitution) — if intent says "rename X to Y", substitute "X" → "Y" in visible text, alt, title, meta, but PRESERVE everything else.
+       - Specific section copy if an intent explicitly demands it.
+       - Specific colors / fonts if an intent explicitly demands it.
+
+       MUST NOT do:
+       - Don't "modernize", "clean up", "improve readability of", or "simplify" the source CSS / HTML.
+       - Don't replace external CDN images with inline SVGs, emojis, gradients, or placeholders. If you can't preserve the URL, keep the <img> tag with the original src — the browser will handle 404 if it fails.
+       - Don't rewrite the layout into a generic "hero + features + cta" template unless that IS the source's layout.
+       - Don't add data-scope attributes to NEW sections you invented; only add data-scope (per rule 10) to sections that exist in the source.
+       - Don't strip <script>-related comments or whitespace beyond what was already stripped — preserve structure.
+
+       Mental model: this is a 1:1 fidelity replication task with surgical edits. If the user opened the source URL and your output in two tabs and switched between them, they should look almost identical except where an intent demanded a change.
 
    (b) ATTACHED REFERENCE (an INTENT statement contains 【参考链接】 / 【参考文件: name】 / 【参考图片: name】, attached by a teammate inside a normal intent):
        This is INSPIRATION, not a seed. Pull copy patterns, brand voice cues, structural hints — but do NOT replicate. Honor it more than you'd honor a stray sentence, but less than a seed.
