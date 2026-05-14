@@ -17,6 +17,7 @@ import {
   buildSynthesizeUser,
   buildIncrementalUpdateUser,
   looksLikeValidHtml,
+  looksLikeCompleteHtml,
   stripCodeFences,
 } from './prompts/synthesize-html';
 
@@ -118,7 +119,7 @@ async function callLLMForHtmlSynthesis(
     system,
     user,
     cacheSystem: true,
-    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 5000,
+    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000,
     temperature: 0.4,
   });
 
@@ -126,6 +127,11 @@ async function callLLMForHtmlSynthesis(
   if (!looksLikeValidHtml(cleaned)) {
     throw new Error(
       `LLM 返回不是 HTML 文档 (前 100 字符: ${cleaned.slice(0, 100)})`
+    );
+  }
+  if (!looksLikeCompleteHtml(cleaned)) {
+    throw new Error(
+      `LLM 输出被截断 (${cleaned.length} chars, 无 </html>) — 调大 DARWIN_SYNTHESIS_MAX_TOKENS`
     );
   }
   return cleaned;
@@ -143,7 +149,7 @@ async function callLLMForIncrementalUpdate(
     system,
     user,
     cacheSystem: true,
-    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 5000,
+    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000,
     temperature: 0.2,  // 更低温度 → 更保守地修改
   });
 
@@ -151,6 +157,11 @@ async function callLLMForIncrementalUpdate(
   if (!looksLikeValidHtml(cleaned)) {
     throw new Error(
       `LLM 增量更新返回不是 HTML (前 100 字符: ${cleaned.slice(0, 100)})`
+    );
+  }
+  if (!looksLikeCompleteHtml(cleaned)) {
+    throw new Error(
+      `LLM 增量更新被截断 (${cleaned.length} chars, 无 </html>)`
     );
   }
   return cleaned;
@@ -180,7 +191,7 @@ export async function* synthesizeStream(
     return;
   }
 
-  const maxTokens = Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 5000;
+  const maxTokens = Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000;
 
   // 增量更新路径
   if (existing?.html) {
@@ -226,6 +237,11 @@ export async function* synthesizeStream(
         }
         html = stripCodeFences(html);
         if (!looksLikeValidHtml(html)) throw new Error('LLM 增量更新返回不是 HTML');
+        if (!looksLikeCompleteHtml(html)) {
+          // LLM 输出在 </html> 之前被 maxTokens 截断 — 渲染会半截.
+          // 主动抛错让上层 fall through 到全量重试 (有更大 token budget) 或模板兜底.
+          throw new Error(`LLM 增量更新被截断 (${html.length} chars, 无 </html>) — 提示 maxTokens 不够`);
+        }
         yield { type: 'complete', source: 'llm', mode: 'incremental', html };
         return;
       } catch (err) {
@@ -282,6 +298,10 @@ export async function* synthesizeStream(
     html = stripCodeFences(html);
     if (!looksLikeValidHtml(html)) {
       throw new Error(`LLM 返回不是 HTML (前 100 字符: ${html.slice(0, 100)})`);
+    }
+    if (!looksLikeCompleteHtml(html)) {
+      // 截断保护: 不让半截 HTML 入库
+      throw new Error(`LLM 全量合成被 maxTokens 截断 (${html.length} chars, 无 </html>) — 请调大 DARWIN_SYNTHESIS_MAX_TOKENS`);
     }
     yield { type: 'complete', source: 'llm', mode: 'full', html };
   } catch (err) {

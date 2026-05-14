@@ -158,6 +158,19 @@ export function looksLikeValidHtml(s: string): boolean {
   );
 }
 
+/**
+ * 检测 HTML 是否被 LLM 截断 (maxTokens 撞顶).
+ * 完整 HTML 必须以 </html> 收尾 (允许尾部空白). 复刻模式下 LLM 输出 ~22KB 的页面
+ * 用 5000 token 会截断, 渲染只剩半截.
+ *
+ * 返回 true = 完整, false = 看起来被截断了 (调用方应抛错 / 重试 / 提示用户调大 maxTokens).
+ */
+export function looksLikeCompleteHtml(s: string): boolean {
+  const trimmed = s.trim().toLowerCase();
+  // 收尾必须是 </html>; 也兼容 LLM 偶尔少写 </html> 但有 </body>
+  return trimmed.endsWith('</html>') || trimmed.endsWith('</body>');
+}
+
 /** Strip ```html / ``` fences if Claude ignored instruction. */
 export function stripCodeFences(s: string): string {
   return s

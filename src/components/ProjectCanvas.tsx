@@ -32,10 +32,43 @@ const AUTO_SYNC_DEBOUNCE_MS = Number(
     : process?.env?.DARWIN_AUTOSYNC_DEBOUNCE_MS
 ) || 2_500;
 
-/** 在合成产物里注入 <base target="_blank"> 防止 iframe 内链接导航破坏当前页面 */
-function injectBaseTarget(html: string): string {
-  if (html.includes('<base')) return html;
-  return html.replace(/<head([^>]*)>/i, '<head$1><base target="_blank">');
+/**
+ * 在合成产物里注入 <base href + target> 让 iframe 内链接行为合理:
+ *
+ *   1. iframe 用 srcDoc 渲染时, 没有 base URL → 所有相对链接 (<a href="/">/<img src>)
+ *      会解析到父页 origin (darwin.org.cn). 用户点 logo (href="/") 会让 iframe 跳工作台.
+ *   2. 给定原 source URL (导入项目) → 注入 <base href="<src>"> 让相对链接还原到原站.
+ *   3. 加 target="_blank" → 链接全部新窗口打开, 不破坏当前 iframe 的预览状态.
+ *
+ * sourceUrl 来自导入项目的 background marker (来源: ...). 没有来源 (空白项目)
+ * 时只注入 target, 不设 base href.
+ */
+function injectBaseTarget(html: string, sourceUrl?: string | null): string {
+  const baseTag = sourceUrl
+    ? `<base href="${escapeAttr(sourceUrl)}" target="_blank">`
+    : `<base target="_blank">`;
+  // 已有 <base> 时整体替换 (避免重复)
+  if (/<base\b[^>]*>/i.test(html)) {
+    return html.replace(/<base\b[^>]*>/i, baseTag);
+  }
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+  }
+  // 没 <head> 时, srcDoc 浏览器会自动包一层 — 直接 prepend
+  return `<head>${baseTag}</head>` + html;
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/** 从 project.background 抽取原 source URL (导入项目才有) */
+function extractSourceUrl(background: string | null | undefined): string | null {
+  if (!background) return null;
+  // marker 内 "来源: <url>" 行
+  const m = background.match(/【导入参考 \(HTML\)】[\s\S]*?来源:\s*(\S+)/);
+  if (m) return m[1];
+  return null;
 }
 
 const HIGHLIGHT_STYLE = `
@@ -153,6 +186,9 @@ export default function ProjectCanvas({
   const [lastSyncMode, setLastSyncMode] = useState<'full' | 'incremental' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 导入项目时,iframe 内 <a href="/"> 需要还原到原站, 否则相对路径会指向 darwin.org.cn 父页
+  const sourceUrl = extractSourceUrl(project.background);
+
   // ─── 流式合成状态 ──────────────────────────────────────────
   /** 流式过程中 AI 当前的状态说明 */
   const [thinkingMsg, setThinkingMsg] = useState<string>('');
@@ -170,7 +206,7 @@ export default function ProjectCanvas({
     if (streamIntervalRef.current) return;
     streamIntervalRef.current = setInterval(() => {
       if (streamBufRef.current) {
-        setStreamingHtml(injectBaseTarget(streamBufRef.current));
+        setStreamingHtml(injectBaseTarget(streamBufRef.current, sourceUrl));
       }
     }, 400);
   }
@@ -380,7 +416,7 @@ export default function ProjectCanvas({
             } else if (evt.type === 'complete') {
               // LLM 输出结束,立刻刷新一次 iframe 显示最终内容
               streamBufRef.current = evt.html;
-              setStreamingHtml(injectBaseTarget(evt.html));
+              setStreamingHtml(injectBaseTarget(evt.html, sourceUrl));
               setThinkingMsg('保存版本中…');
             } else if (evt.type === 'saved') {
               // 版本入库完成
@@ -535,15 +571,25 @@ export default function ProjectCanvas({
   const PLACEHOLDER_HTML = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#FAF9F5;}</style></head><body></body></html>';
 
   // resumed: 刷新后服务端还在跑, ProjectShell 拉 /job 喂下来 partialHtml
-  const isResumedPhase = isSynthesizing && !streamActive && !isFirstPending && !displayVersion;
+  //
+  // 注意: 这里不再要求 !displayVersion. 之前的逻辑是 "只有完全没版本时才进 resume",
+  // 但实际场景是 v2 已存在 → 正在合成 v3 时刷新 → displayVersion=v2 不为 null
+  // → isResumedPhase=false → 错误地走到 isStale 分支显示 "AI 正在检测意图冲突".
+  // 修正: isSynthesizing=true 就是 resume, 不论是否有旧版本.
+  const isResumedPhase = isSynthesizing && !streamActive && !isFirstPending;
 
   // 流式合成期间优先显示实时 HTML;否则 (resumed 阶段) 显示服务端 partial;
   // 否则显示已保存版本;都没有就放占位
-  const displayContent = (streamActive && streamingHtml)
-    ? streamingHtml
+  // 所有 HTML 在喂 iframe 前都过 injectBaseTarget — 注入 <base href + target="_blank">,
+  // 让导入项目的 <a href="/"> 在新窗口打开原站, 不再被解析成 darwin.org.cn 父页。
+  const rawDisplayContent = (streamActive && streamingHtml)
+    ? streamingHtml  // 已经 injectBaseTarget 过
     : (isResumedPhase && resumePartialHtml)
-      ? injectBaseTarget(resumePartialHtml)
+      ? injectBaseTarget(resumePartialHtml, sourceUrl)
       : (displayVersion?.content ?? PLACEHOLDER_HTML);
+  const displayContent = streamingHtml === rawDisplayContent
+    ? rawDisplayContent  // streamingHtml 路径已注入, 不重复
+    : injectBaseTarget(rawDisplayContent, sourceUrl);
   const displaySource = displayVersion?.source;
 
   // ─── Thinking overlay 阶段判断 ──────────────────────────
@@ -604,9 +650,12 @@ export default function ProjectCanvas({
           ref={iframeRef}
           onLoad={handleIframeLoad}
           className={`canvas-frame${(streamActive || isResumedPhase) ? ' canvas-frame-streaming' : ''}`}
-          srcDoc={displayContent.startsWith('<!') || displayContent.startsWith('<html') ? displayContent : injectBaseTarget(displayContent)}
+          srcDoc={displayContent}
           title={`${project.name} · synthesized preview`}
-          sandbox="allow-same-origin"
+          // allow-popups + allow-popups-to-escape-sandbox: 让 <a target="_blank">
+          // 真的能开新窗口去原站, 而不是被静默拦截或在 iframe 内导航。
+          // 不加 allow-scripts: iframe 内仍然没法跑 JS, XSS 攻击面不变。
+          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         />
       ) : (
         <pre className="canvas-md">{streamActive ? streamBufRef.current || displayContent : displayContent}</pre>
