@@ -36,12 +36,13 @@ Rules:
 9. If two intents conflict (e.g. "技术专业感" + "活泼俏皮"), surface BOTH visually — e.g. professional structure with one playful accent — rather than picking a side. The job is synthesis, not arbitration.
 10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
 
-10b. NAVIGATION & LINKS — output is rendered in a sandboxed iframe (no external network for routing). Make the page behave like a SELF-CONTAINED single-page site:
-   - Every in-page nav link MUST use a hash anchor: <a href="#section-id">, NOT <a href="/section">.
+10b. NAVIGATION & LINKS — output is rendered in a sandboxed iframe (no external network for routing). Make the page behave like a SELF-CONTAINED single-page site. The non-negotiable rule: clicking ANY link inside your output must keep the user inside your output. No link may navigate to the original source site or to a 404. The only exception: TRUE external sites that are genuinely third-party (e.g. Twitter, GitHub, partner brands) — those get target="_blank".
+   - Every in-page nav link MUST use a hash anchor: <a href="#section-id">, NOT <a href="/section">, NOT a full URL pointing to the source's own pages.
    - Every top-level <section> should have an id attribute matching its data-scope (or a descriptive slug). E.g. <section data-scope="features" id="features">. So clicking nav scrolls to the section.
    - Logo link → <a href="#top"> (we will inject an #top anchor at the body top).
    - CTA buttons (sign up / login / etc.) — if they have no real backend, use <a href="#"> or <button type="button"> (avoid /login style absolute paths that would 404).
-   - For TRUE external links (the source's actual external partners, footer social, etc.), use the full https:// URL and add target="_blank" rel="noopener". Keep it minimal — only when the source genuinely linked externally.
+   - The source HTML may contain <a href> pointing to ITS OWN absolute URL (e.g. <a href="https://cursor.com/students">). These are NOT external links — they are the source site linking to its own pages. REWRITE them to hash anchors (#students) so clicking stays in the iframe. Do NOT preserve them verbatim.
+   - For TRULY external links (different host: twitter.com, github.com, partner brands the source actually links out to), use the full https:// URL and add target="_blank" rel="noopener". Keep it minimal — only when the link genuinely points to a different domain.
    - <form action> for fake forms: use action="#" so submit doesn't reload to a 404 page.
 11. REFERENCE FILES & LINKS — TWO modes by source:
 
@@ -60,6 +61,11 @@ Rules:
        - All svg paths, all data: URIs (even if base64 was stripped to a placeholder, preserve the surrounding tag).
        - Text COPY: headlines, paragraphs, button labels, navigation items, footer text, microcopy. Only change copy that an intent's statement explicitly names (e.g., "rename Nohi to wohi everywhere" → only literal "Nohi" → "wohi" substitution).
        - The original <!DOCTYPE>, <html lang="">, and <head> structure including all <meta> tags.
+
+       MUST REWRITE for self-containment (override the "preserve verbatim" default — links are the one place where fidelity gives way to "the replica must stand alone"):
+       - <a href> pointing to the source site's own URLs (whether absolute like https://source-host.com/x, protocol-relative //source-host.com/x, root-relative /x, or bare relative about.html) — REWRITE to hash anchors (e.g. #x). The user must not be sent back to the original site by clicking your output. Per rule 10b above.
+       - Only links to a GENUINELY different host (Twitter, GitHub, true partner brands) stay as full URLs with target="_blank" rel="noopener".
+       - <form action> values that point to the source site — change to action="#".
 
        MAY adjust (only when an intent specifies):
        - Brand name strings (case-sensitive substitution) — if intent says "rename X to Y", substitute "X" → "Y" in visible text, alt, title, meta, but PRESERVE everything else.

@@ -47,6 +47,21 @@ const AUTO_SYNC_DEBOUNCE_MS = Number(
 function prepareIframeHtml(html: string, sourceUrl?: string | null): string {
   let s = html;
 
+  // 抽源站 host — 用于把 "指向原站自己" 的绝对/相对链接也压成 hash anchor.
+  // 规则: 复刻出来的 HTML 必须自洽, 任何 <a> 都不应该把用户带回原 HTML.
+  let sourceHost: string | null = null;
+  if (sourceUrl) {
+    try { sourceHost = new URL(sourceUrl).host.toLowerCase(); } catch { /* ignore */ }
+  }
+  // 把任意路径压成 #anchor: /how-it-works → #how-it-works, /a/b → #a-b, about.html → #about
+  const pathToAnchor = (path: string): string => {
+    let cleaned = path.split(/[?#]/)[0].replace(/^\/+/, '').replace(/\/+$/, '');
+    if (!cleaned) return '#top';
+    cleaned = cleaned.replace(/\.(html?|php|aspx?|jsp)$/i, '');
+    if (!cleaned) return '#top';
+    return '#' + cleaned.replace(/\//g, '-');
+  };
+
   // (1) 注入 <base href=sourceUrl> (没有 target!) — 让 <img/link/style> 的相对路径
   //     还原到原站. target 不设 → 默认 _self → 链接在 iframe 内导航.
   const baseTag = sourceUrl ? `<base href="${escapeAttr(sourceUrl)}">` : '';
@@ -68,51 +83,58 @@ function prepareIframeHtml(html: string, sourceUrl?: string | null): string {
     s = s.replace(/(<body\b[^>]*>)/i, '$1<a id="top" aria-hidden="true"></a>');
   }
 
-  // (3) 改写所有 <a href> — 内站 → hash anchor (iframe 内滚动); 外站 → 新窗口
+  // (3) 改写所有 <a href> — 任何指向原站自己的链接都压成 hash anchor; 真外站才开新窗口.
   s = s.replace(/<a\b([^>]*?)\shref\s*=\s*("|')([^"']*)\2([^>]*)>/gi, (full, before, q, href, after) => {
     const cleanedHref = (href || '').trim();
     const original = full;
-    // 去重已有 target
     const stripTarget = (s: string) => s.replace(/\s+target\s*=\s*["'][^"']*["']/gi, '');
     const stripRel = (s: string) => s.replace(/\s+rel\s*=\s*["'][^"']*["']/gi, '');
     const beforeC = stripRel(stripTarget(before));
     const afterC = stripRel(stripTarget(after));
 
-    if (!cleanedHref || cleanedHref === '#') {
-      // 空 href / 已经是 # — 保持原样
-      return original;
-    }
-    if (cleanedHref.startsWith('#')) {
-      // in-page anchor — 保持原样
-      return original;
-    }
-    if (cleanedHref === '/') {
-      // 根路径 logo 链接 → 滚到顶
-      return `<a${beforeC} href="#top"${afterC}>`;
-    }
-    if (cleanedHref.startsWith('/')) {
-      // 站内相对路径 /about /pricing → 转 hash anchor
-      // /how-it-works → #how-it-works (浏览器会找 id=how-it-works 的元素)
-      const anchor = cleanedHref.slice(1).split(/[?#]/)[0].replace(/\/+$/, '').replace(/\//g, '-');
-      return `<a${beforeC} href="#${anchor}"${afterC}>`;
-    }
-    if (/^https?:\/\//i.test(cleanedHref)) {
-      // 真外部站 — 新窗口打开, 防止劫持 iframe
-      return `<a${beforeC} href="${cleanedHref}" target="_blank" rel="noopener noreferrer"${afterC}>`;
-    }
+    if (!cleanedHref || cleanedHref === '#') return original;
+    if (cleanedHref.startsWith('#')) return original;
+    if (/^javascript:/i.test(cleanedHref)) return `<a${beforeC} href="#"${afterC}>`;
     if (/^(mailto:|tel:|sms:)/i.test(cleanedHref)) {
-      // mailto/tel — 让浏览器处理 (打开邮件/电话客户端)
       return `<a${beforeC} href="${cleanedHref}"${afterC}>`;
     }
-    // 其它 (相对路径 about.html / 协议无关 //example.com) — 保留原值, 默认 iframe 内导航
-    return `<a${beforeC} href="${cleanedHref}"${afterC}>`;
+    if (/^\/\//.test(cleanedHref)) {
+      // 协议无关 //host/path — 当外部链接处理
+      try {
+        const u = new URL('https:' + cleanedHref);
+        if (sourceHost && u.host.toLowerCase() === sourceHost) {
+          return `<a${beforeC} href="${pathToAnchor(u.pathname)}"${afterC}>`;
+        }
+        return `<a${beforeC} href="https:${cleanedHref}" target="_blank" rel="noopener noreferrer"${afterC}>`;
+      } catch {
+        return `<a${beforeC} href="#"${afterC}>`;
+      }
+    }
+    if (/^https?:\/\//i.test(cleanedHref)) {
+      try {
+        const u = new URL(cleanedHref);
+        if (sourceHost && u.host.toLowerCase() === sourceHost) {
+          // 指向原站自己 — 压成 hash anchor, 不要让用户跳回原页面
+          return `<a${beforeC} href="${pathToAnchor(u.pathname)}"${afterC}>`;
+        }
+        // 真外站 — 新窗口
+        return `<a${beforeC} href="${cleanedHref}" target="_blank" rel="noopener noreferrer"${afterC}>`;
+      } catch {
+        return `<a${beforeC} href="#"${afterC}>`;
+      }
+    }
+    // 站内根路径 / 站内相对路径都压成 hash anchor (默认 <base> 会把它们解析回原站)
+    if (cleanedHref === '/') return `<a${beforeC} href="#top"${afterC}>`;
+    if (cleanedHref.startsWith('/')) return `<a${beforeC} href="${pathToAnchor(cleanedHref)}"${afterC}>`;
+    return `<a${beforeC} href="${pathToAnchor(cleanedHref)}"${afterC}>`;
   });
 
   // (4) <form action="/login"> 之类的提交也会让 iframe 跳走 — 改成 # 防止 404
   s = s.replace(/<form\b([^>]*?)\saction\s*=\s*("|')([^"']*)\2([^>]*)>/gi, (full, before, q, action, after) => {
     const a = (action || '').trim();
     if (!a || a === '#' || a.startsWith('#')) return full;
-    if (/^https?:\/\//i.test(a) || /^(mailto:|tel:)/i.test(a)) return full;
+    if (/^(mailto:|tel:)/i.test(a)) return full;
+    // 任何指向网络的 action 都改成 #, 避免离开 iframe
     return `<form${before} action="#"${after}>`;
   });
 
