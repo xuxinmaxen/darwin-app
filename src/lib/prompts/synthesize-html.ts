@@ -35,6 +35,14 @@ Rules:
    - A product-screenshot mockup in the hero is allowed, but it must clearly look like an embedded screenshot (chrome bar, drop shadow, max-width), not the page's own chrome.
 9. If two intents conflict (e.g. "技术专业感" + "活泼俏皮"), surface BOTH visually — e.g. professional structure with one playful accent — rather than picking a side. The job is synthesis, not arbitration.
 10. PROVENANCE: every top-level <section> MUST carry a data-scope attribute whose value is the single best-matching scope keyword from the input intents. Use one of: hero, features, pricing, cta, faq, footer, navigation. If a section synthesizes multiple scopes (e.g. hero overview), pick the dominant one. The header/nav element should also have data-scope="navigation". Do NOT add data-scope to non-section elements. This attribute is what powers the Intent ↔ section provenance highlight in the UI.
+
+10b. NAVIGATION & LINKS — output is rendered in a sandboxed iframe (no external network for routing). Make the page behave like a SELF-CONTAINED single-page site:
+   - Every in-page nav link MUST use a hash anchor: <a href="#section-id">, NOT <a href="/section">.
+   - Every top-level <section> should have an id attribute matching its data-scope (or a descriptive slug). E.g. <section data-scope="features" id="features">. So clicking nav scrolls to the section.
+   - Logo link → <a href="#top"> (we will inject an #top anchor at the body top).
+   - CTA buttons (sign up / login / etc.) — if they have no real backend, use <a href="#"> or <button type="button"> (avoid /login style absolute paths that would 404).
+   - For TRUE external links (the source's actual external partners, footer social, etc.), use the full https:// URL and add target="_blank" rel="noopener". Keep it minimal — only when the source genuinely linked externally.
+   - <form action> for fake forms: use action="#" so submit doesn't reload to a 404 page.
 11. REFERENCE FILES & LINKS — TWO modes by source:
 
    (a) IMPORTED SEED (project background contains 【导入参考 (HTML)】 ... 【/导入参考 (HTML)】 block):

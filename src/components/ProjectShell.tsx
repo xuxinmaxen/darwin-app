@@ -291,13 +291,15 @@ export default function ProjectShell({
   const handleExitPreview = () => setPreviewVersion(null);
 
   const handleRollbacked = () => {
-    // rollback 写了一条新 version → 让 ProjectCanvas 重新拉最新当前版本
+    // rollback 写了一条新 version → 拉最新, 走 handleVersionCreated 同时:
+    //  - 更新 currentVersion (画面切到回滚后的内容)
+    //  - 把新 version meta 追加到 versionsMeta (看板渲染"vN 已完成"分界线)
+    //  - 关 isSynthesizing / resume 状态 (rollback 完成视为合成结束)
     fetch(`/api/projects/${project.id}/synthesize`, { method: 'GET' })
       .then(r => r.json())
       .then(j => {
         if (j.ok && j.version) {
-          setCurrentVersion(j.version);
-          setVersionsTotal(n => n + 1);
+          handleVersionCreated(j.version as Version);
         }
       })
       .catch(() => {/* swallow */});

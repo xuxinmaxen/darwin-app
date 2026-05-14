@@ -33,29 +33,95 @@ const AUTO_SYNC_DEBOUNCE_MS = Number(
 ) || 2_500;
 
 /**
- * 在合成产物里注入 <base href + target> 让 iframe 内链接行为合理:
+ * 让 iframe 内的合成 HTML 表现得像一个真实的、自洽的单页网站:
  *
- *   1. iframe 用 srcDoc 渲染时, 没有 base URL → 所有相对链接 (<a href="/">/<img src>)
- *      会解析到父页 origin (darwin.org.cn). 用户点 logo (href="/") 会让 iframe 跳工作台.
- *   2. 给定原 source URL (导入项目) → 注入 <base href="<src>"> 让相对链接还原到原站.
- *   3. 加 target="_blank" → 链接全部新窗口打开, 不破坏当前 iframe 的预览状态.
+ *   - 导航 link 在 iframe 内部跳转/滚动 (不跑去 darwin.org.cn, 不开新窗口)
+ *   - 相对路径 <a href="/about"> → 转成 <a href="#about"> 让浏览器在本页找锚点
+ *   - <a href="/"> (logo 回首页) → 转成 <a href="#top"> + body 头部加 id=top 锚点
+ *   - hash anchor <a href="#features"> 保留, 浏览器原生滚动
+ *   - 真正外部 URL <a href="https://other.com"> 保留, 加 target=_blank rel=noopener
+ *   - <img src> 等资源相对路径: 保留 <base href=sourceUrl> 让相对资源还原到原站
  *
- * sourceUrl 来自导入项目的 background marker (来源: ...). 没有来源 (空白项目)
- * 时只注入 target, 不设 base href.
+ * 这样用户点 nav button 行为符合直觉: 滚到对应 section, 或不跳 (在本页).
  */
+function prepareIframeHtml(html: string, sourceUrl?: string | null): string {
+  let s = html;
+
+  // (1) 注入 <base href=sourceUrl> (没有 target!) — 让 <img/link/style> 的相对路径
+  //     还原到原站. target 不设 → 默认 _self → 链接在 iframe 内导航.
+  const baseTag = sourceUrl ? `<base href="${escapeAttr(sourceUrl)}">` : '';
+  if (baseTag) {
+    if (/<base\b[^>]*>/i.test(s)) {
+      s = s.replace(/<base\b[^>]*>/i, baseTag);
+    } else if (/<head\b[^>]*>/i.test(s)) {
+      s = s.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+    } else {
+      s = `<head>${baseTag}</head>` + s;
+    }
+  } else if (/<base\b[^>]*>/i.test(s)) {
+    // 没源 URL 但 LLM 自己输出了 <base> → 去掉, 避免它带歪 target
+    s = s.replace(/<base\b[^>]*>/i, '');
+  }
+
+  // (2) 在 body 顶部注入 <a id="top"> 锚点 → 让 logo (#top) 滚到顶
+  if (/<body\b[^>]*>/i.test(s) && !/<a\b[^>]*id\s*=\s*["']top["']/i.test(s)) {
+    s = s.replace(/(<body\b[^>]*>)/i, '$1<a id="top" aria-hidden="true"></a>');
+  }
+
+  // (3) 改写所有 <a href> — 内站 → hash anchor (iframe 内滚动); 外站 → 新窗口
+  s = s.replace(/<a\b([^>]*?)\shref\s*=\s*("|')([^"']*)\2([^>]*)>/gi, (full, before, q, href, after) => {
+    const cleanedHref = (href || '').trim();
+    const original = full;
+    // 去重已有 target
+    const stripTarget = (s: string) => s.replace(/\s+target\s*=\s*["'][^"']*["']/gi, '');
+    const stripRel = (s: string) => s.replace(/\s+rel\s*=\s*["'][^"']*["']/gi, '');
+    const beforeC = stripRel(stripTarget(before));
+    const afterC = stripRel(stripTarget(after));
+
+    if (!cleanedHref || cleanedHref === '#') {
+      // 空 href / 已经是 # — 保持原样
+      return original;
+    }
+    if (cleanedHref.startsWith('#')) {
+      // in-page anchor — 保持原样
+      return original;
+    }
+    if (cleanedHref === '/') {
+      // 根路径 logo 链接 → 滚到顶
+      return `<a${beforeC} href="#top"${afterC}>`;
+    }
+    if (cleanedHref.startsWith('/')) {
+      // 站内相对路径 /about /pricing → 转 hash anchor
+      // /how-it-works → #how-it-works (浏览器会找 id=how-it-works 的元素)
+      const anchor = cleanedHref.slice(1).split(/[?#]/)[0].replace(/\/+$/, '').replace(/\//g, '-');
+      return `<a${beforeC} href="#${anchor}"${afterC}>`;
+    }
+    if (/^https?:\/\//i.test(cleanedHref)) {
+      // 真外部站 — 新窗口打开, 防止劫持 iframe
+      return `<a${beforeC} href="${cleanedHref}" target="_blank" rel="noopener noreferrer"${afterC}>`;
+    }
+    if (/^(mailto:|tel:|sms:)/i.test(cleanedHref)) {
+      // mailto/tel — 让浏览器处理 (打开邮件/电话客户端)
+      return `<a${beforeC} href="${cleanedHref}"${afterC}>`;
+    }
+    // 其它 (相对路径 about.html / 协议无关 //example.com) — 保留原值, 默认 iframe 内导航
+    return `<a${beforeC} href="${cleanedHref}"${afterC}>`;
+  });
+
+  // (4) <form action="/login"> 之类的提交也会让 iframe 跳走 — 改成 # 防止 404
+  s = s.replace(/<form\b([^>]*?)\saction\s*=\s*("|')([^"']*)\2([^>]*)>/gi, (full, before, q, action, after) => {
+    const a = (action || '').trim();
+    if (!a || a === '#' || a.startsWith('#')) return full;
+    if (/^https?:\/\//i.test(a) || /^(mailto:|tel:)/i.test(a)) return full;
+    return `<form${before} action="#"${after}>`;
+  });
+
+  return s;
+}
+
+/** 旧名字兼容: 调用方还在用 injectBaseTarget — 转发到新的 prepareIframeHtml */
 function injectBaseTarget(html: string, sourceUrl?: string | null): string {
-  const baseTag = sourceUrl
-    ? `<base href="${escapeAttr(sourceUrl)}" target="_blank">`
-    : `<base target="_blank">`;
-  // 已有 <base> 时整体替换 (避免重复)
-  if (/<base\b[^>]*>/i.test(html)) {
-    return html.replace(/<base\b[^>]*>/i, baseTag);
-  }
-  if (/<head\b[^>]*>/i.test(html)) {
-    return html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
-  }
-  // 没 <head> 时, srcDoc 浏览器会自动包一层 — 直接 prepend
-  return `<head>${baseTag}</head>` + html;
+  return prepareIframeHtml(html, sourceUrl);
 }
 
 function escapeAttr(s: string): string {

@@ -8,13 +8,16 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { rollbackTo } from '@/lib/versions';
+import { listIntentsByProject } from '@/lib/intents';
 
 type Params = { params: Promise<{ id: string; v: string }> };
 
 export async function POST(_req: Request, { params }: Params) {
   const { id, v } = await params;
   try {
-    const version = await rollbackTo(id, v);
+    // 拉当前 intent 集 → 新版本 intent_ids 与之对齐, 防止 auto-sync 觉得"陈旧"立刻又触发
+    const intents = await listIntentsByProject(id);
+    const version = await rollbackTo(id, v, intents.map(i => i.id));
     revalidatePath(`/projects/${id}`);
     return NextResponse.json({ ok: true, version }, { status: 201 });
   } catch (err) {

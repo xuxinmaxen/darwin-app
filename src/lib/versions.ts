@@ -62,10 +62,25 @@ export async function getVersionById(versionId: string): Promise<Version | null>
   return data ? rowToVersion(data as VersionRow) : null;
 }
 
-export async function rollbackTo(projectId: string, sourceVersionId: string): Promise<Version> {
+export async function rollbackTo(
+  projectId: string,
+  sourceVersionId: string,
+  /**
+   * 回滚后新版本应"代表"哪些 intent? 默认沿用源版本的 intentIds, 但这样会让前端
+   * auto-sync 把新版本视为陈旧 (因为期间用户可能加了更多 intent) → 立刻又生成 v_N+1.
+   * 用户的预期: "回滚=接受当前画面". 路由传入 currentIntentIds (现在板上所有 intent)
+   * 让新版本与当前 intent 集对齐, 自动重合成不会再误触发.
+   */
+  currentIntentIds?: string[]
+): Promise<Version> {
   const source = await getVersionById(sourceVersionId);
   if (!source || source.projectId !== projectId) throw new Error('source version not found');
-  return createVersion({ projectId, format: source.format, content: source.content, intentIds: source.intentIds });
+  return createVersion({
+    projectId,
+    format: source.format,
+    content: source.content,
+    intentIds: currentIntentIds ?? source.intentIds,
+  });
 }
 
 export async function countVersions(projectId: string): Promise<number> {
