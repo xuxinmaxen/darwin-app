@@ -40,21 +40,28 @@ export function buildDetectTensionSystem(input: DetectTensionInput): string {
   return [
     'You are the Tension Detector of Darwin — a multi-human + multi-agent collaboration platform whose first principle is "the unit of collaboration is Intent, not output".',
     '',
-    'Your job: given two or more must-level Intents on the SAME scope, decide whether they are semantically incompatible. If they are, surface the conflict explicitly with 3 reconciliation options for the team to arbitrate.',
+    'Your job: given a set of Intents (mixed weights and types — must, should, and Veto), find any PAIR that is semantically incompatible. If found, surface the conflict with 3 reconciliation options for the team to arbitrate. Pick ONE most representative pair if multiple conflicts exist.',
     '',
     `Project name: ${input.project.name}`,
     `Project type: ${TYPE_LABEL[input.project.type]}`,
     input.project.background ? `Project background: ${input.project.background}` : '',
     `Scope under inspection: ${input.scope}`,
     '',
+    'Input shape:',
+    '- Each intent line has [type · author] tags. Type=Veto means the author is explicitly opposing/forbidding something — Veto intents conflict with any intent that asserts the thing they forbid, regardless of declared scope. Treat a "veto-cross:" scope name as a signal that the FIRST intent is a Veto being checked against intents from OTHER scopes.',
+    '- Authors can be Human or Agent. A Human Veto contradicting an Agent recommendation is a real tension — surface it.',
+    '- Weights (must/should) are advisory. Even a should-level Agent recommendation that directly contradicts a must-level Human Veto IS a tension.',
+    '',
     'Decision rule:',
-    '- DEFAULT to "compatible" (inTension=false). Most must-Intents on the same scope COMPLEMENT each other.',
-    '- Only return inTension=true if satisfying all of them simultaneously would force a real trade-off — not just "needs design effort".',
+    '- DEFAULT to "compatible" (inTension=false). Most Intents COMPLEMENT each other.',
+    '- Return inTension=true ONLY when a pair makes opposite assertions about the SAME concrete decision (e.g. "CTA links TO X" vs "CTA must NOT link to X"; "hero is dark" vs "hero is light"). Not when they merely emphasize different things.',
+    '- A Veto-type intent ("don\'t / never / not") that names a concrete target is a tension with any intent (any weight) that asserts that target. Don\'t require the other party to be must-level.',
+    '- A "scoped Veto" can collide with a "navigation"/"global" assertion if they\'re talking about the same UI element — judge by content, not scope label.',
     '',
     'Examples of REAL tension (return inTension=true):',
     '  • "传达技术专业感" vs "视觉冲击力" on hero — restraint vs impact',
     '  • "免费档要无水印" vs "免费档要驱动升级" on pricing.free — generosity vs conversion',
-    '  • "快速展示功能列表" vs "极简首屏只放一句话" on hero — density vs minimalism',
+    '  • [Veto · Human] "顶部/页尾 CTA 不要指向 wohi 的申请或登录入口" vs [should · Agent] "运营侧建议顶部/页尾 CTA 指向 wohi 的申请或登录入口" — direct contradiction even though weights differ',
     '',
     'Examples of FALSE tension (return inTension=false):',
     '  • "传达技术专业感" + "目标用户是 CTO" → reinforce each other',
@@ -92,13 +99,18 @@ export function buildDetectTensionSystem(input: DetectTensionInput): string {
 
 export function buildDetectTensionUser(input: DetectTensionInput): string {
   const lines: string[] = [];
-  lines.push(`Must-level Intents on scope "${input.scope}":`);
+  const isCrossScope = input.scope.startsWith('veto-cross:');
+  lines.push(
+    isCrossScope
+      ? `Cross-scope tension scan — primary Veto intent first, then candidates from OTHER scopes. Scope label: "${input.scope}"`
+      : `Intents on scope "${input.scope}" (mixed weights — must/should — and types — Goal/Constraint/Veto/etc):`
+  );
   lines.push('');
   for (let i = 0; i < input.intents.length; i++) {
     const it = input.intents[i];
     const author = it.authorKind === 'agent' ? 'Agent' : 'Human';
     lines.push(
-      `${i + 1}. id=${it.id} [${it.type} · ${author}] ${it.statement}`
+      `${i + 1}. id=${it.id} [${it.type} · weight=${it.weight} · scope=${it.scope} · ${author}] ${it.statement}`
     );
   }
   lines.push('');

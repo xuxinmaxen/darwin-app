@@ -1,6 +1,19 @@
 /**
- * Tension 检测核心 — 给定一个项目, 扫描 must-level Intent, 按 scope 分组,
- * 对每个 scope > 1 条 must Intent 调 LLM 判断是否对立。
+ * Tension 检测核心 — 给定一个项目, 扫描候选 Intent, 按 scope 分组, 调 LLM 判断是否对立。
+ *
+ * 候选规则:
+ *   - 主候选: 所有 must-level + 所有 Veto-type (Veto 是显式反对, 不看权重)
+ *   - 副候选: should-level 意图, 但只在该 scope 组里已有 ≥1 个主候选时才进组
+ *     (避免 should-only 组制造噪音, 但当 should 直接顶撞 must 时能被发现)
+ *
+ * Scope 分组规则:
+ *   - 同时按 "." 和 "/" 拆头, 一条意图可同时归到多个 scope 头
+ *     (如 "header.cta/footer.cta" 同时进 header 和 footer 组)
+ *   - global 单独成组
+ *
+ * Veto 跨域扫描:
+ *   - 每个 Veto 意图, 除了进自己 scope 组, 还和 "其它 scope 组里的主候选" 凑一组单独 LLM 检查
+ *     处理「用户 Veto 在 scope=header.cta, 但 Agent 提议在 scope=navigation 提『顶部 CTA 指向 X』」这种跨 scope 直接顶撞
  *
  * 触发点:
  *   - 用户加 Intent 后 (fire-and-forget)
@@ -31,6 +44,29 @@ import {
 
 const DETECT_TIMEOUT_MS = 20_000;
 
+/** scope 字符串 → 可能的多个 scope 头 (按 '.' 和 '/' 拆) */
+function scopeHeads(scope: string): string[] {
+  if (!scope || scope === 'global') return ['global'];
+  // "header.cta/footer.cta" → ["header.cta", "footer.cta"] → 各取 split('.')[0] → ["header", "footer"]
+  const parts = scope.split('/').map(s => s.trim()).filter(Boolean);
+  const heads = new Set<string>();
+  for (const p of parts) {
+    const head = p.split('.')[0].trim();
+    if (head) heads.add(head);
+  }
+  return heads.size ? Array.from(heads) : [scope];
+}
+
+function isPrimary(i: Intent): boolean {
+  // 主候选: must-level 或 Veto-type
+  return i.weight === 'must' || i.type === 'Veto';
+}
+
+function isSecondary(i: Intent): boolean {
+  // 副候选: should-level (含 should + Constraint/Preference/etc), 不含 could
+  return i.weight === 'should';
+}
+
 export async function detectTensionsForProject(
   projectId: string
 ): Promise<{ created: number }> {
@@ -40,46 +76,97 @@ export async function detectTensionsForProject(
   if (!project) return { created: 0 };
 
   const intents = await listIntentsByProject(projectId);
-  // 只看 must 级
-  const musts = intents.filter(i => i.weight === 'must');
+  const primaries = intents.filter(isPrimary);
+  const secondaries = intents.filter(isSecondary);
 
-  // 按 scope 分组 (用 scope 头作为 key, e.g. "pricing.team" → "pricing")
-  // global 意图之间同样可以直接对立 (如"按原站重绘" vs "不要按原站重绘"),不再跳过
-  const groups = new Map<string, Intent[]>();
-  for (const i of musts) {
-    const head = i.scope === 'global' ? 'global' : i.scope.split('.')[0];
-    const list = groups.get(head) ?? [];
-    list.push(i);
-    groups.set(head, list);
+  // 按 scope 头分组 (允许一条意图进多个组)
+  const groups = new Map<string, { primary: Intent[]; secondary: Intent[] }>();
+  for (const i of primaries) {
+    for (const head of scopeHeads(i.scope)) {
+      const g = groups.get(head) ?? { primary: [], secondary: [] };
+      g.primary.push(i);
+      groups.set(head, g);
+    }
+  }
+  for (const i of secondaries) {
+    for (const head of scopeHeads(i.scope)) {
+      const g = groups.get(head);
+      // 只在组里已有主候选时, secondary 才进
+      if (!g) continue;
+      g.secondary.push(i);
+    }
   }
 
   let created = 0;
-  for (const [scope, scopedIntents] of groups) {
+  const reportedPairs = new Set<string>(); // 跨 detect 调用内自去重 (排序后的 a:b)
+  const pairKey = (a: string, b: string) => (a < b ? `${a}:${b}` : `${b}:${a}`);
+
+  for (const [head, group] of groups) {
+    const scopedIntents = [...group.primary, ...group.secondary];
     if (scopedIntents.length < 2) continue;
 
-    // 已有任意状态 (active / resolved) tension 覆盖相同 intentIds 集合 → 跳过
-    // 这样团队调和过一次的冲突，刷新或退出再进入都不会被识别为新分歧
     const existing = await findAnyTensionFor(
-      projectId,
-      scope,
-      scopedIntents.map(i => i.id)
+      projectId, head, scopedIntents.map(i => i.id)
     );
     if (existing) continue;
 
-    const ok = await detectScopeTension({
+    const detected = await detectScopeTension({
       project: {
         name: project.name,
         type: project.type,
         background: project.background ?? null,
       },
-      scope,
+      scope: head,
       intents: scopedIntents,
       conflictMode: project.conflictMode,
+      reportedPairs,
+      pairKey,
     });
-    if (ok) created += 1;
+    if (detected) created += 1;
   }
 
-  // 有 active tension → project status = 'tension'
+  // === Veto 跨 scope 扫描 ===
+  // 每个 Veto 在其它 scope 组里, 是否直接顶撞别处的主候选 / should?
+  const vetos = intents.filter(i => i.type === 'Veto');
+  for (const veto of vetos) {
+    const vetoHeads = new Set(scopeHeads(veto.scope));
+    // 收集其它 scope 头里的主候选 + should
+    const otherCandidates: Intent[] = [];
+    const seen = new Set<string>([veto.id]);
+    for (const [head, group] of groups) {
+      if (vetoHeads.has(head)) continue;
+      for (const i of [...group.primary, ...group.secondary]) {
+        if (seen.has(i.id)) continue;
+        seen.add(i.id);
+        otherCandidates.push(i);
+      }
+    }
+    if (otherCandidates.length === 0) continue;
+
+    const crossScope = `veto-cross:${veto.scope}`;
+    const allForCheck = [veto, ...otherCandidates];
+
+    // 已有 tension 覆盖完全相同集合? 跳
+    const existing = await findAnyTensionFor(
+      projectId, crossScope, allForCheck.map(i => i.id)
+    );
+    if (existing) continue;
+
+    const detected = await detectScopeTension({
+      project: {
+        name: project.name,
+        type: project.type,
+        background: project.background ?? null,
+      },
+      scope: crossScope,
+      intents: allForCheck,
+      conflictMode: project.conflictMode,
+      reportedPairs,
+      pairKey,
+    });
+    if (detected) created += 1;
+  }
+
   if (created > 0) {
     await db().from('projects')
       .update({ status: 'tension', updated_at: new Date().toISOString() })
@@ -95,6 +182,8 @@ async function detectScopeTension(args: {
   scope: string;
   intents: Intent[];
   conflictMode: 'discuss' | 'ai_decide';
+  reportedPairs: Set<string>;
+  pairKey: (a: string, b: string) => string;
 }): Promise<boolean> {
   try {
     const out = await Promise.race([
@@ -112,11 +201,13 @@ async function detectScopeTension(args: {
     if (!isValidDetectOutput(out)) return false;
     if (out.inTension === false) return false;
 
-    // 校验 partyA/B id 在 intents 里
     const ids = new Set(args.intents.map(i => i.id));
     if (!ids.has(out.partyAIntentId) || !ids.has(out.partyBIntentId)) return false;
 
-    // 决定 variant
+    // 一个意图对在多个 scope head 下都被检测到时, 只建一次 tension
+    const pk = args.pairKey(out.partyAIntentId, out.partyBIntentId);
+    if (args.reportedPairs.has(pk)) return false;
+
     const partyA = args.intents.find(i => i.id === out.partyAIntentId)!;
     const partyB = args.intents.find(i => i.id === out.partyBIntentId)!;
     const variant: 'human' | 'agents' =
@@ -124,15 +215,14 @@ async function detectScopeTension(args: {
         ? 'agents'
         : 'human';
 
-    // 二次去重: LLM 实际挑出的 pair 可能跟入参集合不同;
-    // 在 createTension 前再用挑出的 pair 查一次,避免并发 detect 重复建 tension。
     const pickedIds = [out.partyAIntentId, out.partyBIntentId];
     const recheck = await findAnyTensionFor(
-      args.intents[0].projectId,
-      args.scope,
-      pickedIds
+      args.intents[0].projectId, args.scope, pickedIds
     );
-    if (recheck) return false;
+    if (recheck) {
+      args.reportedPairs.add(pk);
+      return false;
+    }
 
     const created = await createTension({
       projectId: args.intents[0].projectId,
@@ -141,17 +231,14 @@ async function detectScopeTension(args: {
       variant,
       options: out.options,
     });
+    args.reportedPairs.add(pk);
 
-    // ai_decide 模式: 检测出 tension 后立刻 fire-and-forget 让 AI 仲裁
     if (args.conflictMode === 'ai_decide') {
-      // 动态 import 避免 detect → arbitrate → detect 的循环引用风险
       setTimeout(() => {
         import('./arbitrate-tension')
           .then(m => m.arbitrateTension(created.id))
           .then(r => {
-            if (!r.ok) {
-              console.warn('[arbitrate-tension] auto run failed:', r.error);
-            }
+            if (!r.ok) console.warn('[arbitrate-tension] auto run failed:', r.error);
           })
           .catch(err => console.warn('[arbitrate-tension] threw:', err));
       }, 0);

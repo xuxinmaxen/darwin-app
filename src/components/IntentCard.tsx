@@ -10,7 +10,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Intent } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
-import { parseStatementForDisplay } from '@/lib/parse-statement';
+import { parseStatementForDisplay, linkRefLabel } from '@/lib/parse-statement';
 
 // 历史/未知 author 兜底
 const FALLBACK_HUMAN = { cls: 'xu', short: '徐', name: '徐鑫', role: '产品' };
@@ -66,7 +66,7 @@ export default function IntentCard({
     });
   }
 
-  const { userText, attachments, hasImportRef } = parseStatementForDisplay(intent.statement);
+  const { userText, attachments, images, links, hasImportRef } = parseStatementForDisplay(intent.statement);
   const isAgent = intent.authorKind === 'agent';
   const fallback = isAgent ? FALLBACK_AGENT : FALLBACK_HUMAN;
   const avatarCls = author?.cls
@@ -98,7 +98,7 @@ export default function IntentCard({
           </span>
         </div>
         {userText && <p className="intent-body">{userText}</p>}
-        {(attachments.length > 0 || hasImportRef) && (
+        {(attachments.length > 0 || images.length > 0 || links.length > 0 || hasImportRef) && (
           <div className="intent-attach-row">
             {attachments.map((nm, i) => (
               <span key={`a-${i}`} className="intent-attach-chip" title={`AI 已读取参考文件: ${nm}`}>
@@ -107,6 +107,31 @@ export default function IntentCard({
                 </svg>
                 <span className="intent-attach-name">{nm}</span>
               </span>
+            ))}
+            {images.map((nm, i) => (
+              <span key={`img-${i}`} className="intent-attach-chip" title={`AI 已读取参考图片: ${nm}`}>
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                  <rect x="1.5" y="2.5" width="9" height="7" rx="1" />
+                  <circle cx="4.5" cy="5" r=".8" />
+                  <path d="M1.5 8l2.5-2 2 1.5L8 6l2.5 2.5" strokeLinejoin="round" />
+                </svg>
+                <span className="intent-attach-name">{nm}</span>
+              </span>
+            ))}
+            {links.map((lk, i) => (
+              <a
+                key={`l-${i}`}
+                className="intent-attach-chip intent-attach-link"
+                href={lk.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={`AI 已读取参考链接: ${lk.url}${lk.title ? `\n${lk.title}` : ''}`}
+              >
+                <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                  <path d="M5 7l2-2M4 4l-1.5 1.5a2 2 0 0 0 2.83 2.83L7 6.83M8 8l1.5-1.5a2 2 0 0 0-2.83-2.83L5 5.17" strokeLinecap="round" />
+                </svg>
+                <span className="intent-attach-name">{linkRefLabel(lk)}</span>
+              </a>
             ))}
             {hasImportRef && attachments.length === 0 && (
               <span className="intent-attach-chip" title="AI 已读取导入的参考内容">
