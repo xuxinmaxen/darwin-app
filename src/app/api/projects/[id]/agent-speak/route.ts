@@ -129,7 +129,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     await bumpToCollaborating(projectId).catch(() => {});
 
-    if (intent.weight === 'must') {
+    if (intent.weight === 'must' || intent.weight === 'should' || intent.type === 'Veto') {
       setTimeout(() => {
         import('@/lib/detect-tension')
           .then(m => m.detectTensionsForProject(projectId))

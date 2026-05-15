@@ -106,8 +106,9 @@ export async function POST(req: NextRequest, { params }: Params) {
     });
     await bumpToCollaborating(projectId).catch(() => {});
 
-    // 仅 must Intent 才会引发对立, 避免无谓的 LLM 调用
-    if (resolvedWeight === 'must') {
+    // must / should / Veto-type 都可能引发对立 (Veto 顶撞 should 也算).
+    // nice_to_have 不触发, 避免无谓 LLM 调用.
+    if (resolvedWeight === 'must' || resolvedWeight === 'should' || intent.type === 'Veto') {
       // fire-and-forget: 不阻塞用户响应
       setTimeout(() => {
         detectTensionsForProject(projectId).catch(err => {
