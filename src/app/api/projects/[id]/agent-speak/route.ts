@@ -9,7 +9,7 @@
  *   - LLM 失败 → 502 + reason
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getProject, listCollaborators, bumpToCollaborating } from '@/lib/projects';
@@ -130,11 +130,15 @@ export async function POST(req: NextRequest, { params }: Params) {
     await bumpToCollaborating(projectId).catch(() => {});
 
     if (intent.weight === 'must' || intent.weight === 'should' || intent.type === 'Veto') {
-      setTimeout(() => {
-        import('@/lib/detect-tension')
-          .then(m => m.detectTensionsForProject(projectId))
-          .catch(err => console.warn('[detect-tension after speak] failed:', err));
-      }, 0);
+      // 用 after() 而不是 setTimeout, 见 intents/route.ts 注释。
+      after(async () => {
+        try {
+          const m = await import('@/lib/detect-tension');
+          await m.detectTensionsForProject(projectId);
+        } catch (err) {
+          console.warn('[detect-tension after speak] failed:', err);
+        }
+      });
     }
 
     revalidatePath(`/projects/${projectId}`);

@@ -12,7 +12,7 @@
  * 客户端不需要传 type/scope/weight,默认服务端补。如果 client 显式传了,以 client 为准。
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listIntentsByProject, createIntent } from '@/lib/intents';
@@ -108,13 +108,16 @@ export async function POST(req: NextRequest, { params }: Params) {
 
     // must / should / Veto-type 都可能引发对立 (Veto 顶撞 should 也算).
     // nice_to_have 不触发, 避免无谓 LLM 调用.
+    // 用 next/server 的 after() 而不是 setTimeout: Vercel serverless 在 response 发出后会冻结 function,
+    // setTimeout 里的 LLM 调用根本跑不完。after() 是 Next.js 专门给这种场景的 API。
     if (resolvedWeight === 'must' || resolvedWeight === 'should' || intent.type === 'Veto') {
-      // fire-and-forget: 不阻塞用户响应
-      setTimeout(() => {
-        detectTensionsForProject(projectId).catch(err => {
+      after(async () => {
+        try {
+          await detectTensionsForProject(projectId);
+        } catch (err) {
           console.warn('[detect-tension] failed:', err);
-        });
-      }, 0);
+        }
+      });
     }
 
     revalidatePath('/');
