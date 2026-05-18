@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
-import { getProject } from '@/lib/projects';
+import { getProject, updateProject } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { synthesize, synthesizeStream, type SynthesisEvent } from '@/lib/synthesize';
 import { createVersion, getLatestVersion } from '@/lib/versions';
@@ -21,6 +21,14 @@ import {
   finishSynthesisJob,
   PARTIAL_HTML_FLUSH_INTERVAL_MS,
 } from '@/lib/synthesis-state';
+import type { Project } from '@/lib/types';
+import {
+  extractLazyReferenceUrl,
+  fetchImportedHtml,
+  buildReferenceBlock,
+  REF_MARKER_OPEN,
+  REF_MARKER_CLOSE,
+} from '@/lib/fetch-imported-html';
 
 // Next.js 16: 流式路由必须是动态路由
 export const dynamic = 'force-dynamic';
@@ -30,6 +38,43 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 type Params = { params: Promise<{ id: string }> };
+
+/**
+ * 如果 project.background 里塞的是 lazy reference marker (只有 URL, 没 HTML),
+ * 这一刻 fetch 原页 + 写回 background, 然后返回 hydrated project。
+ *
+ * 写回 DB 是为了:
+ *   1. 第二次合成不需要再抓 (省 ~10s + 远端 hiccup 风险)
+ *   2. 详情页 background 展示能看到 marker 已落地
+ * 失败时不抛错: 返回原 project, 合成 prompt 会进入 "URL-only inspiration" 兜底模式。
+ */
+async function hydrateLazyReferenceIfNeeded(project: Project): Promise<Project> {
+  const lazyUrl = extractLazyReferenceUrl(project.background);
+  if (!lazyUrl) return project;
+
+  try {
+    const fetched = await fetchImportedHtml(lazyUrl);
+    const newBlock = buildReferenceBlock({
+      url: fetched.url,
+      title: fetched.title,
+      html: fetched.rawHtml,
+    });
+    // 替换 background 里整个 marker block, 保留 marker 之外用户写的 text
+    const re = new RegExp(
+      `${escapeRegex(REF_MARKER_OPEN)}[\\s\\S]*?${escapeRegex(REF_MARKER_CLOSE)}`
+    );
+    const newBackground = (project.background ?? '').replace(re, newBlock);
+    const updated = await updateProject(project.id, { background: newBackground });
+    return updated;
+  } catch (err) {
+    console.warn(`[synthesize] lazy fetch failed for ${lazyUrl}:`, err);
+    return project;
+  }
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
@@ -55,10 +100,11 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   // 非流式(原逻辑保持不变,用于兜底)
   try {
-    const project = await getProject(id);
+    let project = await getProject(id);
     if (!project) {
       return NextResponse.json({ ok: false, error: 'project not found' }, { status: 404 });
     }
+    project = await hydrateLazyReferenceIfNeeded(project);
     const [intents, latestVersion] = await Promise.all([
       listIntentsByProject(id),
       getLatestVersion(id),
@@ -93,7 +139,7 @@ async function handleStreamPost(projectId: string): Promise<Response> {
     return enc.encode(`data: ${JSON.stringify(event)}\n\n`);
   }
 
-  const project = await getProject(projectId);
+  let project = await getProject(projectId);
   if (!project) {
     const stream = new ReadableStream({
       start(ctrl) {
@@ -103,6 +149,7 @@ async function handleStreamPost(projectId: string): Promise<Response> {
     });
     return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' } });
   }
+  project = await hydrateLazyReferenceIfNeeded(project);
 
   const [intents, latestVersion] = await Promise.all([
     listIntentsByProject(projectId),

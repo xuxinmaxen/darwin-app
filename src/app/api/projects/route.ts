@@ -14,6 +14,11 @@ import { z } from 'zod';
 import { listProjects, createProject } from '@/lib/projects';
 import { createIntent } from '@/lib/intents';
 import { currentUserId } from '@/lib/auth';
+import {
+  REF_MARKER_OPEN,
+  REF_MARKER_CLOSE,
+  REF_LAZY_PLACEHOLDER,
+} from '@/lib/fetch-imported-html';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -41,60 +46,26 @@ const CreateBody = z.object({
   seedIntent: z.object({
     statement: z.string().min(1).max(2000),
   }).optional(),
-  // 导入 HTML 时: 把抓取到的原始 HTML 作为"复刻蓝本"传进来,
-  // 我们存到 project.background 用 marker 包起来, 合成 prompt 会读取并复刻。
-  // 不再直接走 createVersion — 所有版本都由 LLM 生成,保持单一合成入口。
-  referenceHtml: z.string().max(500_000).optional(),
+  // 导入 HTML 时: 客户端只传 URL, 实际抓取延后到详情页"开始合成"那一步。
+  // 服务端把 URL 包进 marker 写进 project.background, 合成 route 看到 marker
+  // 但没 HTML body 时就 lazy-fetch (src/lib/fetch-imported-html.ts)。
   referenceUrl: z.string().max(2000).optional(),
-  referenceTitle: z.string().max(500).optional(),
 });
 
-// 加大 budget: 之前 60KB 砍掉太多结构 → LLM 复刻字体/图片/排版细节失真。
-// 250KB 够让 Claude/GPT 看到完整 <head>(全部 <link>/<style>) + 完整 <body> 主结构,
-// 只丢掉极少数 base64 大图。token 成本 ~60-80k, claude-opus-4.6 200k 上下文够。
-const REFERENCE_HTML_BUDGET = 250_000;
-
 /**
- * 把抓到的 rawHtml 压缩到 budget 内喂给 LLM:
- * - 删 base64 内嵌 (img/source/url 起头的 data:base64 字符串占大半空间)
- * - 保留所有 <link> / <style> / <img src> 原字串
- * - 只折叠重复空白 (不动 attribute 内空格)
- * - 截断时保留开头 (含完整 head) + 末尾 (含 footer)
+ * 创建项目时只知道 URL, 还没真正抓 HTML。把 URL 包进 marker 写进 background,
+ * 合成 route 第一次跑时会从 marker 抽 URL → lazy-fetch → 拼 prompt。
  */
-function condenseReferenceHtml(raw: string): string {
-  let s = raw;
-  // base64 大图替换 (省体积但保留语义 — LLM 知道这里有图)
-  s = s.replace(/data:[^"')\s]+;base64,[^"')\s]+/g, 'data:base64:[stripped]');
-  // 注意: 不能粗暴 \s+→' ', 那会破坏 <pre>/<textarea> 内含义。
-  // 只压缩"标签之间"的纯空白和换行
-  s = s.replace(/>\s{2,}</g, '> <');
-  s = s.replace(/\n{3,}/g, '\n\n');
-  if (s.length <= REFERENCE_HTML_BUDGET) return s;
-  const head = Math.floor(REFERENCE_HTML_BUDGET * 0.75);
-  const tail = REFERENCE_HTML_BUDGET - head;
-  return s.slice(0, head) + '\n<!-- ...(reference html truncated, middle skipped)... -->\n' + s.slice(s.length - tail);
-}
-
-const REF_MARKER_OPEN = '【导入参考 (HTML)】';
-const REF_MARKER_CLOSE = '【/导入参考 (HTML)】';
-
-function buildBackgroundWithReference(
+function buildBackgroundWithReferenceUrlOnly(
   userBackground: string | null | undefined,
-  ref: { url?: string; title?: string; html: string }
+  url: string
 ): string {
-  const condensed = condenseReferenceHtml(ref.html);
-  const meta = [
-    ref.url ? `来源: ${ref.url}` : '',
-    ref.title ? `标题: ${ref.title}` : '',
-  ].filter(Boolean).join('\n');
   const refBlock = [
     REF_MARKER_OPEN,
-    meta,
-    '',
-    '原始 HTML (压缩):',
-    condensed,
+    `来源: ${url}`,
+    REF_LAZY_PLACEHOLDER,
     REF_MARKER_CLOSE,
-  ].filter(Boolean).join('\n');
+  ].join('\n');
   const userPart = (userBackground ?? '').trim();
   return userPart ? `${userPart}\n\n${refBlock}` : refBlock;
 }
@@ -112,15 +83,15 @@ export async function POST(req: NextRequest) {
   try {
     const ownerId = await currentUserId();
 
-    // 导入 HTML 模式: 把 rawHtml 压缩后塞进 background, 用 marker 包起来。
-    // 合成 prompt 看到 marker 会按"复刻蓝本"路径处理, AI 自己生成 v1。
+    // 导入 HTML 模式: 客户端只传 URL, 把它写进 background marker。
+    // 合成 prompt 第一次跑时检测到 "原始 HTML: (将在首次合成时自动拉取)" 占位符,
+    // 调用 fetchImportedHtml(url) 抓回来 → in-memory 拼进 system prompt 当蓝本。
     let finalBackground = body.background ?? null;
-    if (body.referenceHtml && body.type === 'html') {
-      finalBackground = buildBackgroundWithReference(body.background, {
-        url: body.referenceUrl,
-        title: body.referenceTitle,
-        html: body.referenceHtml,
-      });
+    if (body.referenceUrl && body.type === 'html') {
+      finalBackground = buildBackgroundWithReferenceUrlOnly(
+        body.background,
+        body.referenceUrl
+      );
     }
 
     const project = await createProject({

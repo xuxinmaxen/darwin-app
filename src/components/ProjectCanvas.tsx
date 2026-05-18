@@ -22,6 +22,7 @@ import { useState, useTransition, useEffect, useRef, useCallback } from 'react';
 import type { Project, Intent } from '@/lib/types';
 import type { Version } from '@/lib/versions';
 import { TYPE_LABEL } from '@/lib/type-meta';
+import { extractSourceUrl } from '@/lib/extract-source-url';
 
 // 冲突检测异步运行 (fire-and-forget), 有分歧时 activeTensionCount > 0 会阻断合成。
 // agent 反应也通过 agentsReacting 阻断, 反应结束后立刻放开。
@@ -150,14 +151,8 @@ function escapeAttr(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
-/** 从 project.background 抽取原 source URL (导入项目才有) */
-function extractSourceUrl(background: string | null | undefined): string | null {
-  if (!background) return null;
-  // marker 内 "来源: <url>" 行
-  const m = background.match(/【导入参考 \(HTML\)】[\s\S]*?来源:\s*(\S+)/);
-  if (m) return m[1];
-  return null;
-}
+// extractSourceUrl 已抽到 src/lib/extract-source-url.ts (导出 route 也用), 这里 re-import
+// 保持原行号附近的代码不破坏其他注释指针。
 
 const HIGHLIGHT_STYLE = `
   [data-scope] {
@@ -791,10 +786,15 @@ export default function ProjectCanvas({
           className={`canvas-frame${(streamActive || isResumedPhase) ? ' canvas-frame-streaming' : ''}`}
           srcDoc={displayContent}
           title={`${project.name} · synthesized preview`}
-          // allow-popups + allow-popups-to-escape-sandbox: 让 <a target="_blank">
-          // 真的能开新窗口去原站, 而不是被静默拦截或在 iframe 内导航。
-          // 不加 allow-scripts: iframe 内仍然没法跑 JS, XSS 攻击面不变。
-          sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+          // allow-scripts: 让导入页里的动效 (scroll-reveal / count-up / parallax 等
+          //   JS 驱动的 motion) 能在 iframe 内跑起来; CSS-only 动效一直都能跑, JS 现在补齐。
+          // allow-same-origin: 保留 — ProjectCanvas 大量依赖 iframe.contentDocument 做
+          //   Intent ↔ section 高亮、溯源 pill、scroll-into-view, 去掉会全废。
+          // allow-popups + allow-popups-to-escape-sandbox: <a target="_blank"> 真开新窗口。
+          // 安全模型: Darwin 是私有协作工具, iframe 内 HTML 全来自团队成员或他们触发
+          //   的 AI 输出, 没有匿名 untrusted 上传路径; 同源条件下 iframe JS 能读 darwin
+          //   cookie 的风险是用户对自己的代码负责。
+          sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         />
       ) : (
         <pre className="canvas-md">{streamActive ? streamBufRef.current || displayContent : displayContent}</pre>

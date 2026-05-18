@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getProject } from '@/lib/projects';
 import { getLatestVersion } from '@/lib/versions';
+import { extractSourceUrl } from '@/lib/extract-source-url';
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -30,7 +31,13 @@ export async function GET(req: NextRequest, { params }: Params) {
   const slug = project.name.replace(/[^\w一-龥-]/g, '_').slice(0, 60);
 
   if (format === 'html') {
-    return new NextResponse(version.content, {
+    // 导出 HTML 在 file:// 协议打开时, <img src="/x.png"> / <img src="/_next/..."> 之类
+    // 相对/根路径会被解析成 file:///x.png → 坏图。给 head 注入 <base href=sourceUrl>
+    // 让浏览器把这些 URL 解析回原站, 图片就能正常 fetch (img 元素不受 CORS 限制)。
+    // 用户从零新建的项目没有 sourceUrl, 不动 HTML。
+    const sourceUrl = extractSourceUrl(project.background);
+    const finalContent = injectBaseForExport(version.content, sourceUrl);
+    return new NextResponse(finalContent, {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Content-Disposition': `attachment; filename="${encodeURIComponent(slug)}.html"`,
@@ -50,6 +57,22 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   return NextResponse.json({ error: `不支持的 format: ${format}` }, { status: 400 });
+}
+
+/**
+ * 给导出 HTML 注入 <base href=sourceUrl>, 让 file:// 下相对图片能 fetch 回原站。
+ * 已经有 <base> 时不动 (LLM 偶尔会自己写一个); 没 sourceUrl 时也不动。
+ * 注意: <base> 不影响 hash anchor (#section), self-containment 不破坏。
+ */
+function injectBaseForExport(html: string, sourceUrl: string | null): string {
+  if (!sourceUrl) return html;
+  if (/<base\b/i.test(html)) return html;
+  const baseTag = `<base href="${sourceUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}">`;
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`);
+  }
+  // 没 <head> 也尝试塞个最小的;不过 LLM 输出几乎一定有 head
+  return `<head>${baseTag}</head>${html}`;
 }
 
 // ─── PPTX builder ──────────────────────────────────────────────────────────

@@ -93,20 +93,11 @@ export default function NewProjectButton({
   const [isPending, startTransition] = useTransition();
 
   // 新建 vs 导入: 落地页可导入 URL, PPT 可导入文件
+  // 关于 URL 导入: 创建项目时只存 URL, 不抓 HTML。
+  // 详情页点"开始合成"时, 服务端按 URL 后台抓取 → 拼 prompt。
+  // 这样新建对话更顺滑,失败的抓取不会卡住"创建"动作。
   const [sourceMode, setSourceMode] = useState<SourceMode>('blank');
   const [importUrl, setImportUrl] = useState('');
-  const [importedHtmlRef, setImportedHtmlRef] = useState<
-    {
-      url: string;
-      title: string | null;
-      text: string;
-      truncated: boolean;
-      /** 原始 HTML — 用于作为 v1 直接入库,不走 LLM 重生成 */
-      rawHtml: string;
-      rawHtmlBytes: number;
-      rawHtmlTruncated: boolean;
-    } | null
-  >(null);
   const [importedFile, setImportedFile] = useState<
     { name: string; isText: boolean; text?: string; note?: string } | null
   >(null);
@@ -117,43 +108,9 @@ export default function NewProjectButton({
   useEffect(() => {
     setSourceMode('blank');
     setImportUrl('');
-    setImportedHtmlRef(null);
     setImportedFile(null);
     setImportError(null);
   }, [type]);
-
-  async function handleImportUrl() {
-    if (!importUrl.trim()) return;
-    setImporting(true);
-    setImportError(null);
-    try {
-      const res = await fetch('/api/import/html', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: importUrl.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        setImportError(json.error || `拉取失败 (${res.status})`);
-        return;
-      }
-      setImportedHtmlRef({
-        url: json.url,
-        title: json.title,
-        text: json.text,
-        truncated: json.truncated,
-        rawHtml: json.rawHtml ?? '',
-        rawHtmlBytes: json.rawHtmlBytes ?? 0,
-        rawHtmlTruncated: !!json.rawHtmlTruncated,
-      });
-      // 若用户没填项目名, 用页面标题自动填一个
-      if (!name && json.title) setName(json.title);
-    } catch (err) {
-      setImportError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setImporting(false);
-    }
-  }
 
   async function handleImportFile(file: File) {
     setImporting(true);
@@ -232,9 +189,18 @@ export default function NewProjectButton({
       return;
     }
     if (sourceMode === 'import') {
-      if (type === 'html' && !importedHtmlRef) {
-        setError('请先拉取要导入的 HTML 链接');
-        return;
+      if (type === 'html') {
+        const trimmedUrl = importUrl.trim();
+        if (!trimmedUrl) {
+          setError('请填写要复刻的 HTML 链接');
+          return;
+        }
+        try {
+          new URL(trimmedUrl);
+        } catch {
+          setError('链接格式不对,需要 https:// 开头的完整 URL');
+          return;
+        }
       }
       if (type === 'ppt' && !importedFile) {
         setError('请先上传要导入的 PPT 文件');
@@ -242,26 +208,20 @@ export default function NewProjectButton({
       }
     }
 
-    // background 只保留用户自己写的内容; 导入 HTML 的 rawHtml 走 referenceHtml 字段,
-    // 服务端会把它包进 marker 拼到 background 里给 LLM 当复刻蓝本。
+    // background 只保留用户自己写的内容; 导入 HTML 时只把 URL 放进 marker,
+    // 真正抓页面延后到详情页"开始合成"那一步, 服务端按需 fetch。
     const finalBackground = background.trim();
 
-    // 导入参考 → 生成种子意图 + 参考 HTML (HTML 项目: LLM 第一次合成时按原页复刻)
+    // 导入参考 → 生成种子意图 (HTML 项目: 只存 URL, 合成时再抓)
     let seedIntent: { statement: string } | undefined;
-    let referenceHtml: string | undefined;
     let referenceUrl: string | undefined;
-    let referenceTitle: string | undefined;
     if (sourceMode === 'import') {
-      if (type === 'html' && importedHtmlRef) {
-        const refLabel = importedHtmlRef.title
-          ? `「${importedHtmlRef.title}」(${importedHtmlRef.url})`
-          : importedHtmlRef.url;
+      if (type === 'html') {
+        const url = importUrl.trim();
         seedIntent = {
-          statement: `请按照 ${refLabel} 的结构、文案、视觉风格复刻一份作为本项目的起点, 后续意图在此基础上增量调整。`,
+          statement: `请按照 ${url} 的结构、文案、视觉风格复刻一份作为本项目的起点, 后续意图在此基础上增量调整。`,
         };
-        referenceHtml = importedHtmlRef.rawHtml || undefined;
-        referenceUrl = importedHtmlRef.url;
-        referenceTitle = importedHtmlRef.title ?? undefined;
+        referenceUrl = url;
       } else if (type === 'ppt' && importedFile) {
         seedIntent = {
           statement: `请基于上传的 ${importedFile.name} 的内容和结构来合成本 PPT,意图后续可由团队增量调整。`,
@@ -281,7 +241,7 @@ export default function NewProjectButton({
             conflictMode,
             collaboratorIds: Array.from(collaboratorIds),
             ...(seedIntent ? { seedIntent } : {}),
-            ...(referenceHtml ? { referenceHtml, referenceUrl, referenceTitle } : {}),
+            ...(referenceUrl ? { referenceUrl } : {}),
           }),
         });
         const json = await res.json();
@@ -289,8 +249,8 @@ export default function NewProjectButton({
           setError(json.error || `请求失败 (${res.status})`);
           return;
         }
-        // Stay on workspace and refresh — let the user see the new card
-        // appear at the top of the list. They can click in when ready.
+        // 创建成功 → 直接跳详情页, 让用户立刻进入工作流;
+        // 不再 stay-on-workspace, 因为多一步点卡片打开是冗余的。
         setOpen(false);
         setName('');
         setBackground('');
@@ -298,9 +258,8 @@ export default function NewProjectButton({
         setCollaboratorIds(new Set());
         setSourceMode('blank');
         setImportUrl('');
-        setImportedHtmlRef(null);
         setImportedFile(null);
-        router.refresh();
+        router.push(`/projects/${json.project.id}`);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
@@ -401,35 +360,16 @@ export default function NewProjectButton({
               {sourceMode === 'import' && type === 'html' && (
                 <div className="field">
                   <label className="field-label" htmlFor="np-url">要复刻的 HTML 链接</label>
-                  <div className="import-url-row">
-                    <input
-                      id="np-url" className="field-input" type="url"
-                      placeholder="https://example.com/landing"
-                      value={importUrl}
-                      onChange={e => setImportUrl(e.target.value)}
-                      disabled={isPending || importing}
-                    />
-                    <button type="button" className="ws-btn ws-btn-ghost"
-                      onClick={handleImportUrl}
-                      disabled={isPending || importing || !importUrl.trim()}
-                      title="抓取目标页的标题与正文,作为 AI 合成 v1 的复刻蓝本"
-                    >
-                      {importing ? '抓取中…' : '抓取页面'}
-                    </button>
-                  </div>
+                  <input
+                    id="np-url" className="field-input" type="url"
+                    placeholder="https://example.com/landing"
+                    value={importUrl}
+                    onChange={e => setImportUrl(e.target.value)}
+                    disabled={isPending}
+                  />
                   <div className="field-hint" style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)' }}>
-                    抓取目标页的结构和正文 → AI 合成首版时按其布局/copy 复刻 → 之后用 Intent 微调
+                    创建后进入详情页, 点"开始合成"时 AI 会自动拉取该链接, 按其结构/文案复刻 v1, 后续用 Intent 微调。
                   </div>
-                  {importError && <div className="import-error">⚠️ {importError}</div>}
-                  {importedHtmlRef && (
-                    <div className="import-ok">
-                      ✓ 已抓取原始 HTML{importedHtmlRef.title && <strong> 「{importedHtmlRef.title}」</strong>}
-                      {' '}({(importedHtmlRef.rawHtmlBytes / 1024).toFixed(0)} KB)
-                      {importedHtmlRef.rawHtmlTruncated && ' [超 500KB 已截断]'}
-                      <br />
-                      AI 合成 v1 时会以此为蓝本复刻结构、文案与风格,后续意图在此基础上调整。
-                    </div>
-                  )}
                 </div>
               )}
 
