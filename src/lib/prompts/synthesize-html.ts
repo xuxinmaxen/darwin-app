@@ -48,7 +48,7 @@ Rules:
    - Logo link → <a href="#top"> (we will inject an #top anchor at the body top).
    - CTA buttons (sign up / login / etc.) — if they have no real backend, use <a href="#"> or <button type="button"> (avoid /login style absolute paths that would 404).
    - The source HTML may contain <a href> pointing to ITS OWN absolute URL (e.g. <a href="https://cursor.com/students">). These are NOT external links — they are the source site linking to its own pages. REWRITE them to hash anchors (#students) so clicking stays in the iframe. Do NOT preserve them verbatim.
-   - For TRULY external links (different host: twitter.com, github.com, partner brands the source actually links out to), use the full https:// URL and add target="_blank" rel="noopener". Keep it minimal — only when the link genuinely points to a different domain.
+   - For TRULY external links (different host: twitter.com, github.com, partner brands the source actually links out to), use the full https:// URL and add target="_blank" rel="noopener". REQUIRED: if the source seed contains a link to a third-party site (Twitter/X, GitHub, LinkedIn, YouTube, Discord, partner brand, etc.), PRESERVE that link in your output — do NOT drop it, do NOT rewrite it to a hash anchor, do NOT collapse it into the same-host bucket. Social/footer links and inline body links to external domains are part of the page's identity; removing them is a regression.
    - <form action> for fake forms: use action="#" so submit doesn't reload to a 404 page.
 11. REFERENCE FILES & LINKS — TWO modes by source:
 
