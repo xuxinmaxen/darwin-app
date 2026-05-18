@@ -12,7 +12,7 @@
  * V1 不实际部署 — 这里只是"定稿"语义。真实部署是 V2+ 的 Adapter 层负责。
  */
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getLatestVersion, publishVersion } from '@/lib/versions';
@@ -67,17 +67,18 @@ export async function POST(req: Request, { params }: Params) {
     ]);
 
     // 发布后 fire-and-forget: 所有 Agent 协作者重新计算标签 (学习本项目的决策偏好)
+    // 用 after() 而不是 setTimeout, 见 intents/route.ts 注释 (Vercel serverless freeze)。
     const agentCollaborators = collaborators.filter(c => c.kind === 'agent');
     if (agentCollaborators.length > 0) {
-      setTimeout(() => {
-        Promise.allSettled(
+      after(async () => {
+        await Promise.allSettled(
           agentCollaborators.map(a =>
             recomputeAgentTags(a.id).catch(err =>
               console.warn(`[publish] recomputeAgentTags(${a.id}) failed:`, err)
             )
           )
-        ).catch(() => {/* swallow */});
-      }, 500);
+        );
+      });
     }
 
     revalidatePath(`/projects/${id}`);

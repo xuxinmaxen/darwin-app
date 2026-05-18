@@ -188,15 +188,15 @@ export async function arbitrateTension(tensionId: string): Promise<ArbitrateResu
   await resolveThread(thread.id);
   await maybeBackToCollaborating(tension.projectId);
 
-  // fire-and-forget: 让 LLM 决定要不要从这次仲裁里抽出团队共识候选
-  setTimeout(() => {
-    import('./extract-pref-candidate')
-      .then(m => m.extractPrefCandidateForTension(tensionId))
-      .then(r => {
-        if (!r.ok) console.warn('[extract-pref] failed:', r.error);
-      })
-      .catch(err => console.warn('[extract-pref] threw:', err));
-  }, 0);
+  // arbitrate-tension 本身就在调用方的 after() 回调里运行;
+  // 再 setTimeout 0 fire-and-forget 会被 Vercel serverless 杀掉, 改成 await。
+  try {
+    const m = await import('./extract-pref-candidate');
+    const r = await m.extractPrefCandidateForTension(tensionId);
+    if (!r.ok) console.warn('[extract-pref] failed:', r.error);
+  } catch (err) {
+    console.warn('[extract-pref] threw:', err);
+  }
 
   return {
     ok: true,

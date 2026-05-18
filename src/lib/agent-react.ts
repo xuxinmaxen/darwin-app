@@ -7,6 +7,7 @@
  * Server-only。
  */
 
+import { after } from 'next/server';
 import type { Intent } from './types';
 import type { Employee } from './employees';
 import { db } from './db';
@@ -169,12 +170,16 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
     });
 
     // Agent 写的 must Intent 也可能引发 tension, 异步检测
+    // 用 after() 而不是 setTimeout, 见 src/app/api/projects/[id]/intents/route.ts 注释。
     if (intent.weight === 'must') {
-      setTimeout(() => {
-        import('./detect-tension')
-          .then(m => m.detectTensionsForProject(input.projectId))
-          .catch(err => console.warn('[detect-tension after react] failed:', err));
-      }, 0);
+      after(async () => {
+        try {
+          const m = await import('./detect-tension');
+          await m.detectTensionsForProject(input.projectId);
+        } catch (err) {
+          console.warn('[detect-tension after react] failed:', err);
+        }
+      });
     }
 
     return { ok: true, reaction: 'spoke', intent };
@@ -198,14 +203,19 @@ function fanOutToOtherAgents(opts: {
     c => c.kind === 'agent' && c.id !== opts.excludeAgentId
   );
   for (const a of otherAgents) {
-    // setTimeout 0 让当前 response 先返回再启 reactOnce, 避免 await 死锁。
-    setTimeout(() => {
-      reactOnce({
-        projectId: opts.projectId,
-        agentEmployeeId: a.id,
-        triggerIntentId: opts.newIntentId,
-      }).catch(() => {/* 第二跳失败不影响第一跳 */});
-    }, 0);
+    // 用 after() 让当前 response 先返回再启 reactOnce, 避免 await 死锁;
+    // setTimeout 0 在 Vercel serverless 上会被 freeze 杀掉。
+    after(async () => {
+      try {
+        await reactOnce({
+          projectId: opts.projectId,
+          agentEmployeeId: a.id,
+          triggerIntentId: opts.newIntentId,
+        });
+      } catch {
+        /* 第二跳失败不影响第一跳 */
+      }
+    });
   }
 }
 

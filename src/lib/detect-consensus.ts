@@ -135,12 +135,14 @@ export async function detectConsensusForThread(
   await resolveThread(threadId);
   await maybeBackToCollaborating(thread.projectId);
 
-  // fire-and-forget 抽 pref 候选
-  setTimeout(() => {
-    import('./extract-pref-candidate')
-      .then(m => m.extractPrefCandidateForTension(tension.id))
-      .catch(() => { /* 静默 */ });
-  }, 0);
+  // detect-consensus 本身就在调用方的 after() 回调里运行;
+  // 再 setTimeout 0 fire-and-forget 会被 Vercel serverless 杀掉, 改成 await。
+  try {
+    const m = await import('./extract-pref-candidate');
+    await m.extractPrefCandidateForTension(tension.id);
+  } catch {
+    /* 静默 */
+  }
 
   return {
     ok: true,

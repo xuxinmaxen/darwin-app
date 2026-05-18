@@ -11,7 +11,7 @@
  *   - 用户在 drawer 里 @-tag (后续可加 UI)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { getThread, listMessages, createMessage } from '@/lib/threads';
@@ -163,12 +163,16 @@ export async function POST(req: NextRequest, { params }: Params) {
   });
 
   // agent 发言可能就是凑成共识的"第二个表态" — fire-and-forget 检测
+  // 用 after() 而不是 setTimeout, 见 intents/route.ts 注释 (Vercel serverless freeze)。
   if (thread.tensionId) {
-    setTimeout(() => {
-      import('@/lib/detect-consensus')
-        .then(m => m.detectConsensusForThread(threadId))
-        .catch(err => console.warn('[consensus after agent-message] failed:', err));
-    }, 0);
+    after(async () => {
+      try {
+        const m = await import('@/lib/detect-consensus');
+        await m.detectConsensusForThread(threadId);
+      } catch (err) {
+        console.warn('[consensus after agent-message] failed:', err);
+      }
+    });
   }
 
   revalidatePath(`/projects/${thread.projectId}`);

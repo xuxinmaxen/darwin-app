@@ -5,7 +5,7 @@
  *   - 默认 authorId = DEMO_AUTHOR_ID, authorKind = 'human'
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { listMessages, createMessage, getThread } from '@/lib/threads';
@@ -72,17 +72,19 @@ export async function POST(req: NextRequest, { params }: Params) {
     });
 
     // fire-and-forget: 让 LLM 看 thread 是否已达成一致 (有 tension 才有意义)
+    // 用 after() 而不是 setTimeout, 见 intents/route.ts 注释 (Vercel serverless freeze)。
     if (thread.status === 'active' && thread.tensionId && !body.isDecision) {
-      setTimeout(() => {
-        import('@/lib/detect-consensus')
-          .then(m => m.detectConsensusForThread(threadId))
-          .then(r => {
-            if (r.ok && r.reached) {
-              console.info(`[consensus] thread ${threadId} → ${r.selectedKey}`);
-            }
-          })
-          .catch(err => console.warn('[consensus] failed:', err));
-      }, 0);
+      after(async () => {
+        try {
+          const m = await import('@/lib/detect-consensus');
+          const r = await m.detectConsensusForThread(threadId);
+          if (r.ok && r.reached) {
+            console.info(`[consensus] thread ${threadId} → ${r.selectedKey}`);
+          }
+        } catch (err) {
+          console.warn('[consensus] failed:', err);
+        }
+      });
     }
 
     revalidatePath(`/projects/${thread.projectId}`);

@@ -236,14 +236,15 @@ async function detectScopeTension(args: {
     args.reportedPairs.add(pk);
 
     if (args.conflictMode === 'ai_decide') {
-      setTimeout(() => {
-        import('./arbitrate-tension')
-          .then(m => m.arbitrateTension(created.id))
-          .then(r => {
-            if (!r.ok) console.warn('[arbitrate-tension] auto run failed:', r.error);
-          })
-          .catch(err => console.warn('[arbitrate-tension] threw:', err));
-      }, 0);
+      // 这里已经在调用方的 after() 回调内, 不能再 setTimeout 否则会被 serverless 杀掉 —
+      // 直接 await, 把仲裁也作为 after() 的一部分跑完。
+      try {
+        const m = await import('./arbitrate-tension');
+        const r = await m.arbitrateTension(created.id);
+        if (!r.ok) console.warn('[arbitrate-tension] auto run failed:', r.error);
+      } catch (err) {
+        console.warn('[arbitrate-tension] threw:', err);
+      }
     }
 
     return true;

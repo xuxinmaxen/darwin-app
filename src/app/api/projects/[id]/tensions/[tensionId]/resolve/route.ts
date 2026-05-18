@@ -11,7 +11,7 @@
  * 这样保持 API 单一职责。
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { resolveTension, getTension } from '@/lib/tensions';
@@ -97,14 +97,16 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // fire-and-forget: 让 LLM 看决议+讨论, 决定要不要弹"沉淀为团队共识"候选
-    setTimeout(() => {
-      import('@/lib/extract-pref-candidate')
-        .then(m => m.extractPrefCandidateForTension(tensionId))
-        .then(r => {
-          if (!r.ok) console.warn('[extract-pref] failed:', r.error);
-        })
-        .catch(err => console.warn('[extract-pref] threw:', err));
-    }, 0);
+    // 用 after() 而不是 setTimeout, 见 intents/route.ts 注释 (Vercel serverless freeze)。
+    after(async () => {
+      try {
+        const m = await import('@/lib/extract-pref-candidate');
+        const r = await m.extractPrefCandidateForTension(tensionId);
+        if (!r.ok) console.warn('[extract-pref] failed:', r.error);
+      } catch (err) {
+        console.warn('[extract-pref] threw:', err);
+      }
+    });
 
     revalidatePath(`/projects/${projectId}`);
     revalidatePath('/');
