@@ -18,6 +18,7 @@ import {
   REF_MARKER_OPEN,
   REF_MARKER_CLOSE,
   REF_LAZY_PLACEHOLDER,
+  buildReferenceBlock,
 } from '@/lib/fetch-imported-html';
 
 const DEMO_OWNER_ID = '00000000-0000-0000-0000-000000000001';
@@ -46,10 +47,17 @@ const CreateBody = z.object({
   seedIntent: z.object({
     statement: z.string().min(1).max(2000),
   }).optional(),
-  // 导入 HTML 时: 客户端只传 URL, 实际抓取延后到详情页"开始合成"那一步。
-  // 服务端把 URL 包进 marker 写进 project.background, 合成 route 看到 marker
-  // 但没 HTML body 时就 lazy-fetch (src/lib/fetch-imported-html.ts)。
+  // 导入 HTML — 两种调用方式都接受:
+  //
+  // (a) UI 主流程: 只传 referenceUrl。服务端把 URL 包进 marker 写进 background,
+  //     首次合成时 server-side fetch (见 synthesize route 的 hydrateLazyReferenceIfNeeded)。
+  //
+  // (b) 程序化客户端 (e2e 测试 / 直接 API 调用): 同时传 referenceHtml + referenceUrl
+  //     (+ optional referenceTitle), 服务端就直接把这份 HTML 包进 marker, 跳过 lazy-fetch。
+  //     这条路径让 e2e 能拿测试用的人造 HTML 喂进来 (acmestudio.com 之类不真存在的 host)。
   referenceUrl: z.string().max(2000).optional(),
+  referenceHtml: z.string().max(500_000).optional(),
+  referenceTitle: z.string().max(500).optional(),
 });
 
 /**
@@ -83,15 +91,25 @@ export async function POST(req: NextRequest) {
   try {
     const ownerId = await currentUserId();
 
-    // 导入 HTML 模式: 客户端只传 URL, 把它写进 background marker。
-    // 合成 prompt 第一次跑时检测到 "原始 HTML: (将在首次合成时自动拉取)" 占位符,
-    // 调用 fetchImportedHtml(url) 抓回来 → in-memory 拼进 system prompt 当蓝本。
+    // 导入 HTML 模式: 两种路径
+    //   - 程序化传了 referenceHtml: 直接落完整 marker block (含 condensed HTML)
+    //   - UI 只传 referenceUrl: 落 lazy placeholder, 首次合成时 server-side fetch
     let finalBackground = body.background ?? null;
-    if (body.referenceUrl && body.type === 'html') {
-      finalBackground = buildBackgroundWithReferenceUrlOnly(
-        body.background,
-        body.referenceUrl
-      );
+    if (body.type === 'html') {
+      if (body.referenceHtml) {
+        const block = buildReferenceBlock({
+          url: body.referenceUrl,
+          title: body.referenceTitle,
+          html: body.referenceHtml,
+        });
+        const userPart = (body.background ?? '').trim();
+        finalBackground = userPart ? `${userPart}\n\n${block}` : block;
+      } else if (body.referenceUrl) {
+        finalBackground = buildBackgroundWithReferenceUrlOnly(
+          body.background,
+          body.referenceUrl
+        );
+      }
     }
 
     const project = await createProject({
