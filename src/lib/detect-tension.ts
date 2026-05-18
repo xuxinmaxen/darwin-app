@@ -42,7 +42,9 @@ import {
   isValidDetectOutput,
 } from './prompts/detect-tension';
 
-const DETECT_TIMEOUT_MS = 20_000;
+// Hermes / cc-switch 中转偶尔 35-45s 才返回; 20s 在真实负载下基本必超时。
+// 把 detect 拉到 60s, 与 agent-speak 对齐。
+const DETECT_TIMEOUT_MS = 60_000;
 
 /** scope 字符串 → 可能的多个 scope 头 (按 '.' 和 '/' 拆) */
 function scopeHeads(scope: string): string[] {
