@@ -1350,6 +1350,19 @@ body {
 }
 .quickbar-attach:disabled { opacity: 0.55; cursor: not-allowed; }
 
+/* 标注按钮 — 默认跟附件按钮一致, ON 状态走珊瑚渐变 */
+.quickbar-mark.is-on {
+  color: #fff;
+  background: linear-gradient(135deg, #ff8d6b 0%, #ffaf7a 60%, #ffc890 100%);
+  border-color: transparent;
+  box-shadow: 0 2px 6px rgba(255, 141, 107, 0.35);
+}
+.quickbar-mark.is-on:hover:not(:disabled) {
+  color: #fff;
+  background: linear-gradient(135deg, #ff7a55 0%, #ff9a62 60%, #ffbb7e 100%);
+  border-color: transparent;
+}
+
 .quickbar-attachments {
   display: flex; flex-wrap: wrap; gap: 6px;
   padding: 0 14px 6px 31px;

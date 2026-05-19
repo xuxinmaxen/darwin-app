@@ -24,6 +24,22 @@ import type { Version } from '@/lib/versions';
 import { TYPE_LABEL } from '@/lib/type-meta';
 import { extractSourceUrl } from '@/lib/extract-source-url';
 
+/** iframe 内 darwin-mark runtime 暴露给父页的 API (见 public/darwin-mark.js 末尾) */
+export type DarwinMarkAnnotation = {
+  id: number;
+  label: string;
+  selector: string;
+  text: string;
+  note: string;
+};
+export type DarwinMarkAPI = {
+  on: () => void;
+  off: () => void;
+  isOn: () => boolean;
+  list: () => DarwinMarkAnnotation[];
+  clear: () => void;
+};
+
 // 冲突检测异步运行 (fire-and-forget), 有分歧时 activeTensionCount > 0 会阻断合成。
 // agent 反应也通过 agentsReacting 阻断, 反应结束后立刻放开。
 // 反应已经在 IntentForm 内 Promise.allSettled, debounce 只需短一些兜底防抖动。
@@ -45,7 +61,11 @@ const AUTO_SYNC_DEBOUNCE_MS = Number(
  *
  * 这样用户点 nav button 行为符合直觉: 滚到对应 section, 或不跳 (在本页).
  */
-function prepareIframeHtml(html: string, sourceUrl?: string | null): string {
+function prepareIframeHtml(
+  html: string,
+  sourceUrl?: string | null,
+  markScript?: string | null
+): string {
   let s = html;
 
   // 抽源站 host — 用于把 "指向原站自己" 的绝对/相对链接也压成 hash anchor.
@@ -139,12 +159,30 @@ function prepareIframeHtml(html: string, sourceUrl?: string | null): string {
     return `<form${before} action="#"${after}>`;
   });
 
+  // (5) 注入 darwin-mark 标注 runtime (始终 OFF 状态, 父页通过 window.__darwinMark 控制)
+  // 内联进 iframe 而不是 <script src>: srcDoc + <base href> 时相对路径会被解析回原站 404,
+  // 绝对 URL 又要 hardcode host;inline 一次 31KB 但免去这些 fragility。
+  if (markScript) {
+    const tag = `<script>${markScript}</script>`;
+    if (/<\/body>/i.test(s)) {
+      s = s.replace(/<\/body>/i, `${tag}</body>`);
+    } else if (/<\/html>/i.test(s)) {
+      s = s.replace(/<\/html>/i, `${tag}</html>`);
+    } else {
+      s += tag;
+    }
+  }
+
   return s;
 }
 
 /** 旧名字兼容: 调用方还在用 injectBaseTarget — 转发到新的 prepareIframeHtml */
-function injectBaseTarget(html: string, sourceUrl?: string | null): string {
-  return prepareIframeHtml(html, sourceUrl);
+function injectBaseTarget(
+  html: string,
+  sourceUrl?: string | null,
+  markScript?: string | null
+): string {
+  return prepareIframeHtml(html, sourceUrl, markScript);
 }
 
 function escapeAttr(s: string): string {
@@ -244,6 +282,8 @@ export default function ProjectCanvas({
   recentSynthFailureAt = null,
   synthFailureMsg = null,
   onRetrySynth,
+  markMode = false,
+  onMarkBridge,
 }: {
   project: Project;
   intents: Intent[];
@@ -272,6 +312,10 @@ export default function ProjectCanvas({
   synthFailureMsg?: string | null;
   /** 用户点 "重新合成" → 父组件清状态 */
   onRetrySynth?: () => void;
+  /** 标注模式开关 — true 时调 iframe.contentWindow.__darwinMark.on() */
+  markMode?: boolean;
+  /** iframe onLoad 后把 __darwinMark API 回吐给父组件, 用于提交意图时读取 pins */
+  onMarkBridge?: (api: DarwinMarkAPI | null) => void;
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
@@ -280,6 +324,19 @@ export default function ProjectCanvas({
 
   // 导入项目时,iframe 内 <a href="/"> 需要还原到原站, 否则相对路径会指向 darwin.org.cn 父页
   const sourceUrl = extractSourceUrl(project.background);
+
+  // ─── 标注 runtime 加载 ──────────────────────────────────────
+  // 把 /darwin-mark.js 内容缓存进 state, prepareIframeHtml 每次喂 iframe 时一起 inline。
+  // 始终注入 (默认 OFF), 通过 contentWindow.__darwinMark.on() 切换, 避免 toggle 时
+  // iframe 重渲染丢 pin。
+  const [markScript, setMarkScript] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/darwin-mark.js').then(r => r.text()).then(txt => {
+      if (!cancelled) setMarkScript(txt);
+    }).catch(() => {/* 网络抖 OK, 标注功能不可用但主流程不受影响 */});
+    return () => { cancelled = true; };
+  }, []);
 
   // ─── 流式合成状态 ──────────────────────────────────────────
   /** 流式过程中 AI 当前的状态说明 */
@@ -298,7 +355,7 @@ export default function ProjectCanvas({
     if (streamIntervalRef.current) return;
     streamIntervalRef.current = setInterval(() => {
       if (streamBufRef.current) {
-        setStreamingHtml(injectBaseTarget(streamBufRef.current, sourceUrl));
+        setStreamingHtml(injectBaseTarget(streamBufRef.current, sourceUrl, markScript));
       }
     }, 400);
   }
@@ -333,8 +390,28 @@ export default function ProjectCanvas({
       style.textContent = HIGHLIGHT_STYLE;
       doc.head.appendChild(style);
     }
+    // 把 darwin-mark API 引用回吐给父组件 — 提交意图时用来读 pins。
+    // 时机: iframe onLoad → script 同步 init 完成 → window.__darwinMark 已存在。
+    const win = iframeRef.current?.contentWindow as
+      | (Window & { __darwinMark?: DarwinMarkAPI })
+      | null
+      | undefined;
+    if (onMarkBridge) {
+      onMarkBridge(win?.__darwinMark ?? null);
+    }
     setIframeReady(n => n + 1);
-  }, []);
+  }, [onMarkBridge]);
+
+  // 父组件 markMode 翻 true/false → 通过桥调 iframe runtime
+  useEffect(() => {
+    const win = iframeRef.current?.contentWindow as
+      | (Window & { __darwinMark?: DarwinMarkAPI })
+      | null
+      | undefined;
+    if (!win?.__darwinMark) return;
+    if (markMode && !win.__darwinMark.isOn()) win.__darwinMark.on();
+    else if (!markMode && win.__darwinMark.isOn()) win.__darwinMark.off();
+  }, [markMode, iframeReady]);
 
   // 反向: hover iframe 内 section → 通知父组件高亮对应 IntentCard
   useEffect(() => {
@@ -513,7 +590,7 @@ export default function ProjectCanvas({
             } else if (evt.type === 'complete') {
               // LLM 输出结束,立刻刷新一次 iframe 显示最终内容
               streamBufRef.current = evt.html;
-              setStreamingHtml(injectBaseTarget(evt.html, sourceUrl));
+              setStreamingHtml(injectBaseTarget(evt.html, sourceUrl, markScript));
               setThinkingMsg('保存版本中…');
             } else if (evt.type === 'saved') {
               // 版本入库完成
@@ -682,11 +759,11 @@ export default function ProjectCanvas({
   const rawDisplayContent = (streamActive && streamingHtml)
     ? streamingHtml  // 已经 injectBaseTarget 过
     : (isResumedPhase && resumePartialHtml)
-      ? injectBaseTarget(resumePartialHtml, sourceUrl)
+      ? injectBaseTarget(resumePartialHtml, sourceUrl, markScript)
       : (displayVersion?.content ?? PLACEHOLDER_HTML);
   const displayContent = streamingHtml === rawDisplayContent
     ? rawDisplayContent  // streamingHtml 路径已注入, 不重复
-    : injectBaseTarget(rawDisplayContent, sourceUrl);
+    : injectBaseTarget(rawDisplayContent, sourceUrl, markScript);
   const displaySource = displayVersion?.source;
 
   // ─── Thinking overlay 阶段判断 ──────────────────────────

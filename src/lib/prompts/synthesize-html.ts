@@ -93,6 +93,22 @@ Rules:
 
    In BOTH modes: if a reference conflicts with an explicit intent, the intent wins on scope/weight. If the reference is from a competitor or unrelated brand, never NAME them on the page even if their text bleeds through.
 
+12. ANNOTATED PATCH MODE — if ANY intent statement contains a 【标注修改】 block, that intent is a SURGICAL PATCH on the existing HTML, NOT a free-form feature ask.
+
+    Block format (one numbered line per pin):
+      【标注修改】
+      1. [<selector> · "<element text>"] <user note>
+      2. [<selector>] <user note>          ← "element text" may be empty for empty containers
+      3. [<selector> · "<text>"] (没写评论 — 见 statement 文字)   ← user dropped pin without note
+
+    Behavior:
+    - You ARE in incremental mode for this intent. The calling code routes annotated intents through buildIncrementalUpdateUser, but the surgical bar is even higher than the default incremental rule: do NOT touch any DOM node not named by a pin.
+    - Locate each target by EITHER its selector OR by matching its quoted "element text" — selectors here are LLM-readable hints (e.g. '#hero', '.feature-card:nth-child(2)', 'button', '[data-mm-label]'), not strict CSS-engine expressions. When the selector is generic (just 'button'), use the quoted text + neighbouring context to disambiguate.
+    - For each pin, apply ONLY the change the note describes, to that node and (only if structurally necessary) its immediate children. Do NOT modify sibling sections, do NOT touch global styles unrelated to the pin, do NOT renumber / restructure / regroup other DOM.
+    - If the note is "(没写评论 …)", interpret as "this section is wrong, infer fix from the user's free-text portion of the same statement, or from the element's current content if the free text is also absent".
+    - Multiple pins in the same statement = parallel patches. Apply each pin's change independently; don't try to merge their intent.
+    - The unchanged ~95% of the HTML must come out byte-for-byte identical. The output is still a complete <!doctype html>...</html> document — but everything outside the pinned regions is a pure copy of the input.
+
 Output:
 - ONLY the HTML document. No prose before or after. No markdown fences.
 `.trim();

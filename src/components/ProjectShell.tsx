@@ -24,7 +24,7 @@ import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
 import IntentForm from '@/components/IntentForm';
 import AgentSpeakBar from '@/components/AgentSpeakBar';
-import ProjectCanvas from '@/components/ProjectCanvas';
+import ProjectCanvas, { type DarwinMarkAPI } from '@/components/ProjectCanvas';
 import TopbarControls from '@/components/TopbarControls';
 import VersionsPanel from '@/components/VersionsPanel';
 import CollaboratorsPanel from '@/components/CollaboratorsPanel';
@@ -261,6 +261,16 @@ export default function ProjectShell({
   const boardListRef = useRef<HTMLDivElement | null>(null);
   // Agent 反应进行中 → 阻断自动合成,防止分界线在 agent 意图可见前就定位
   const [agentsReacting, setAgentsReacting] = useState(false);
+
+  // 标注模式 — 用户点 IntentForm 的「标注」按钮翻 true, iframe 内 darwin-mark
+  // runtime 被激活, 用户可以点元素落 pin + 写评论;提交意图时把 pins 收走拼进 statement。
+  const [markMode, setMarkMode] = useState(false);
+  const markBridgeRef = useRef<DarwinMarkAPI | null>(null);
+  const onMarkBridge = useCallback((api: DarwinMarkAPI | null) => {
+    markBridgeRef.current = api;
+  }, []);
+  const readAnnotations = useCallback(() => markBridgeRef.current?.list() ?? [], []);
+  const clearAnnotations = useCallback(() => markBridgeRef.current?.clear(), []);
 
   // 兜底 polling: server fanOutToOtherAgents (lib/agent-react.ts:189) 让一个 agent 接话
   // 后再用 after() 触发其他 agent — 这一跳没 fetch response 回前端, pushIntent 抓不到。
@@ -1020,6 +1030,10 @@ export default function ProjectShell({
             currentUserShort={currentUser?.short ?? '我'}
             onAgentsReacting={setAgentsReacting}
             onIntentCreated={pushIntent}
+            markMode={markMode}
+            setMarkMode={setMarkMode}
+            readAnnotations={readAnnotations}
+            clearAnnotations={clearAnnotations}
           />
         </aside>
 
@@ -1125,6 +1139,8 @@ export default function ProjectShell({
                 setRecentSynthFailureAt(null);
                 setSynthFailureMsg(null);
               }}
+              markMode={markMode}
+              onMarkBridge={onMarkBridge}
             />
           </div>
         </section>

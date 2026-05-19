@@ -37,6 +37,14 @@ type Attachment = {
   linkTruncated?: boolean;
 };
 
+type DarwinAnnotation = {
+  id: number;
+  label: string;
+  selector: string;
+  text: string;
+  note: string;
+};
+
 export default function IntentForm({
   projectId,
   agents = [],
@@ -44,6 +52,10 @@ export default function IntentForm({
   currentUserShort = '我',
   onAgentsReacting,
   onIntentCreated,
+  markMode = false,
+  setMarkMode,
+  readAnnotations,
+  clearAnnotations,
 }: {
   projectId: string;
   agents?: Employee[];
@@ -56,6 +68,13 @@ export default function IntentForm({
    * 不依赖 router.refresh 等 RSC payload 异步派下来 — 否则会有 race 让自动合成抢跑。
    */
   onIntentCreated?: (intent: Intent) => void;
+  /** 标注模式状态 (父组件管理, 这里只读 + toggle) */
+  markMode?: boolean;
+  setMarkMode?: (on: boolean) => void;
+  /** 提交意图时从 iframe 读取当前 pins */
+  readAnnotations?: () => DarwinAnnotation[];
+  /** 提交成功后清空 iframe 内 pins */
+  clearAnnotations?: () => void;
 }) {
   const router = useRouter();
   const [statement, setStatement] = useState('');
@@ -253,7 +272,12 @@ export default function IntentForm({
   function submit() {
     setError(null);
     const trimmed = statement.trim();
-    if (!trimmed && attachments.length === 0) return;
+
+    // 标注模式: 提交时把 iframe 内的 pins 拼成 【标注修改】 块并入 statement
+    const annotations = markMode ? (readAnnotations?.() ?? []) : [];
+    const hasAnnotations = annotations.length > 0;
+
+    if (!trimmed && attachments.length === 0 && !hasAnnotations) return;
 
     // 拼附件内容到 statement: 用户文字优先, 附件附后, LLM 抽取 / 合成都能读到
     let finalStatement = trimmed;
@@ -276,17 +300,34 @@ export default function IntentForm({
           refs.push(`【参考文件: ${a.name}】${a.note ?? ''}`);
         }
       }
-      finalStatement = trimmed
-        ? `${trimmed}\n\n${refs.join('\n\n')}`
+      finalStatement = finalStatement
+        ? `${finalStatement}\n\n${refs.join('\n\n')}`
         : refs.join('\n\n');
     }
+
+    // 标注块: 每条 pin 一行, 给 LLM 看 selector + 元素文字 + 用户评论
+    if (hasAnnotations) {
+      const annBlock = '【标注修改】\n' + annotations.map((a, i) => {
+        const note = a.note || '(没写评论 — 见 statement 文字)';
+        const meta = a.text ? `${a.selector} · "${a.text}"` : a.selector;
+        return `${i + 1}. [${meta}] ${note}`;
+      }).join('\n');
+      finalStatement = finalStatement
+        ? `${finalStatement}\n\n${annBlock}`
+        : annBlock;
+    }
+
+    // 标注 intent 显式给 type/scope/weight, 跳过 LLM 抽取 (省 500ms + 避免抽错位)
+    const explicitMeta = hasAnnotations
+      ? { type: 'Constraint' as const, scope: 'global', weight: 'must' as const }
+      : {};
 
     startTransition(async () => {
       try {
         const res = await fetch(`/api/projects/${projectId}/intents`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ statement: finalStatement }),
+          body: JSON.stringify({ statement: finalStatement, ...explicitMeta }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) {
@@ -295,6 +336,11 @@ export default function IntentForm({
         }
         setStatement('');
         setAttachments([]);
+        // 标注模式: 提交成功 → 清 pins + 退出标注模式
+        if (hasAnnotations) {
+          clearAnnotations?.();
+          setMarkMode?.(false);
+        }
         // 直接 push 到 client state (不等 RSC payload), 然后 router.refresh() 做 server 端的
         // 缓存失效。这样用户加的 intent < 1 帧就上看板。
         if (json.intent) onIntentCreated?.(json.intent as Intent);
@@ -408,12 +454,32 @@ export default function IntentForm({
             </svg>
             {attaching ? '读取中…' : '附件'}
           </button>
+          {setMarkMode && (
+            <button
+              type="button"
+              className={`quickbar-attach quickbar-mark${markMode ? ' is-on' : ''}`}
+              onClick={() => setMarkMode(!markMode)}
+              disabled={isPending}
+              title={markMode
+                ? '关闭标注 (再次点击离开标注模式; 已落 pin 不会丢, 提交时收走)'
+                : '进入标注模式: 在产物上点击元素 → 写评论 → 提交时一并发给 AI 做精准修复'}
+            >
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M7 1.5L8.65 5L12.5 5.55L9.75 8.25L10.4 12L7 10.25L3.6 12L4.25 8.25L1.5 5.55L5.35 5L7 1.5Z" strokeLinejoin="round" />
+              </svg>
+              {markMode ? '标注中' : '标注'}
+            </button>
+          )}
           <button
             type="button"
             className="quickbar-submit"
             disabled={
               isPending ||
-              (!statement.trim() && attachments.length === 0) ||
+              // 三种输入源都没东西 → 不让提交
+              (!statement.trim()
+                && attachments.length === 0
+                && !(markMode && (readAnnotations?.().length ?? 0) > 0)
+              ) ||
               // 有 URL 拉取中 → 不允许提交,否则 LLM 收到的是空链接
               attachments.some(a => a.linkFetchStatus === 'pending')
             }
