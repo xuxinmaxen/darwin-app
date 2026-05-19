@@ -18,7 +18,7 @@
  */
 
 import Link from 'next/link';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Intent } from '@/lib/types';
 import { TYPE_LABEL, TypeIcon, STATUS_LABEL } from '@/lib/type-meta';
 import IntentCard from '@/components/IntentCard';
@@ -54,6 +54,17 @@ function scopesForIntent(intent: Intent): ReadonlySet<string> {
   return new Set([head]);
 }
 
+/**
+ * 合并两组 intent: server 端 props 是 source of truth, client 已 push 但 server 还没
+ * 返回的也保留。dedup by id, 保持 server 顺序。
+ */
+function mergeIntentsById(serverList: Intent[], clientList: Intent[]): Intent[] {
+  const ids = new Set(serverList.map(i => i.id));
+  const onlyClient = clientList.filter(i => !ids.has(i.id));
+  if (onlyClient.length === 0) return serverList;
+  return [...serverList, ...onlyClient];
+}
+
 function intentMatchesSectionScope(intent: Intent, sectionScope: string): boolean {
   if (intent.scope === 'global') return true;
   return intent.scope === sectionScope || intent.scope.startsWith(sectionScope + '.');
@@ -61,7 +72,7 @@ function intentMatchesSectionScope(intent: Intent, sectionScope: string): boolea
 
 export default function ProjectShell({
   project,
-  intents,
+  intents: initialIntents,
   claudeReady,
   initialVersion,
   versionsTotal: initialVersionsTotal,
@@ -84,6 +95,19 @@ export default function ProjectShell({
   currentUser?: CurrentUserMini;
 }) {
   // ─── State ─────────────────────────────────────────────
+  // intents 提升为 local state — RSC payload 到达是异步的, 用 router.refresh()
+  // 等 RSC 派下来会有 100-500ms 窗口期, 期间 client 看到的还是旧 intents,
+  // 导致 (a) agent intent 不实时显示 (b) 自动合成抢跑用错误的 intent 集合。
+  // 这里 API 响应里拿到的 intent 直接 push 进 state, 不依赖 RSC payload。
+  // RSC 派下新 props (用户 reload / 路由切换) 时再 merge 一次, props 是 source of truth。
+  const [intents, setIntents] = useState<Intent[]>(initialIntents);
+  useEffect(() => {
+    setIntents(prev => mergeIntentsById(initialIntents, prev));
+  }, [initialIntents]);
+  const pushIntent = useCallback((intent: Intent) => {
+    setIntents(prev => (prev.some(i => i.id === intent.id) ? prev : [...prev, intent]));
+  }, []);
+
   const [hoveredIntentId, setHoveredIntentId] = useState<string | null>(null);
   const [hoveredSectionScope, setHoveredSectionScope] = useState<string | null>(null);
   const [traceMode, setTraceMode] = useState(false);
@@ -237,6 +261,28 @@ export default function ProjectShell({
   const boardListRef = useRef<HTMLDivElement | null>(null);
   // Agent 反应进行中 → 阻断自动合成,防止分界线在 agent 意图可见前就定位
   const [agentsReacting, setAgentsReacting] = useState(false);
+  // 最近一次本地 mutation (POST intent / agent-react spoke) 的时间戳, 用来 gate polling
+  const [lastMutationAt, setLastMutationAt] = useState(0);
+  const markMutation = useCallback(() => setLastMutationAt(Date.now()), []);
+
+  // 兜底 polling: server fanOutToOtherAgents (lib/agent-react.ts:189) 让一个 agent 接话
+  // 后再用 after() 触发其他 agent — 这一跳没 fetch response 回前端, pushIntent 抓不到。
+  // 在 agentsReacting 或最近 30s 内有 mutation 时, 每 1.5s 拉 /intents merge 进 state。
+  useEffect(() => {
+    const recentlyMutated = Date.now() - lastMutationAt < 30_000;
+    if (!agentsReacting && !recentlyMutated) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/projects/${project.id}/intents`);
+        const j = await r.json();
+        if (cancelled || !j.ok) return;
+        setIntents(prev => mergeIntentsById(j.intents, prev));
+      } catch { /* swallow */ }
+    };
+    const t = setInterval(tick, 1500);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [agentsReacting, lastMutationAt, project.id]);
 
   // 冲突列表默认折叠, 点 statusbar 展开/收起 (多个 tension 时挤画布, 默认收起)
   const [tensionExpanded, setTensionExpanded] = useState<boolean>(false);
@@ -962,13 +1008,18 @@ export default function ProjectShell({
             )}
           </div>
 
-          <AgentSpeakBar projectId={project.id} agents={agentCollaborators} />
+          <AgentSpeakBar
+            projectId={project.id}
+            agents={agentCollaborators}
+            onIntentCreated={(intent) => { pushIntent(intent); markMutation(); }}
+          />
           <IntentForm
             projectId={project.id}
             agents={agentCollaborators}
             currentUserCls={currentUser?.cls ?? 'xu'}
             currentUserShort={currentUser?.short ?? '我'}
             onAgentsReacting={setAgentsReacting}
+            onIntentCreated={(intent) => { pushIntent(intent); markMutation(); }}
           />
         </aside>
 

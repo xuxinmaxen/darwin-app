@@ -12,6 +12,7 @@
 import { useState, useTransition, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Employee } from '@/lib/employees';
+import type { Intent } from '@/lib/types';
 
 // Agent 反应安全兜底: LLM 偶尔卡 20-30s, 给宽一点不要太早强制收尾。
 // 真实情况下 Promise.allSettled 会先 fire-and-forget 完成。
@@ -42,6 +43,7 @@ export default function IntentForm({
   currentUserCls = 'xu',
   currentUserShort = '我',
   onAgentsReacting,
+  onIntentCreated,
 }: {
   projectId: string;
   agents?: Employee[];
@@ -49,6 +51,11 @@ export default function IntentForm({
   currentUserShort?: string;
   /** Agent 反应进行中 (true) / 结束 (false),供父组件阻断自动合成 */
   onAgentsReacting?: (reacting: boolean) => void;
+  /**
+   * 拿到 API 返回的 intent 立刻调一次。父组件用它把 intent 同步到 client state,
+   * 不依赖 router.refresh 等 RSC payload 异步派下来 — 否则会有 race 让自动合成抢跑。
+   */
+  onIntentCreated?: (intent: Intent) => void;
 }) {
   const router = useRouter();
   const [statement, setStatement] = useState('');
@@ -222,6 +229,13 @@ export default function IntentForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ agentEmployeeId: a.id, triggerIntentId }),
       })
+        .then(r => r.json().catch(() => null))
+        .then(json => {
+          // spoke 时把 agent intent 直接进 client state — 不依赖 RSC payload
+          if (json?.ok && json.reaction === 'spoke' && json.intent) {
+            onIntentCreated?.(json.intent as Intent);
+          }
+        })
         .catch(() => {/* 单 agent 失败不致命 */})
         .finally(() => settle(a.id));
     }
@@ -281,6 +295,9 @@ export default function IntentForm({
         }
         setStatement('');
         setAttachments([]);
+        // 直接 push 到 client state (不等 RSC payload), 然后 router.refresh() 做 server 端的
+        // 缓存失效。这样用户加的 intent < 1 帧就上看板。
+        if (json.intent) onIntentCreated?.(json.intent as Intent);
         router.refresh();
         if (json.intent?.id) {
           fireAgentReactions(json.intent.id);

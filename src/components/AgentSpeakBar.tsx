@@ -12,13 +12,17 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Employee } from '@/lib/employees';
+import type { Intent } from '@/lib/types';
 
 export default function AgentSpeakBar({
   projectId,
   agents,
+  onIntentCreated,
 }: {
   projectId: string;
   agents: Employee[];
+  /** API 返回的 intent 立刻 push 给父组件, 不依赖 router.refresh RSC 异步派下 */
+  onIntentCreated?: (intent: Intent) => void;
 }) {
   const router = useRouter();
   const [speakingId, setSpeakingId] = useState<string | null>(null);
@@ -43,6 +47,7 @@ export default function AgentSpeakBar({
         setError(json.error || `请求失败 (${res.status})`);
         return;
       }
+      if (json.intent) onIntentCreated?.(json.intent as Intent);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
