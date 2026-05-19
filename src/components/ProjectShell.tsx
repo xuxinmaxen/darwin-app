@@ -261,18 +261,18 @@ export default function ProjectShell({
   const boardListRef = useRef<HTMLDivElement | null>(null);
   // Agent 反应进行中 → 阻断自动合成,防止分界线在 agent 意图可见前就定位
   const [agentsReacting, setAgentsReacting] = useState(false);
-  // 最近一次本地 mutation (POST intent / agent-react spoke) 的时间戳, 用来 gate polling
-  const [lastMutationAt, setLastMutationAt] = useState(0);
-  const markMutation = useCallback(() => setLastMutationAt(Date.now()), []);
 
   // 兜底 polling: server fanOutToOtherAgents (lib/agent-react.ts:189) 让一个 agent 接话
   // 后再用 after() 触发其他 agent — 这一跳没 fetch response 回前端, pushIntent 抓不到。
-  // 在 agentsReacting 或最近 30s 内有 mutation 时, 每 1.5s 拉 /intents merge 进 state。
+  // 只在 agentsReacting=true (用户加 intent 后 IntentForm 翻 true) 时跑, 所有 agent settle
+  // 后 IntentForm 翻 false → 这里 cleanup → polling 停。
+  // 注意: 不要用 "最近 mutation 时间" 这种永久 gate, 那会让 polling 跑下去, 让 Vercel
+  // function 池被打满 + 拖慢首页 SSR + POST /synthesize 排队超时。
   useEffect(() => {
-    const recentlyMutated = Date.now() - lastMutationAt < 30_000;
-    if (!agentsReacting && !recentlyMutated) return;
+    if (!agentsReacting) return;
     let cancelled = false;
     const tick = async () => {
+      if (cancelled) return;
       try {
         const r = await fetch(`/api/projects/${project.id}/intents`);
         const j = await r.json();
@@ -280,9 +280,9 @@ export default function ProjectShell({
         setIntents(prev => mergeIntentsById(j.intents, prev));
       } catch { /* swallow */ }
     };
-    const t = setInterval(tick, 1500);
+    const t = setInterval(tick, 3000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [agentsReacting, lastMutationAt, project.id]);
+  }, [agentsReacting, project.id]);
 
   // 冲突列表默认折叠, 点 statusbar 展开/收起 (多个 tension 时挤画布, 默认收起)
   const [tensionExpanded, setTensionExpanded] = useState<boolean>(false);
@@ -1011,7 +1011,7 @@ export default function ProjectShell({
           <AgentSpeakBar
             projectId={project.id}
             agents={agentCollaborators}
-            onIntentCreated={(intent) => { pushIntent(intent); markMutation(); }}
+            onIntentCreated={pushIntent}
           />
           <IntentForm
             projectId={project.id}
@@ -1019,7 +1019,7 @@ export default function ProjectShell({
             currentUserCls={currentUser?.cls ?? 'xu'}
             currentUserShort={currentUser?.short ?? '我'}
             onAgentsReacting={setAgentsReacting}
-            onIntentCreated={(intent) => { pushIntent(intent); markMutation(); }}
+            onIntentCreated={pushIntent}
           />
         </aside>
 
