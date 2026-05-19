@@ -1175,6 +1175,7 @@ body {
   font-size: 12.5px; color: var(--text); line-height: 1.55; margin-bottom: 9px;
   word-break: break-word;
   overflow-wrap: break-word;
+  white-space: pre-line; /* 【标注修改】块靠 \n 分行展示, 不能折成一坨 */
 }
 .intent-attach-row {
   display: flex; flex-wrap: wrap; gap: 5px;
@@ -1360,18 +1361,6 @@ body {
 .quickbar-mark.is-on:hover:not(:disabled) {
   color: #fff;
   background: linear-gradient(135deg, #4338CA 0%, #5950E0 100%);
-  border-color: transparent;
-}
-
-/* 生成意图按钮 — 仅在 markMode + pin > 0 时出现, 紫调描边强调可点状态 */
-.quickbar-generate {
-  color: var(--accent-text);
-  background: var(--accent-soft);
-  border-color: var(--accent-2);
-}
-.quickbar-generate:hover:not(:disabled) {
-  color: #fff;
-  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
   border-color: transparent;
 }
 

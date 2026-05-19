@@ -79,8 +79,6 @@ export default function IntentForm({
   const router = useRouter();
   const [statement, setStatement] = useState('');
   const [error, setError] = useState<string | null>(null);
-  // 当前 iframe 内的 pin 数 — darwin-mark.js render() 时 postMessage 广播过来
-  const [markCount, setMarkCount] = useState(0);
   const [isPending, startTransition] = useTransition();
   const [thinkingAgents, setThinkingAgents] = useState<Employee[]>([]);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,26 +218,27 @@ export default function IntentForm({
     };
   }, []);
 
-  // 听 darwin-mark.js 的 pin 数广播 (window.parent.postMessage), 用来切「生成意图 ✦N」状态。
-  // 标注模式关闭后 pin 数也归零, 让按钮自然消失。
+  // 听 darwin-mark.js 在标注面板里点「生成意图」时发的广播 → 把 pins 拼成
+  // 【标注修改】 块, 写进 statement 输入框。
   useEffect(() => {
     function onMsg(e: MessageEvent) {
       const d = e.data;
-      if (d && typeof d === 'object' && d.type === 'darwin-mark/count' && typeof d.n === 'number') {
-        setMarkCount(d.n);
+      if (d && typeof d === 'object' && d.type === 'darwin-mark/generate-intent') {
+        generateIntentFromMarks();
       }
     }
     window.addEventListener('message', onMsg);
     return () => window.removeEventListener('message', onMsg);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => {
-    if (!markMode) setMarkCount(0);
-  }, [markMode]);
 
   /**
    * 读 iframe 内 pins → 拼成 【标注修改】 块 → 插入/替换 statement。
    * 如果 statement 已经有 【标注修改】 块, 整块替换 (避免点多次累积重复块);
    * 没有 → 追加在末尾。
+   *
+   * 用 functional setStatement 是因为这个函数会被 iframe postMessage 监听器调到 —
+   * 监听器闭包捕获的 statement 是装载时的值, 必须从 prev 拿最新。
    */
   function generateIntentFromMarks() {
     const anns = readAnnotations?.() ?? [];
@@ -254,17 +253,12 @@ export default function IntentForm({
       return `${i + 1}. [${meta}] ${note}`;
     }).join('\n');
 
-    const existing = statement;
-    const hasBlock = /【标注修改】[\s\S]*?(?=\n\n|$)/.test(existing);
-    let next: string;
-    if (hasBlock) {
-      next = existing.replace(/【标注修改】[\s\S]*?(?=\n\n|$)/, block);
-    } else if (existing.trim()) {
-      next = `${existing.trimEnd()}\n\n${block}`;
-    } else {
-      next = block;
-    }
-    setStatement(next);
+    setStatement(prev => {
+      const hasBlock = /【标注修改】[\s\S]*?(?=\n\n|$)/.test(prev);
+      if (hasBlock) return prev.replace(/【标注修改】[\s\S]*?(?=\n\n|$)/, block);
+      if (prev.trim()) return `${prev.trimEnd()}\n\n${block}`;
+      return block;
+    });
   }
 
   function fireAgentReactions(triggerIntentId: string) {
@@ -503,20 +497,6 @@ export default function IntentForm({
                 <path d="M7 1.5L8.65 5L12.5 5.55L9.75 8.25L10.4 12L7 10.25L3.6 12L4.25 8.25L1.5 5.55L5.35 5L7 1.5Z" strokeLinejoin="round" />
               </svg>
               {markMode ? '标注中' : '标注'}
-            </button>
-          )}
-          {markMode && markCount > 0 && (
-            <button
-              type="button"
-              className="quickbar-attach quickbar-generate"
-              onClick={generateIntentFromMarks}
-              disabled={isPending}
-              title={`把当前 ${markCount} 条标注拼成意图块, 写入输入框 (再点会覆盖旧块)`}
-            >
-              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
-                <path d="M3 7h8M7 3l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              生成意图 ✦{markCount}
             </button>
           )}
           <button

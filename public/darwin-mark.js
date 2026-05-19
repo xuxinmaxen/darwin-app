@@ -406,6 +406,10 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   font-size: 11px; color: #908a85;
   line-height: 1.4;
 }
+.mm-foot-actions {
+  display: flex; gap: 6px; align-items: center;
+  flex-shrink: 0;
+}
 .mm-fmt-select {
   background: rgba(255,255,255,0.82);
   border: 1px solid rgba(255,255,255,0.88);
@@ -501,8 +505,11 @@ body.mm-on .mm-pin { cursor: pointer !important; }
     '<div class="mm-panel-body">' +
     '  <div class="mm-list" id="mm-list"></div>' +
     '  <div class="mm-panel-foot">' +
-    '    <span class="mm-foot-hint">点意图输入框旁「生成意图」一键写入</span>' +
-    '    <button class="mm-btn" id="mm-clear">清空</button>' +
+    '    <span class="mm-foot-hint">写完评论 → 生成意图 → 提交</span>' +
+    '    <div class="mm-foot-actions">' +
+    '      <button class="mm-btn" id="mm-clear">清空</button>' +
+    '      <button class="mm-btn primary" id="mm-generate" title="把标注列表拼成意图块, 写入下方输入框">生成意图</button>' +
+    '    </div>' +
     '  </div>' +
     '</div>';
 
@@ -518,6 +525,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 
     document.getElementById('mm-clear').addEventListener('click', clearAll);
     document.getElementById('mm-collapse').addEventListener('click', togglePanelCollapse);
+    document.getElementById('mm-generate').addEventListener('click', requestGenerate);
 
     setupPanelDrag();
     document.addEventListener('click', handleClick, true);
@@ -763,13 +771,36 @@ body.mm-on .mm-pin { cursor: pointer !important; }
     render();
   }
 
+  // 「生成意图」按钮 → 通知父页把当前 pin 列表拼成 【标注修改】 块写入意图输入框。
+  // 拼装逻辑在父页 (IntentForm) 做, 因为只有它能 setStatement / 处理输入框焦点。
+  // 子页只负责"宣告意图" + 用 toast 给个手感反馈。
+  function requestGenerate() {
+    if (annotations.length === 0) {
+      showToast('还没在产物上点 pin');
+      return;
+    }
+    try {
+      window.parent.postMessage({ type: 'darwin-mark/generate-intent' }, '*');
+      showToast('已写入意图输入框 → 检查后点提交');
+    } catch {
+      showToast('生成失败: 找不到父页');
+    }
+  }
+
   // ---------- Render ----------
   function render() {
     document.getElementById('mm-count').textContent = annotations.length;
-    // 广播 pin 数给 Darwin 父页, 让 IntentForm 显示「生成意图 ✦N」按钮
+    // 广播 pin 数给 Darwin 父页 (兼容: 父页用作启用/禁用其它 UI)
     try {
       window.parent.postMessage({ type: 'darwin-mark/count', n: annotations.length }, '*');
     } catch { /* iframe 单独打开或 origin 错也 OK */ }
+    // 没 pin 时禁用「生成意图」按钮, 视觉提示用户先去落 pin
+    const genBtn = document.getElementById('mm-generate');
+    if (genBtn) {
+      genBtn.disabled = annotations.length === 0;
+      genBtn.style.opacity = annotations.length === 0 ? '0.5' : '';
+      genBtn.style.cursor = annotations.length === 0 ? 'not-allowed' : '';
+    }
     const list = document.getElementById('mm-list');
     if (annotations.length === 0) {
       list.innerHTML =

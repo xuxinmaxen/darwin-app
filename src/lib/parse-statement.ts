@@ -14,6 +14,12 @@ const ATTACH_NAME_RE = /【参考文件:\s*([^】]+)】/g;
 const IMAGE_NAME_RE = /【参考图片:\s*([^】]+)】/g;
 const IMPORT_REF_RE = /【导入参考(?:\s*\(([^)]*)\))?】/g;
 /**
+ * 【标注修改】块: 用户标注的元素文本里可能包含 【...】 子串 (比如产物把
+ * "【导入参考 (HTML)】..." 直接渲染成可见文字, pin 中的 element text 就会带这串).
+ * 必须先把整个 patch block 从 raw 里挖掉再扫 attach marker, 否则会被误切。
+ */
+const ANNOT_BLOCK_RE = /【标注修改】[\s\S]*?(?=\n\n【(?:参考文件|导入参考|参考链接|参考图片)|$)/;
+/**
  * 【参考链接】块两种形态:
  *   (ok)      【参考链接】来源: <url>\n标题: <title>\n\n<body...>
  *   (fail/初) 【参考链接】<url>\n(pending/失败原因)
@@ -41,24 +47,40 @@ function safeHost(url: string): string {
 }
 
 export function parseStatementForDisplay(raw: string): ParsedStatement {
-  const firstMatch = raw.search(ATTACH_MARKER_RE);
-  const userText = (firstMatch >= 0 ? raw.slice(0, firstMatch) : raw).trim();
+  // 先把 【标注修改】 块从 raw 里挖掉, 再扫 attach marker。pin 里的 element text
+  // 经常含 【...】 子串, 不挖掉就会被 ATTACH_MARKER_RE 在 patch block 内部误切。
+  let annotBlock = '';
+  let scanSource = raw;
+  const annotMatch = raw.match(ANNOT_BLOCK_RE);
+  if (annotMatch && annotMatch.index !== undefined) {
+    annotBlock = annotMatch[0];
+    scanSource =
+      raw.slice(0, annotMatch.index) +
+      raw.slice(annotMatch.index + annotMatch[0].length);
+  }
 
+  const firstMatch = scanSource.search(ATTACH_MARKER_RE);
+  let userText = (firstMatch >= 0 ? scanSource.slice(0, firstMatch) : scanSource).trim();
+  if (annotBlock) {
+    userText = userText ? `${userText}\n\n${annotBlock}` : annotBlock;
+  }
+
+  // attach 扫描走 scanSource (已剥掉 annotBlock), 避免 pin 文本里的 【参考…】 被当成真附件
   const attachments: string[] = [];
-  for (const m of raw.matchAll(ATTACH_NAME_RE)) attachments.push(m[1].trim());
+  for (const m of scanSource.matchAll(ATTACH_NAME_RE)) attachments.push(m[1].trim());
 
   const images: string[] = [];
-  for (const m of raw.matchAll(IMAGE_NAME_RE)) images.push(m[1].trim());
+  for (const m of scanSource.matchAll(IMAGE_NAME_RE)) images.push(m[1].trim());
 
   const links: LinkRef[] = [];
   const seenUrls = new Set<string>();
-  for (const m of raw.matchAll(LINK_REF_FULL_RE)) {
+  for (const m of scanSource.matchAll(LINK_REF_FULL_RE)) {
     const url = m[1].trim();
     if (seenUrls.has(url)) continue;
     seenUrls.add(url);
     links.push({ url, title: m[2]?.trim() || null });
   }
-  for (const m of raw.matchAll(LINK_REF_SHORT_RE)) {
+  for (const m of scanSource.matchAll(LINK_REF_SHORT_RE)) {
     const url = m[1].trim();
     if (seenUrls.has(url)) continue;
     seenUrls.add(url);
@@ -66,7 +88,7 @@ export function parseStatementForDisplay(raw: string): ParsedStatement {
   }
 
   let hasImportRef = false;
-  for (const m of raw.matchAll(IMPORT_REF_RE)) {
+  for (const m of scanSource.matchAll(IMPORT_REF_RE)) {
     hasImportRef = true;
     if (m[1]) attachments.push(m[1].trim());
   }
