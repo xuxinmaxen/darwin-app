@@ -292,10 +292,6 @@ export function Sidebar({
           )}
         </Link>
       </nav>
-
-      <div className="ws-sidebar-foot">
-        <div>Darwin · v1</div>
-      </div>
     </aside>
   );
 }

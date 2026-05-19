@@ -1,5 +1,6 @@
 import { db, assertOk, newId, nowISO } from './db';
 import type { TeamPref, TeamPrefIconKey, AgentLearning, MemoryEvent } from './types';
+import { listLearningsAsEvents } from './learnings';
 
 type PrefRow = {
   id: string; owner_id: string; icon_key: string; category: string; body: string;
@@ -114,6 +115,14 @@ export async function listMemoryTimeline(ownerId: string, limit = 30): Promise<M
     events.push({ id: `emp:${e.id}`, kind: 'onboarding',
       body: isDigital ? `数字分身 **${e.name}** 入职团队` : `Agent **${e.name}** 入职团队`,
       meta: '员工管理 · 新增 Agent', date: e.created_at });
+  }
+  // 第 3 个 source: Agent 发布后学习记录 (employee_learnings 表)
+  // 单独走 listLearningsAsEvents (有自己的 JOIN), 失败时降级为空数组, 不阻断 timeline 主体
+  try {
+    const learningEvents = await listLearningsAsEvents(ownerId, limit);
+    events.push(...learningEvents);
+  } catch (err) {
+    console.warn('[team-memory] listLearningsAsEvents failed:', err);
   }
   events.sort((a, b) => (a.date < b.date ? 1 : -1));
   return events.slice(0, limit);

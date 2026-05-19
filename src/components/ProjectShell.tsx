@@ -1207,8 +1207,8 @@ export default function ProjectShell({
               </span>
               <span className="agent-learn-text">
                 {t.phase === 'learning'
-                  ? `${t.name} 正在吸收本项目的决策偏好…`
-                  : `${t.name} 已学习完成，偏好库已更新`}
+                  ? `${t.name} 正在从本项目学习…`
+                  : `${t.name} 已从本项目学习`}
               </span>
             </div>
           ))}

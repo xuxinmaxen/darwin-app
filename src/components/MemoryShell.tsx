@@ -44,12 +44,14 @@ const KIND_COLOR: Record<MemoryEvent['kind'], string> = {
   consensus: '#4F46E5',     // 紫
   'agent-event': '#06B6D4', // 青
   onboarding: '#94A3B8',    // 灰
+  learning: '#A78BFA',      // 浅紫 — 跟 consensus 同色系但更轻, 区分"学到"和"决定"
 };
 
 const KIND_LABEL: Record<MemoryEvent['kind'], string> = {
   consensus: '共识',
   'agent-event': 'Agent 互动',
   onboarding: '入职',
+  learning: '学习',
 };
 
 export default function MemoryShell({

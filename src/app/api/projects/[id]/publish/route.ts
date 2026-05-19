@@ -20,6 +20,7 @@ import { markPublished, getProject, listCollaborators } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { listTensions } from '@/lib/tensions';
 import { recomputeAgentTags } from '@/lib/agent-tags';
+import { learnFromProject } from '@/lib/agent-learn';
 
 const Body = z.object({ versionId: z.string().optional() });
 
@@ -66,17 +67,23 @@ export async function POST(req: Request, { params }: Params) {
       listCollaborators(id),
     ]);
 
-    // 发布后 fire-and-forget: 所有 Agent 协作者重新计算标签 (学习本项目的决策偏好)
+    // 发布后 fire-and-forget: 所有 Agent 协作者
+    //   (1) 重算短 tag (agent-tags) — 给员工卡片用
+    //   (2) 从本项目沉淀学习 (agent-learn) — 写入 employee_learnings, 喂团队记忆时间线
+    // 两条 LLM 调用并行跑, 单条失败不阻断另一条 (Promise.allSettled)。
     // 用 after() 而不是 setTimeout, 见 intents/route.ts 注释 (Vercel serverless freeze)。
     const agentCollaborators = collaborators.filter(c => c.kind === 'agent');
     if (agentCollaborators.length > 0) {
       after(async () => {
         await Promise.allSettled(
-          agentCollaborators.map(a =>
+          agentCollaborators.flatMap(a => [
             recomputeAgentTags(a.id).catch(err =>
               console.warn(`[publish] recomputeAgentTags(${a.id}) failed:`, err)
-            )
-          )
+            ),
+            learnFromProject(a.id, id).catch(err =>
+              console.warn(`[publish] learnFromProject(${a.id}, ${id}) failed:`, err)
+            ),
+          ])
         );
       });
     }

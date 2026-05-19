@@ -367,9 +367,6 @@ export default function NewProjectButton({
                     onChange={e => setImportUrl(e.target.value)}
                     disabled={isPending}
                   />
-                  <div className="field-hint" style={{ marginTop: 4, fontSize: 11, color: 'var(--text-3)' }}>
-                    创建后进入详情页, 点"开始合成"时 AI 会自动拉取该链接, 按其结构/文案复刻 v1, 后续用 Intent 微调。
-                  </div>
                 </div>
               )}
 

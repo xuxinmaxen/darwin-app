@@ -175,7 +175,7 @@ export type AgentLearning = {
   tagsIntentCount: number;
 };
 
-export type MemoryEventKind = 'consensus' | 'agent-event' | 'onboarding';
+export type MemoryEventKind = 'consensus' | 'agent-event' | 'onboarding' | 'learning';
 
 export type MemoryEvent = {
   id: string;
@@ -184,6 +184,20 @@ export type MemoryEvent = {
   meta: string;                // 上下文,如 "Human ⇄ Human · 项目X"
   date: string;                // ISO
   projectId?: string | null;
+};
+
+/**
+ * Agent 发布后从项目里沉淀的学习记录 (一条 = 一个 agent 对一个项目的最新理解)。
+ * UNIQUE(employee_id, project_id) — 同项目再发布会 UPSERT 而不是堆历史。
+ */
+export type EmployeeLearning = {
+  id: string;
+  employeeId: string;
+  projectId: string;
+  summary: string;             // 1-2 句, 第三人称 ("X 学到 ...")
+  highlights: string[];        // 2-5 条短语 chip
+  createdAt: string;
+  updatedAt: string;
 };
 
 /** Claude 抽取的原始输出（写库前的中间形态）*/
