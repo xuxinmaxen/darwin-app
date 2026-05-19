@@ -1,15 +1,17 @@
 /**
  * Agent 接话核心 logic — 给一个 Agent + 一条 trigger Intent, 决定 spoke/silent。
  *
- * Route handler (`/api/projects/:id/agent-react`) 是这个 helper 的 HTTP 包装;
- * helper 自己也用于 chain fan-out (一个 Agent 接话后, 异步通知其他 Agent 看看要不要接)。
+ * Route handler (`/api/projects/:id/agent-react`) 是这个 helper 的 HTTP 包装。
+ * 前端 IntentForm 用户加 intent 时会 client-side 并发触发每个 agent 走这条 route,
+ * 所以 fan-out 由前端完成, 服务端只 react 一次, 不递归触发其他 agent
+ * (历史上有过 server fanOutToOtherAgents, 导致 N agent → N² LLM 调用 + 第二跳
+ * intent 不可见, 已移除)。
  *
  * Server-only。
  */
 
 import { after } from 'next/server';
 import type { Intent } from './types';
-import type { Employee } from './employees';
 import { db } from './db';
 import { getProject, listCollaborators, bumpToCollaborating } from './projects';
 import { getEmployee } from './employees';
@@ -159,15 +161,9 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
 
     await bumpToCollaborating(input.projectId).catch(() => {});
 
-    // 链式 fan-out: Agent 写出新 Intent 后, 让其他 Agent 协作者各自再判断
-    // 是否还要接话。chain depth 兜底防无限链, self-trigger 防自我循环。
-    // 不 await: 不阻塞当前响应。
-    fanOutToOtherAgents({
-      projectId: input.projectId,
-      newIntentId: intent.id,
-      excludeAgentId: agent.id,
-      collaborators,
-    });
+    // 不再 server 端 fan-out 给其他 agent — 前端 IntentForm 已经 client-side
+    // 并发触发每个 agent 走这条 route, 再 fan-out 一次就是 N² LLM 调用 + 第二跳
+    // intent 在前端不可见 (response 不回前端, 用户得刷新才能看到)。
 
     // Agent 写的 must Intent 也可能引发 tension, 异步检测
     // 用 after() 而不是 setTimeout, 见 src/app/api/projects/[id]/intents/route.ts 注释。
@@ -189,33 +185,6 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
       error: `Agent 反应失败: ${err instanceof Error ? err.message : String(err)}`,
       status: 502,
     };
-  }
-}
-
-/** 给项目其他 Agent 协作者各开一个 react 协程, 不 await。 */
-function fanOutToOtherAgents(opts: {
-  projectId: string;
-  newIntentId: string;
-  excludeAgentId: string;
-  collaborators: Employee[];
-}) {
-  const otherAgents = opts.collaborators.filter(
-    c => c.kind === 'agent' && c.id !== opts.excludeAgentId
-  );
-  for (const a of otherAgents) {
-    // 用 after() 让当前 response 先返回再启 reactOnce, 避免 await 死锁;
-    // setTimeout 0 在 Vercel serverless 上会被 freeze 杀掉。
-    after(async () => {
-      try {
-        await reactOnce({
-          projectId: opts.projectId,
-          agentEmployeeId: a.id,
-          triggerIntentId: opts.newIntentId,
-        });
-      } catch {
-        /* 第二跳失败不影响第一跳 */
-      }
-    });
   }
 }
 

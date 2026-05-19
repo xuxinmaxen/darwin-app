@@ -687,6 +687,56 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   gap: 14px;
 }
+
+.ws-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-1);
+}
+.ws-pager-total {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ws-pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ws-pager-btn {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-1);
+  background: var(--bg-1);
+  color: var(--text-1);
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.ws-pager-btn:hover:not(:disabled) {
+  background: var(--bg-2);
+  border-color: var(--border-2);
+}
+.ws-pager-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ws-pager-btn.is-active {
+  background: var(--text-1);
+  color: var(--bg-1);
+  border-color: var(--text-1);
+}
+.ws-pager-gap {
+  padding: 0 4px;
+  color: var(--text-3);
+  font-size: 13px;
+  user-select: none;
+}
 .proj {
   background: var(--glass-bg-strong);
   backdrop-filter: blur(16px) saturate(140%);

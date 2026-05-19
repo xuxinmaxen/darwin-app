@@ -49,7 +49,15 @@ export default function WorkspaceShell({
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [page, setPage] = useState(1);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // 每页 20 张卡片 — 同时渲染上百张会让浏览器主线程卡死,
+  // 之前用户报"搜索没反应"的体感问题根因就是这个。
+  const PAGE_SIZE = 20;
+
+  // 搜索/筛选变化时回到第 1 页, 否则空结果会反复出现
+  useEffect(() => { setPage(1); }, [query, typeFilter, statusFilter]);
 
   useEffect(() => {
     function handler(e: KeyboardEvent) {
@@ -72,6 +80,13 @@ export default function WorkspaceShell({
       return true;
     });
   }, [projects, query, typeFilter, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const clampedPage = Math.min(page, totalPages);
+  const visible = useMemo(
+    () => filtered.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE),
+    [filtered, clampedPage]
+  );
 
   return (
     <div className="view-workspace">
@@ -187,21 +202,31 @@ export default function WorkspaceShell({
                 )}
               </div>
             ) : (
-              <div className="ws-projects">
-                {filtered.map(p => {
-                  const summary = summaries[p.id] ?? { count: 0 };
-                  return (
-                    <ProjectCard
-                      key={p.id}
-                      project={p}
-                      intentCount={summary.count}
-                      preview={summary.preview}
-                      collaborators={collaborators[p.id] ?? []}
-                      allEmployees={employees}
-                    />
-                  );
-                })}
-              </div>
+              <>
+                <div className="ws-projects">
+                  {visible.map(p => {
+                    const summary = summaries[p.id] ?? { count: 0 };
+                    return (
+                      <ProjectCard
+                        key={p.id}
+                        project={p}
+                        intentCount={summary.count}
+                        preview={summary.preview}
+                        collaborators={collaborators[p.id] ?? []}
+                        allEmployees={employees}
+                      />
+                    );
+                  })}
+                </div>
+                {totalPages > 1 && (
+                  <Pager
+                    page={clampedPage}
+                    totalPages={totalPages}
+                    total={filtered.length}
+                    onPage={setPage}
+                  />
+                )}
+              </>
             )}
 
           </section>
@@ -273,4 +298,75 @@ export function Sidebar({
       </div>
     </aside>
   );
+}
+
+/**
+ * 项目列表翻页条 — 显示页码 / 上下页, 简洁版本。
+ * 多于 7 页时, 中间用省略号塌缩, 永远显示首页 / 末页 / 当前页前后 1 页。
+ */
+function Pager({
+  page,
+  totalPages,
+  total,
+  onPage,
+}: {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  const pages = computePagerSlots(page, totalPages);
+  return (
+    <nav className="ws-pager" aria-label="项目列表分页">
+      <span className="ws-pager-total">共 {total} 个项目</span>
+      <div className="ws-pager-controls">
+        <button
+          type="button"
+          className="ws-pager-btn"
+          onClick={() => onPage(Math.max(1, page - 1))}
+          disabled={page <= 1}
+          aria-label="上一页"
+        >
+          ‹
+        </button>
+        {pages.map((p, i) =>
+          p === '…' ? (
+            <span key={`gap-${i}`} className="ws-pager-gap">…</span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              className={`ws-pager-btn${p === page ? ' is-active' : ''}`}
+              onClick={() => onPage(p)}
+              aria-current={p === page ? 'page' : undefined}
+            >
+              {p}
+            </button>
+          )
+        )}
+        <button
+          type="button"
+          className="ws-pager-btn"
+          onClick={() => onPage(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+          aria-label="下一页"
+        >
+          ›
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+/** [1, 2, '…', 7, 8, 9, '…', 20] 样式 — 当前页前后各 1 个 + 首末页 */
+function computePagerSlots(page: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set<number>([1, total, page - 1, page, page + 1]);
+  const list = [...set].filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  for (let i = 0; i < list.length; i++) {
+    out.push(list[i]);
+    if (i < list.length - 1 && list[i + 1] - list[i] > 1) out.push('…');
+  }
+  return out;
 }
