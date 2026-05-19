@@ -80,6 +80,31 @@ npm run build  # 生产构建
 npm run start  # 启动生产 server
 ```
 
+## Git 与部署（本项目专属，覆盖全局规则）
+
+> 全局 `~/.claude/CLAUDE.md ## Git 与部署` 默认要求"等用户说才 push / 部署"。
+> 在 Darwin 项目里**反过来**：改完默认直接推 + 部署，不再问。
+
+代码改动结束 + 本地 `npm run build` 通过后，**直接按序执行**（不要在中间停下问"要不要推/部署"）：
+
+```bash
+git add <具体文件名>                                              # 不用 -A
+git commit -m "<英文 message>"                                    # 简洁动作动词
+git push origin main
+vercel --prod --yes
+vercel alias set <返回的 deployment URL> darwin.org.cn
+```
+
+最后把 deployment URL + alias 后的 darwin.org.cn 一起回报。
+
+**例外（仍要先停下来确认）：**
+- 改了 schema / 删表 / 删字段 / 删旧数据
+- 改了环境变量或 secrets
+- 删除已上线功能 / 改了对外 API 契约
+- 大重构（≥ 5 个文件 + 跨模块）
+
+**docs-only 改动（CLAUDE.md / README / docs/）：** 只 commit + push，不跑 vercel——没有运行时影响。
+
 ## 演进路径
 
 - **v0** ✅ 静态 mock demo (`/demo` 路径)
