@@ -33,9 +33,9 @@ body.mm-on .mm-note-pop textarea { cursor: text !important; }
 body.mm-on .mm-pin { cursor: pointer !important; }
 
 .mm-target-hl {
-  outline: 2px solid rgba(255,141,107,0.85) !important;
+  outline: 2px solid rgba(79, 70, 229,0.85) !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 6px rgba(255,141,107,0.14) !important;
+  box-shadow: 0 0 0 6px rgba(79, 70, 229,0.14) !important;
   transition: outline 0.15s ease, box-shadow 0.15s ease !important;
 }
 
@@ -74,13 +74,13 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   transition: background 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
 .mm-toggle.on .mm-toggle-dot {
-  background: linear-gradient(135deg, #ff8d6b 0%, #ffaf7a 50%, #ffd29c 100%);
-  box-shadow: 0 0 14px rgba(255,141,107,0.95), 0 0 5px rgba(255,200,144,0.7);
+  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 50%, #C7D2FE 100%);
+  box-shadow: 0 0 14px rgba(79, 70, 229,0.95), 0 0 5px rgba(99, 102, 241,0.7);
   transform: scale(1.15);
 }
 .mm-toggle.on .mm-toggle-txt {
-  color: #ffd29c;
-  text-shadow: 0 0 10px rgba(255,141,107,0.55);
+  color: #C7D2FE;
+  text-shadow: 0 0 10px rgba(79, 70, 229,0.55);
 }
 
 /* ---------- Pin: gradient orb ---------- */
@@ -92,7 +92,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 .mm-pin {
   position: absolute;
   width: 22px; height: 22px;
-  background: linear-gradient(135deg, #ff8d6b 0%, #ffaf7a 55%, #ffc890 100%);
+  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 55%, #A5B4FC 100%);
   color: #fff;
   border: 2px solid rgba(255,255,255,0.95);
   border-radius: 50%;
@@ -100,8 +100,8 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   font-size: 11.5px; font-weight: 700; line-height: 1;
   z-index: 2147483500;
   box-shadow:
-    0 4px 12px rgba(255,141,107,0.45),
-    0 1px 2px rgba(255,141,107,0.25),
+    0 4px 12px rgba(79, 70, 229,0.45),
+    0 1px 2px rgba(79, 70, 229,0.25),
     inset 0 1px 0 rgba(255,255,255,0.55);
   transition: transform 0.18s cubic-bezier(0.22,1,0.36,1), box-shadow 0.18s ease, border-color 0.18s ease;
   user-select: none;
@@ -111,22 +111,22 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 .mm-pin:hover, .mm-pin.mm-pin-hl {
   transform: scale(1.22);
   box-shadow:
-    0 6px 18px rgba(255,141,107,0.55),
-    0 1px 2px rgba(255,141,107,0.3),
+    0 6px 18px rgba(79, 70, 229,0.55),
+    0 1px 2px rgba(79, 70, 229,0.3),
     inset 0 1px 0 rgba(255,255,255,0.65);
 }
 .mm-pin.mm-pin-active {
   box-shadow:
-    0 0 0 4px rgba(255,141,107,0.32),
-    0 6px 16px rgba(255,141,107,0.5),
+    0 0 0 4px rgba(79, 70, 229,0.32),
+    0 6px 16px rgba(79, 70, 229,0.5),
     inset 0 1px 0 rgba(255,255,255,0.65);
 }
 .mm-pin.mm-has-note::after {
   content: ''; position: absolute; top: -3px; right: -3px;
   width: 9px; height: 9px; border-radius: 50%;
-  background: linear-gradient(135deg, #ffd29c, #ffaf7a);
+  background: linear-gradient(135deg, #C7D2FE, #6366F1);
   border: 1.5px solid #fff;
-  box-shadow: 0 0 6px rgba(255,175,122,0.75);
+  box-shadow: 0 0 6px rgba(99, 102, 241,0.75);
 }
 .mm-pin-del {
   position: absolute; top: -7px; right: -7px;
@@ -149,14 +149,14 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 .mm-note-pop {
   position: absolute;
   width: 300px;
-  background: linear-gradient(155deg, rgba(255,255,255,0.72) 0%, rgba(255,240,225,0.46) 100%);
+  background: linear-gradient(155deg, rgba(255,255,255,0.72) 0%, rgba(238, 240, 255,0.46) 100%);
   border: 1px solid rgba(255,255,255,0.78);
   border-radius: 14px;
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   box-shadow:
-    0 18px 48px rgba(255,141,107,0.22),
-    0 2px 4px rgba(255,141,107,0.08),
+    0 18px 48px rgba(79, 70, 229,0.22),
+    0 2px 4px rgba(79, 70, 229,0.08),
     inset 0 1px 0 rgba(255,255,255,0.95),
     inset 0 0 0 1px rgba(255,255,255,0.1);
   padding: 12px;
@@ -168,7 +168,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 }
 .mm-note-pop::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,141,107,0.7), rgba(255,210,156,0.7), transparent);
+  background: linear-gradient(90deg, transparent, rgba(79, 70, 229,0.7), rgba(99, 102, 241,0.7), transparent);
   pointer-events: none;
 }
 .mm-note-pop > * { position: relative; z-index: 1; }
@@ -188,7 +188,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   width: 100%; min-height: 68px; max-height: 200px;
   resize: vertical;
   background: rgba(255,255,255,0.88);
-  border: 1px solid rgba(255,200,170,0.45);
+  border: 1px solid rgba(165, 180, 252,0.45);
   border-radius: 8px;
   padding: 9px 11px;
   font-size: 13px; line-height: 1.5;
@@ -198,9 +198,9 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   font-family: inherit;
 }
 .mm-note-pop textarea:focus {
-  border-color: rgba(255,141,107,0.7);
+  border-color: rgba(79, 70, 229,0.7);
   background: rgba(255,255,255,0.98);
-  box-shadow: 0 0 0 3px rgba(255,141,107,0.14);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229,0.14);
 }
 .mm-note-pop textarea::placeholder { color: #b8b0a8; }
 .mm-note-pop-hint {
@@ -220,14 +220,14 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 .mm-panel {
   position: fixed; right: 20px; bottom: 20px;
   width: 348px; max-height: 60vh;
-  background: linear-gradient(155deg, rgba(255,255,255,0.72) 0%, rgba(255,240,225,0.42) 100%);
+  background: linear-gradient(155deg, rgba(255,255,255,0.72) 0%, rgba(238, 240, 255,0.42) 100%);
   border: 1px solid rgba(255,255,255,0.78);
   border-radius: 16px;
   backdrop-filter: blur(28px) saturate(160%);
   -webkit-backdrop-filter: blur(28px) saturate(160%);
   box-shadow:
-    0 20px 56px rgba(255,141,107,0.18),
-    0 2px 4px rgba(255,141,107,0.06),
+    0 20px 56px rgba(79, 70, 229,0.18),
+    0 2px 4px rgba(79, 70, 229,0.06),
     inset 0 1px 0 rgba(255,255,255,0.95),
     inset 0 0 0 1px rgba(255,255,255,0.08);
   z-index: 2147483550;
@@ -238,7 +238,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 }
 .mm-panel::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,141,107,0.7), rgba(255,210,156,0.7), transparent);
+  background: linear-gradient(90deg, transparent, rgba(79, 70, 229,0.7), rgba(99, 102, 241,0.7), transparent);
   pointer-events: none; z-index: 2;
 }
 .mm-panel.show { display: flex; }
@@ -298,8 +298,8 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   max-height: calc(60vh - 110px);
 }
 .mm-list::-webkit-scrollbar { width: 6px; }
-.mm-list::-webkit-scrollbar-thumb { background: rgba(255,141,107,0.3); border-radius: 3px; }
-.mm-list::-webkit-scrollbar-thumb:hover { background: rgba(255,141,107,0.5); }
+.mm-list::-webkit-scrollbar-thumb { background: rgba(79, 70, 229,0.3); border-radius: 3px; }
+.mm-list::-webkit-scrollbar-thumb:hover { background: rgba(79, 70, 229,0.5); }
 
 .mm-item {
   display: flex; gap: 10px;
@@ -318,17 +318,17 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   background: rgba(255,255,255,0.88);
   border-color: rgba(255,255,255,0.88);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(255,141,107,0.15);
+  box-shadow: 0 4px 14px rgba(79, 70, 229,0.15);
 }
 .mm-item.active {
-  border-color: rgba(255,141,107,0.55);
+  border-color: rgba(79, 70, 229,0.55);
   background: rgba(255,255,255,0.94);
-  box-shadow: 0 0 0 2px rgba(255,141,107,0.18);
+  box-shadow: 0 0 0 2px rgba(79, 70, 229,0.18);
 }
 .mm-item.has-note::before {
   content: ''; position: absolute; left: 0; top: 0; bottom: 0;
   width: 3px;
-  background: linear-gradient(180deg, #ff8d6b, #ffd29c);
+  background: linear-gradient(180deg, #4F46E5, #C7D2FE);
 }
 .mm-item-num {
   width: 22px; height: 22px;
@@ -377,7 +377,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 .mm-item:hover .mm-item-del { display: block; }
 .mm-item-del:hover {
   color: #e8633c;
-  background: rgba(255,141,107,0.1);
+  background: rgba(79, 70, 229,0.1);
 }
 
 .mm-empty {
@@ -419,7 +419,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   font-family: inherit;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.mm-fmt-select:focus, .mm-fmt-select:hover { border-color: rgba(255,141,107,0.5); background: rgba(255,255,255,0.98); }
+.mm-fmt-select:focus, .mm-fmt-select:hover { border-color: rgba(79, 70, 229,0.5); background: rgba(255,255,255,0.98); }
 .mm-btn {
   height: 32px; padding: 0 14px;
   border-radius: 7px;
@@ -433,20 +433,20 @@ body.mm-on .mm-pin { cursor: pointer !important; }
 .mm-btn:hover {
   color: #1f1c1a;
   background: rgba(255,255,255,0.98);
-  border-color: rgba(255,141,107,0.4);
+  border-color: rgba(79, 70, 229,0.4);
 }
 .mm-btn.primary {
-  background: linear-gradient(135deg, #ff8d6b 0%, #ffaf7a 55%, #ffd29c 100%);
+  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 55%, #C7D2FE 100%);
   color: #fff;
   border-color: transparent;
   flex: 1;
-  box-shadow: 0 4px 14px rgba(255,141,107,0.32), inset 0 1px 0 rgba(255,255,255,0.35);
+  box-shadow: 0 4px 14px rgba(79, 70, 229,0.32), inset 0 1px 0 rgba(255,255,255,0.35);
   text-shadow: 0 1px 1px rgba(180,80,40,0.2);
 }
 .mm-btn.primary:hover {
-  background: linear-gradient(135deg, #ff7a55 0%, #ff9c64 55%, #ffc890 100%);
+  background: linear-gradient(135deg, #4338CA 0%, #ff9c64 55%, #A5B4FC 100%);
   color: #fff;
-  box-shadow: 0 6px 20px rgba(255,141,107,0.45), inset 0 1px 0 rgba(255,255,255,0.4);
+  box-shadow: 0 6px 20px rgba(79, 70, 229,0.45), inset 0 1px 0 rgba(255,255,255,0.4);
   border-color: transparent;
 }
 
@@ -501,7 +501,7 @@ body.mm-on .mm-pin { cursor: pointer !important; }
     '<div class="mm-panel-body">' +
     '  <div class="mm-list" id="mm-list"></div>' +
     '  <div class="mm-panel-foot">' +
-    '    <span class="mm-foot-hint">提交意图时自动收走</span>' +
+    '    <span class="mm-foot-hint">点意图输入框旁「生成意图」一键写入</span>' +
     '    <button class="mm-btn" id="mm-clear">清空</button>' +
     '  </div>' +
     '</div>';
@@ -510,11 +510,12 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   toast.className = 'mm-toast mm-ui';
 
   function init() {
-    document.body.appendChild(toggle);
+    // 不渲染 iframe 内的 toggle pill — Darwin 项目详情页已经有 IntentForm 的"标注"按钮
+    // 控制开关, iframe 里再展示一个会重复, 用户也会困惑该点哪个。
+    // toggle 元素仍创建出来(留在内存), toggleMarkMode 内的 classList/textContent 操作不会 throw。
     document.body.appendChild(panel);
     document.body.appendChild(toast);
 
-    toggle.addEventListener('click', toggleMarkMode);
     document.getElementById('mm-clear').addEventListener('click', clearAll);
     document.getElementById('mm-collapse').addEventListener('click', togglePanelCollapse);
 
@@ -765,6 +766,10 @@ body.mm-on .mm-pin { cursor: pointer !important; }
   // ---------- Render ----------
   function render() {
     document.getElementById('mm-count').textContent = annotations.length;
+    // 广播 pin 数给 Darwin 父页, 让 IntentForm 显示「生成意图 ✦N」按钮
+    try {
+      window.parent.postMessage({ type: 'darwin-mark/count', n: annotations.length }, '*');
+    } catch { /* iframe 单独打开或 origin 错也 OK */ }
     const list = document.getElementById('mm-list');
     if (annotations.length === 0) {
       list.innerHTML =

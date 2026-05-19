@@ -79,6 +79,8 @@ export default function IntentForm({
   const router = useRouter();
   const [statement, setStatement] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // 当前 iframe 内的 pin 数 — darwin-mark.js render() 时 postMessage 广播过来
+  const [markCount, setMarkCount] = useState(0);
   const [isPending, startTransition] = useTransition();
   const [thinkingAgents, setThinkingAgents] = useState<Employee[]>([]);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -218,6 +220,53 @@ export default function IntentForm({
     };
   }, []);
 
+  // 听 darwin-mark.js 的 pin 数广播 (window.parent.postMessage), 用来切「生成意图 ✦N」状态。
+  // 标注模式关闭后 pin 数也归零, 让按钮自然消失。
+  useEffect(() => {
+    function onMsg(e: MessageEvent) {
+      const d = e.data;
+      if (d && typeof d === 'object' && d.type === 'darwin-mark/count' && typeof d.n === 'number') {
+        setMarkCount(d.n);
+      }
+    }
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+  useEffect(() => {
+    if (!markMode) setMarkCount(0);
+  }, [markMode]);
+
+  /**
+   * 读 iframe 内 pins → 拼成 【标注修改】 块 → 插入/替换 statement。
+   * 如果 statement 已经有 【标注修改】 块, 整块替换 (避免点多次累积重复块);
+   * 没有 → 追加在末尾。
+   */
+  function generateIntentFromMarks() {
+    const anns = readAnnotations?.() ?? [];
+    if (anns.length === 0) {
+      setError('还没在产物上点 pin');
+      setTimeout(() => setError(null), 2400);
+      return;
+    }
+    const block = '【标注修改】\n' + anns.map((a, i) => {
+      const note = a.note || '(没写评论 — 见 statement 文字)';
+      const meta = a.text ? `${a.selector} · "${a.text}"` : a.selector;
+      return `${i + 1}. [${meta}] ${note}`;
+    }).join('\n');
+
+    const existing = statement;
+    const hasBlock = /【标注修改】[\s\S]*?(?=\n\n|$)/.test(existing);
+    let next: string;
+    if (hasBlock) {
+      next = existing.replace(/【标注修改】[\s\S]*?(?=\n\n|$)/, block);
+    } else if (existing.trim()) {
+      next = `${existing.trimEnd()}\n\n${block}`;
+    } else {
+      next = block;
+    }
+    setStatement(next);
+  }
+
   function fireAgentReactions(triggerIntentId: string) {
     if (agents.length === 0) return;
     setThinkingAgents(agents);
@@ -273,11 +322,11 @@ export default function IntentForm({
     setError(null);
     const trimmed = statement.trim();
 
-    // 标注模式: 提交时把 iframe 内的 pins 拼成 【标注修改】 块并入 statement
-    const annotations = markMode ? (readAnnotations?.() ?? []) : [];
-    const hasAnnotations = annotations.length > 0;
+    // 标注 intent: 看 statement 里是不是已经有 【标注修改】 块 (用户点过「生成意图」)。
+    // 不再在提交时自动从 iframe 收 pin — 由用户显式控制何时写入。
+    const hasAnnotations = /【标注修改】/.test(trimmed);
 
-    if (!trimmed && attachments.length === 0 && !hasAnnotations) return;
+    if (!trimmed && attachments.length === 0) return;
 
     // 拼附件内容到 statement: 用户文字优先, 附件附后, LLM 抽取 / 合成都能读到
     let finalStatement = trimmed;
@@ -305,19 +354,8 @@ export default function IntentForm({
         : refs.join('\n\n');
     }
 
-    // 标注块: 每条 pin 一行, 给 LLM 看 selector + 元素文字 + 用户评论
-    if (hasAnnotations) {
-      const annBlock = '【标注修改】\n' + annotations.map((a, i) => {
-        const note = a.note || '(没写评论 — 见 statement 文字)';
-        const meta = a.text ? `${a.selector} · "${a.text}"` : a.selector;
-        return `${i + 1}. [${meta}] ${note}`;
-      }).join('\n');
-      finalStatement = finalStatement
-        ? `${finalStatement}\n\n${annBlock}`
-        : annBlock;
-    }
-
-    // 标注 intent 显式给 type/scope/weight, 跳过 LLM 抽取 (省 500ms + 避免抽错位)
+    // 标注 intent (statement 里已含 【标注修改】 块) 显式给 type/scope/weight,
+    // 跳过 LLM 抽取 (省 500ms + 避免抽错位)
     const explicitMeta = hasAnnotations
       ? { type: 'Constraint' as const, scope: 'global', weight: 'must' as const }
       : {};
@@ -336,11 +374,8 @@ export default function IntentForm({
         }
         setStatement('');
         setAttachments([]);
-        // 标注模式: 提交成功 → 清 pins + 退出标注模式
-        if (hasAnnotations) {
-          clearAnnotations?.();
-          setMarkMode?.(false);
-        }
+        // 标注 pins 不自动清空 — 用户在 panel 里点「清空」自己管;
+        // markMode 也不自动关 — 用户可能想继续标注另一组。
         // 直接 push 到 client state (不等 RSC payload), 然后 router.refresh() 做 server 端的
         // 缓存失效。这样用户加的 intent < 1 帧就上看板。
         if (json.intent) onIntentCreated?.(json.intent as Intent);
@@ -461,8 +496,8 @@ export default function IntentForm({
               onClick={() => setMarkMode(!markMode)}
               disabled={isPending}
               title={markMode
-                ? '关闭标注 (再次点击离开标注模式; 已落 pin 不会丢, 提交时收走)'
-                : '进入标注模式: 在产物上点击元素 → 写评论 → 提交时一并发给 AI 做精准修复'}
+                ? '关闭标注 (pin 保留在产物上, 可继续标注或点「生成意图」写入)'
+                : '进入标注模式: 在产物上点击元素 → 写评论 → 点「生成意图」插入到输入框'}
             >
               <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
                 <path d="M7 1.5L8.65 5L12.5 5.55L9.75 8.25L10.4 12L7 10.25L3.6 12L4.25 8.25L1.5 5.55L5.35 5L7 1.5Z" strokeLinejoin="round" />
@@ -470,16 +505,26 @@ export default function IntentForm({
               {markMode ? '标注中' : '标注'}
             </button>
           )}
+          {markMode && markCount > 0 && (
+            <button
+              type="button"
+              className="quickbar-attach quickbar-generate"
+              onClick={generateIntentFromMarks}
+              disabled={isPending}
+              title={`把当前 ${markCount} 条标注拼成意图块, 写入输入框 (再点会覆盖旧块)`}
+            >
+              <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth={1.5} aria-hidden>
+                <path d="M3 7h8M7 3l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              生成意图 ✦{markCount}
+            </button>
+          )}
           <button
             type="button"
             className="quickbar-submit"
             disabled={
               isPending ||
-              // 三种输入源都没东西 → 不让提交
-              (!statement.trim()
-                && attachments.length === 0
-                && !(markMode && (readAnnotations?.().length ?? 0) > 0)
-              ) ||
+              (!statement.trim() && attachments.length === 0) ||
               // 有 URL 拉取中 → 不允许提交,否则 LLM 收到的是空链接
               attachments.some(a => a.linkFetchStatus === 'pending')
             }

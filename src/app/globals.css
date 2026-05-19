@@ -1350,16 +1350,28 @@ body {
 }
 .quickbar-attach:disabled { opacity: 0.55; cursor: not-allowed; }
 
-/* 标注按钮 — 默认跟附件按钮一致, ON 状态走珊瑚渐变 */
+/* 标注按钮 — 默认跟附件按钮一致, ON 状态用 Darwin 紫调 */
 .quickbar-mark.is-on {
   color: #fff;
-  background: linear-gradient(135deg, #ff8d6b 0%, #ffaf7a 60%, #ffc890 100%);
+  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
   border-color: transparent;
-  box-shadow: 0 2px 6px rgba(255, 141, 107, 0.35);
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.32);
 }
 .quickbar-mark.is-on:hover:not(:disabled) {
   color: #fff;
-  background: linear-gradient(135deg, #ff7a55 0%, #ff9a62 60%, #ffbb7e 100%);
+  background: linear-gradient(135deg, #4338CA 0%, #5950E0 100%);
+  border-color: transparent;
+}
+
+/* 生成意图按钮 — 仅在 markMode + pin > 0 时出现, 紫调描边强调可点状态 */
+.quickbar-generate {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: var(--accent-2);
+}
+.quickbar-generate:hover:not(:disabled) {
+  color: #fff;
+  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
   border-color: transparent;
 }
 
