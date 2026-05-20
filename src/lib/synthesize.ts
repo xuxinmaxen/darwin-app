@@ -108,6 +108,19 @@ export async function synthesize(
 
 // ─── LLM paths ──────────────────────────────────────────────
 
+/**
+ * Import-seed 模式 (1:1 复刻) 输出体积 ≈ 源 HTML 大小, 218KB 源页需要 ~64K output tokens。
+ * 默认 16K 只够 ~64KB 输出, 大页面必然截断 → 抛错 → 模板兜底。
+ * 含 【导入参考 (HTML)】 marker 时, 自动放宽到 64K (env DARWIN_SYNTHESIS_MAX_TOKENS_IMPORT 可覆盖)。
+ */
+function maxTokensFor(project: Project): number {
+  const isImportSeed = (project.background ?? '').includes('【导入参考 (HTML)】');
+  if (isImportSeed) {
+    return Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS_IMPORT) || 64000;
+  }
+  return Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000;
+}
+
 async function callLLMForHtmlSynthesis(
   project: Project,
   intents: Intent[]
@@ -119,7 +132,7 @@ async function callLLMForHtmlSynthesis(
     system,
     user,
     cacheSystem: true,
-    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000,
+    maxTokens: maxTokensFor(project),
     temperature: 0.4,
   });
 
@@ -149,7 +162,7 @@ async function callLLMForIncrementalUpdate(
     system,
     user,
     cacheSystem: true,
-    maxTokens: Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000,
+    maxTokens: maxTokensFor(project),
     temperature: 0.2,  // 更低温度 → 更保守地修改
   });
 
@@ -191,7 +204,8 @@ export async function* synthesizeStream(
     return;
   }
 
-  const maxTokens = Number(process.env.DARWIN_SYNTHESIS_MAX_TOKENS) || 16000;
+  // 含导入参考 (HTML) 的项目走 1:1 复刻, 输出体积接近源 HTML, 需要更大 maxTokens
+  const maxTokens = maxTokensFor(project);
 
   // 增量更新路径
   if (existing?.html) {
