@@ -12,6 +12,7 @@
 
 import type { Project, Intent } from './types';
 import { callLLM, callLLMStream, llmProvider } from './llm';
+import { extractReferenceHtmlFromBackground } from './fetch-imported-html';
 import {
   buildSynthesizeSystem,
   buildSynthesizeUser,
@@ -64,6 +65,22 @@ export async function synthesize(
       reason: '未配置 OPENAI_API_KEY 或 ANTHROPIC_API_KEY,使用本地模板',
       mode: 'full',
     };
+  }
+
+  // Import-seed 首次合成: 直接拿源 HTML 当 v1, 不调 LLM 让它"复述自己"。
+  //   - 源 HTML 就是用户要的 1:1 副本; LLM 重生成只会引入随机偏差 + maxToken 截断风险
+  //   - 后续 v2+ (有 existing) 才走 LLM 增量, 处理用户加进来的 intent 修改
+  //   - 体感上首版秒出, 用户立刻看到 1:1 还原, 再加 intent 时才看 LLM 编辑
+  if (!existing) {
+    const seedHtml = extractReferenceHtmlFromBackground(project.background);
+    if (seedHtml) {
+      return {
+        content: seedHtml,
+        source: 'llm',  // 不是 template, 也不是 LLM 输出; 用 llm 让前端不显示"模板兜底"提示
+        mode: 'full',
+        reason: 'import-seed v1: 直接使用源 HTML',
+      };
+    }
   }
 
   // 增量模式: 有已有版本 + 有新的 intent
@@ -202,6 +219,17 @@ export async function* synthesizeStream(
     yield { type: 'chunk', content: html };
     yield { type: 'complete', source: 'template', mode: 'full', html };
     return;
+  }
+
+  // Import-seed 首次合成: 直接拿源 HTML 当 v1 (非 LLM, 见 synthesize() 同款逻辑)
+  if (!existing) {
+    const seedHtml = extractReferenceHtmlFromBackground(project.background);
+    if (seedHtml) {
+      yield { type: 'thinking', message: '使用导入的源 HTML 作为 v1 (1:1 还原)…' };
+      yield { type: 'chunk', content: seedHtml };
+      yield { type: 'complete', source: 'llm', mode: 'full', html: seedHtml };
+      return;
+    }
   }
 
   // 含导入参考 (HTML) 的项目走 1:1 复刻, 输出体积接近源 HTML, 需要更大 maxTokens

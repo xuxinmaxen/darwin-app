@@ -97,6 +97,39 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * 抽出 background marker 里的原始 HTML 正文 (在 "原始 HTML (压缩):" 之后到 marker 关闭之间)。
+ * Import-seed 首次合成时, 直接拿这份 HTML 当 v1 — 不走 LLM 复述, 因为源就是 1:1 副本。
+ *
+ * 返回 null 时:
+ *   - background 里没 marker
+ *   - marker 里是 REF_LAZY_PLACEHOLDER (URL 还没 hydrate)
+ *   - 找不到 "原始 HTML" 段
+ */
+export function extractReferenceHtmlFromBackground(background: string | null | undefined): string | null {
+  if (!background) return null;
+  const blockMatch = background.match(
+    new RegExp(`${escapeRegex(REF_MARKER_OPEN)}[\\s\\S]*?${escapeRegex(REF_MARKER_CLOSE)}`)
+  );
+  if (!blockMatch) return null;
+  const block = blockMatch[0];
+  if (block.includes(REF_LAZY_PLACEHOLDER)) return null;
+
+  const htmlStart = block.indexOf('原始 HTML (压缩):');
+  if (htmlStart < 0) return null;
+  // 跳到该标签所在行的下一个换行后, 取到 marker close 前的全部内容
+  const afterLabel = block.indexOf('\n', htmlStart);
+  if (afterLabel < 0) return null;
+  const closeIdx = block.lastIndexOf(REF_MARKER_CLOSE);
+  if (closeIdx <= afterLabel) return null;
+  const html = block.slice(afterLabel + 1, closeIdx).trim();
+  if (!html) return null;
+  // 至少看起来像 HTML
+  const head = html.slice(0, 200).toLowerCase();
+  if (!head.includes('<html') && !head.includes('<!doctype') && !head.includes('<body')) return null;
+  return html;
+}
+
 export const FetchImportedHtmlInput = z.object({
   url: z.string().url(),
 });
