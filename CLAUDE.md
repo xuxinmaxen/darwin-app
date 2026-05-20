@@ -11,6 +11,7 @@
 3. **冲突是头等对象**。Tension 不是错误而是事件,必须显性化、可讨论、可仲裁、可留痕
 4. **产物即语言**。所有协作发生在产物上,不在元数据上。少弹模态、少配置项、多在画布上做事
 5. **Agent 是同事**。有人设、有时间、有权限、有学习历史。不要做成"按钮叠加 AI"
+6. **修改是手术,不是重画 (Surgical-Edit Rule)**。任何 v2+ 的合成都必须只动用户当条新 intent 明确点名的区域,其余 byte-for-byte 保留 v1。系统层面 fail-safe: 输出 bytes 不在 existing 的 80%-120% 区间 → 抛弃 LLM 输出,保留上一版不变 (entrypoint: [src/lib/synthesize.ts `checkIncrementalOutput`](src/lib/synthesize.ts))。绝不允许"我以为这样更好看"式无名义重写; 用户没说改的就是不改。
 
 ### 不要做
 - ❌ 让用户填 type/scope/weight 表单 —— AI 后台抽取,永不暴露 schema

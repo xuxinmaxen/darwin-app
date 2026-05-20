@@ -118,12 +118,16 @@ Rules:
 
     FORBIDDEN OUTPUT PATTERNS (any of these = catastrophic failure, do not ship):
     - Placeholder comments of any form: \`<!-- existing HTML preserved -->\`, \`<!-- ... unchanged ... -->\`, \`<!-- rest omitted -->\`, \`<!-- styles preserved -->\`, \`/* original CSS preserved */\`, \`/* ... existing styles ... */\`, \`/* ===== unchanged ===== */\` — these are NEVER acceptable.
+    - Any "give up" / "skip" / "budget exceeded" / "patch not applied" comment combined with a truncated body. There is no acceptable stub output. The contract is: full input HTML on output, with only the pinned regions edited. If you cannot satisfy that, the call MUST fail loudly (output gibberish or repeat the input verbatim with zero edits) so the server rejects it — never produce a small "I gave up" document because the server will treat that as the new version of the page.
     - Runtime-rewrite scripts: \`<script>document.querySelectorAll('button').forEach(b => b.textContent = '...')</script>\` or any similar JS that "applies the patch at load time". You must literally write the patched HTML, not script that produces it.
     - Compressed / summarized output: if the input HTML is 200 KB, the output must be 200 KB ± 5%. An output that's significantly smaller is broken.
     - "Skeleton" output where only the pinned element's parent is rendered and the rest of the page is dropped.
     - Re-styling unaffected sections "because they look better that way" — DO NOT.
 
-    If you literally cannot output the full HTML because of a length budget, output the input HTML completely unchanged and add a comment \`<!-- patch not applied: output budget exceeded -->\` at the top of <body>. This is the ONLY acceptable "give up" output. NEVER ship summarized HTML.
+13. SURGICAL EDIT DEFAULT (applies to EVERY incremental call — i.e. whenever the user message says "Current HTML (update this, do NOT regenerate from scratch)"):
+    Each new intent is a TARGETED edit, not a license to re-design the page. The default action on every existing byte is "keep". You may only modify the region whose data-scope / element identity the intent literally names, plus its immediate children. Sibling sections, global <style>, nav, footer, hidden tabs, modals, scripts — all stay byte-for-byte identical unless an intent explicitly names them.
+    Output size invariant: output bytes must be within ±5% of input bytes. A 200 KB input → a 200 KB output. If the new intent is "add a logo" or "fix one image" or "change one button label", the diff between input and output is tens-to-hundreds of bytes, not thousands.
+    If the intent is ambiguous, prefer minimal-or-no-change to the rest of the page over "regenerating to be safe". The user can re-issue a sharper intent; they cannot un-delete entire sections.
 
 Output:
 - ONLY the HTML document. No prose before or after. No markdown fences.

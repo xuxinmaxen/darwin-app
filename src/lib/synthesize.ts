@@ -135,20 +135,34 @@ export async function synthesize(
           callLLMForIncrementalUpdate(project, newIntents, existing.html),
           timeout(LLM_TIMEOUT_MS),
         ]);
-        // sanity check: bytes 不能崩到 50% 以下, 防止 LLM 输出占位 stub
-        if (html.length >= existing.html.length * 0.5) {
+        // 增量 sanity check: 任何已有版本的修改都不能让产物缩水超过 20% (LLM "占位 stub" / 摘要式重写 / 截断 / "给出 stub 就跑了" 全打这条).
+        // 命中 → 抛弃 LLM 输出, 保留 existing 不变, 不降级 LLM 全量也不降级模板.
+        // 理由: 任何 v2+ 的 incremental 修改, 用户期望是"改一小块, 其他保持不变"; 输出明显比 existing 小 = LLM 删除了用户没让删的内容 = 系统级 bug.
+        const sanity = checkIncrementalOutput(html, existing.html);
+        if (sanity.ok) {
           return { content: html, source: 'llm', mode: 'incremental' };
         }
-        console.warn(`[synthesize] incremental output suspiciously small (${html.length} vs existing ${existing.html.length}), falling back`);
+        console.warn(`[synthesize] incremental output rejected (${sanity.reason}); keeping existing unchanged`);
+        return {
+          content: existing.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `修改未能生效, 保留上一版不变 (${sanity.reason})`,
+        };
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        console.warn('[synthesize] incremental update failed, falling back to full synthesis:', reason);
-        // 降级到全量
+        console.warn('[synthesize] incremental update failed, keeping existing unchanged:', reason);
+        return {
+          content: existing.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `修改失败, 保留上一版不变: ${reason.slice(0, 160)}`,
+        };
       }
     }
   }
 
-  // 全量合成
+  // 全量合成 (无 existing — v1 / 模板 / 没有可保留的产物)
   try {
     const html = await Promise.race([
       callLLMForHtmlSynthesis(project, intents),
@@ -165,6 +179,37 @@ export async function synthesize(
       mode: 'full',
     };
   }
+}
+
+/**
+ * 增量 LLM 输出的 sanity check.
+ *
+ * 系统级承诺: 用户对 v2+ 提的修改, 必须是 "改用户指定的部分, 其他保持原样".
+ * 任何让产物缩水 / 膨胀超过 20% 的 LLM 输出, 一律视为 LLM 失控 (删了不该删的, 或随机加了一堆).
+ * 命中 → 抛弃这次输出, 让上层保留 existing.html 不变.
+ *
+ * 也防一类具体已知失败模式: LLM 把 prompt 里 "如果 budget 不够可以输出 ... stub" 那种逃逸路径学过去,
+ * 给出几百字节的占位文档. 即便我们从 prompt 里删了这种话, 模型先验里还有, 必须靠服务端兜底.
+ */
+function checkIncrementalOutput(
+  newHtml: string,
+  existingHtml: string
+): { ok: true } | { ok: false; reason: string } {
+  if (newHtml.length < 5_000) {
+    return { ok: false, reason: `输出过短 (${newHtml.length} bytes)` };
+  }
+  const ratio = newHtml.length / existingHtml.length;
+  if (ratio < 0.8) {
+    return { ok: false, reason: `产物缩水到 ${(ratio * 100).toFixed(0)}% (${newHtml.length} vs ${existingHtml.length}), LLM 删了用户没让删的内容` };
+  }
+  if (ratio > 1.5) {
+    return { ok: false, reason: `产物膨胀到 ${(ratio * 100).toFixed(0)}%, LLM 加了过多用户没要的内容` };
+  }
+  // 检测明显的"占位 stub" 文本 (即便 bytes 通过, 也不能让它入库)
+  if (/patch not applied|budget exceeded|existing HTML preserved|rest of HTML omitted/i.test(newHtml)) {
+    return { ok: false, reason: 'LLM 输出含占位 stub 注释' };
+  }
+  return { ok: true };
 }
 
 // ─── LLM paths ──────────────────────────────────────────────
@@ -354,14 +399,26 @@ export async function* synthesizeStream(
         if (!looksLikeValidHtml(html)) throw new Error('LLM 增量更新返回不是 HTML');
         if (!looksLikeCompleteHtml(html)) {
           // LLM 输出在 </html> 之前被 maxTokens 截断 — 渲染会半截.
-          // 主动抛错让上层 fall through 到全量重试 (有更大 token budget) 或模板兜底.
           throw new Error(`LLM 增量更新被截断 (${html.length} chars, 无 </html>) — 提示 maxTokens 不够`);
+        }
+        // 大小/占位 sanity check (同 synthesize() 同款 checkIncrementalOutput).
+        // 缩水 / 膨胀 / 占位 stub → 一律保留 existing 不变, 绝不 fall-through 到全量重写.
+        const sanity = checkIncrementalOutput(html, existing.html);
+        if (!sanity.ok) {
+          yield { type: 'thinking', message: `修改未能生效, 保留上一版不变 (${sanity.reason})` };
+          yield { type: 'chunk', content: existing.html };
+          yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+          return;
         }
         yield { type: 'complete', source: 'llm', mode: 'incremental', html };
         return;
       } catch (err) {
-        yield { type: 'thinking', message: '增量更新失败,切换全量合成…' };
-        // fall through to full synthesis
+        const reason = err instanceof Error ? err.message : String(err);
+        // 任何 v2+ 增量失败 — 保留 existing 不变, 不再降级到全量重写 (那会把用户没让改的全模块都覆盖).
+        yield { type: 'thinking', message: `修改失败, 保留上一版不变: ${reason.slice(0, 100)}` };
+        yield { type: 'chunk', content: existing.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+        return;
       }
     }
   }
