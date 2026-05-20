@@ -11,8 +11,10 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import type { Project } from '@/lib/types';
 import type { Employee } from '@/lib/employees';
+import type { TeamPulse } from '@/lib/pulse';
 import ProjectCard from '@/components/ProjectCard';
 import NewProjectButton from '@/components/NewProjectButton';
+import PulseView from '@/components/PulseView';
 import UserMenu from '@/components/UserMenu';
 import ThemeToggle from '@/components/ThemeToggle';
 import Heartbeat from '@/components/Heartbeat';
@@ -32,6 +34,7 @@ export default function WorkspaceShell({
   summaries,
   collaborators,
   employees,
+  pulse,
   dbError,
   memoryCount,
   employeesCount,
@@ -41,11 +44,15 @@ export default function WorkspaceShell({
   summaries: Record<string, Summary>;
   collaborators: Record<string, Employee[]>;
   employees: Employee[];
+  pulse?: TeamPulse | null;
   dbError: string | null;
   memoryCount?: number;
   employeesCount?: number;
   currentUser?: CurrentUserMini;
 }) {
+  // 首屏视图: 默认 pulse, 用户可以切换 "全部项目" 看 grid。
+  // 状态本地持有, 不写 URL — 刷新回 pulse, 跟"团队此刻在想什么"的语义一致。
+  const [view, setView] = useState<'pulse' | 'projects'>('pulse');
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -117,13 +124,46 @@ export default function WorkspaceShell({
             <div className="ws-hero">
               <div className="ws-hero-eyebrow">
                 <span className="dot" />
-                项目管理
+                {view === 'pulse' ? '团队脉搏' : '项目管理'}
               </div>
               <p className="ws-sub">
-                每个项目以 Intent Layer 协作，多人输入、AI 合成、单一收敛。
+                {view === 'pulse'
+                  ? '此刻团队在想什么 — 活跃的 intent、未消化的张力、最近的沉淀。'
+                  : '每个项目以 Intent Layer 协作，多人输入、AI 合成、单一收敛。'}
               </p>
             </div>
 
+            {/* View tab — Pulse / 全部项目 */}
+            <div className="ws-view-tabs">
+              <button
+                type="button"
+                className={`ws-view-tab${view === 'pulse' ? ' active' : ''}`}
+                onClick={() => setView('pulse')}
+              >
+                Pulse
+              </button>
+              <button
+                type="button"
+                className={`ws-view-tab${view === 'projects' ? ' active' : ''}`}
+                onClick={() => setView('projects')}
+              >
+                全部项目 <span className="ws-view-tab-count">{projects.length}</span>
+              </button>
+              <div className="ws-view-tab-spacer" />
+              <NewProjectButton employees={employees} currentUserId={currentUser?.id} />
+            </div>
+
+            {view === 'pulse' ? (
+              <>
+                {dbError && (
+                  <div className="error-banner">
+                    <strong>DB error:</strong> {dbError}
+                  </div>
+                )}
+                <PulseView pulse={pulse ?? null} />
+              </>
+            ) : (
+              <>
             {/* 工具栏:左边标题+筛选,右边搜索+新建 — 始终同一行靠右 */}
             <div className="ws-filters">
               {/* 左侧:标题 + 筛选下拉 */}
@@ -177,7 +217,6 @@ export default function WorkspaceShell({
                   )}
                   <span className="kbd">⌘K</span>
                 </div>
-                <NewProjectButton employees={employees} currentUserId={currentUser?.id} />
               </div>
             </div>
 
@@ -226,6 +265,8 @@ export default function WorkspaceShell({
                     onPage={setPage}
                   />
                 )}
+              </>
+            )}
               </>
             )}
 

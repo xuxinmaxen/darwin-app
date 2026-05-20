@@ -101,12 +101,32 @@ export async function listMemoryTimeline(ownerId: string, limit = 30): Promise<M
     const projectName = Array.isArray(t.projects) ? t.projects[0]?.name ?? '' : (t.projects as { name: string } | null)?.name ?? '';
     if (!t.resolved_at) continue;
     let selectedKey = '?';
-    try { const r = t.resolution ? JSON.parse(t.resolution) : null; if (r?.selectedOptionKey) selectedKey = r.selectedOptionKey; } catch { /* ignore */ }
+    type ParsedRes = { selectedOptionKey?: string; retrospect?: { summary?: string; lesson?: string; yieldedBy?: string[]; durationMinutes?: number; messageCount?: number } };
+    let parsedRes: ParsedRes | null = null;
+    try { parsedRes = t.resolution ? JSON.parse(t.resolution) : null; if (parsedRes?.selectedOptionKey) selectedKey = parsedRes.selectedOptionKey; } catch { /* ignore */ }
     const isAgentVariant = t.variant === 'agents';
     events.push({ id: `tension:${t.id}`, kind: isAgentVariant ? 'agent-event' : 'consensus',
       body: isAgentVariant ? `**${t.scope}** 区 Agent ⇄ Agent 分歧 → 选定方案 **${selectedKey}**` : `**${t.scope}** 冲突 → 团队选定方案 **${selectedKey}**`,
       meta: isAgentVariant ? `Agent ⇄ Agent · 项目「${projectName}」` : `Human ⇄ Human · 项目「${projectName}」`,
       date: t.resolved_at, projectId: t.project_id });
+    // 多产出一条复盘事件 (跟 consensus 同 tension, 但 kind='retrospect' + 内容是 lesson + summary)
+    // 没生成 retrospect 时 (LLM 失败 / 旧数据) 跳过, 不输出空条目
+    const r = parsedRes?.retrospect;
+    if (r && r.summary && r.lesson) {
+      const yieldedBy = Array.isArray(r.yieldedBy) ? r.yieldedBy : [];
+      const yieldedTag = yieldedBy.length > 0 ? `${yieldedBy.join('、')} 让步: ` : '';
+      const metaBits: string[] = [`📝 ${r.lesson}`, `项目「${projectName}」`];
+      if (typeof r.durationMinutes === 'number') metaBits.push(`${r.durationMinutes} 分钟`);
+      if (typeof r.messageCount === 'number' && r.messageCount > 0) metaBits.push(`${r.messageCount} 条讨论`);
+      events.push({
+        id: `retro:${t.id}`,
+        kind: 'retrospect',
+        body: `${yieldedTag}${r.summary}`,
+        meta: metaBits.join(' · '),
+        date: t.resolved_at,
+        projectId: t.project_id,
+      });
+    }
   }
   const { data: empRows } = await db().from('employees').select('id, name, kind, linked_human_id, created_at')
     .eq('owner_id', ownerId).eq('kind', 'agent').order('created_at', { ascending: false }).limit(limit);

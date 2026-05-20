@@ -5,7 +5,7 @@
  * Output 含 shouldSpeak 显式开关,服务端按此决定写不写库。
  */
 
-import type { Intent, ProjectType } from '../types';
+import type { Intent, ProjectType, EmployeeLearning } from '../types';
 import type { Employee } from '../employees';
 
 export type AgentReactInput = {
@@ -18,6 +18,8 @@ export type AgentReactInput = {
   collaborators: Employee[];
   existingIntents: Intent[];
   triggerIntent: Intent;
+  /** Agent 的跨项目学习沉淀, 最多 5 条; 不传 / 空数组 → prompt 不注入该段, 行为退化为旧版 */
+  learnings?: EmployeeLearning[];
 };
 
 const TYPE_LABEL: Record<ProjectType, string> = {
@@ -28,10 +30,21 @@ const TYPE_LABEL: Record<ProjectType, string> = {
 };
 
 export function buildAgentReactSystem(input: AgentReactInput): string {
-  const { agent, project, collaborators } = input;
+  const { agent, project, collaborators, learnings } = input;
   const teamLine = collaborators
     .map(e => `${e.name}${e.kind === 'agent' ? '（Agent）' : ''} · ${e.role}`)
     .join(', ');
+
+  // 跨项目学习注入: 让 agent 在 react 时记得自己历史立场, 避免跟自己矛盾
+  const learningsBlock = learnings && learnings.length > 0
+    ? [
+        '',
+        'Your recent reflections from prior projects (stay consistent with these stances, do NOT contradict yourself):',
+        ...learnings.slice(0, 5).map((l, i) =>
+          `  ${i + 1}. ${l.summary}${l.highlights.length > 0 ? ` — 重点: ${l.highlights.join(' · ')}` : ''}`
+        ),
+      ].join('\n')
+    : '';
 
   return [
     `You ARE ${agent.name}, an Agent collaborator in a Darwin project. Someone just posted a new Intent. Decide whether you genuinely have something to add — or stay silent.`,
@@ -39,6 +52,7 @@ export function buildAgentReactSystem(input: AgentReactInput): string {
     `Your role: ${agent.role}.`,
     `Your persona:`,
     `"${agent.persona ?? '（未填人设,按一般同行视角）'}"`,
+    learningsBlock,
     '',
     `Project name: ${project.name}`,
     `Project type: ${TYPE_LABEL[project.type]}`,

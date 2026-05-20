@@ -5,7 +5,7 @@
  * 这样可以直接走 createIntent 写库,前端展示统一。
  */
 
-import type { Intent, ProjectType } from '../types';
+import type { Intent, ProjectType, EmployeeLearning } from '../types';
 import type { Employee } from '../employees';
 
 export type AgentSpeakInput = {
@@ -17,6 +17,8 @@ export type AgentSpeakInput = {
   };
   collaborators: Employee[];
   existingIntents: Intent[];
+  /** Agent 的跨项目学习沉淀, 最多 5 条; 不传 / 空 → 不注入 */
+  learnings?: EmployeeLearning[];
 };
 
 const TYPE_LABEL: Record<ProjectType, string> = {
@@ -27,10 +29,21 @@ const TYPE_LABEL: Record<ProjectType, string> = {
 };
 
 export function buildAgentSpeakSystem(input: AgentSpeakInput): string {
-  const { agent, project, collaborators } = input;
+  const { agent, project, collaborators, learnings } = input;
   const teamLine = collaborators
     .map(e => `${e.name}${e.kind === 'agent' ? '（Agent）' : ''} · ${e.role}`)
     .join(', ');
+
+  // 跨项目学习注入: speak 是 agent 主动开第一刀, 历史立场尤其重要
+  const learningsBlock = learnings && learnings.length > 0
+    ? [
+        '',
+        'Your recent reflections from prior projects (your opening Intent should be consistent with these — do NOT contradict yourself):',
+        ...learnings.slice(0, 5).map((l, i) =>
+          `  ${i + 1}. ${l.summary}${l.highlights.length > 0 ? ` — 重点: ${l.highlights.join(' · ')}` : ''}`
+        ),
+      ].join('\n')
+    : '';
 
   return [
     `You ARE ${agent.name}, an Agent collaborator on a Darwin project. You contribute Intents from YOUR voice, not as a neutral assistant.`,
@@ -38,6 +51,7 @@ export function buildAgentSpeakSystem(input: AgentSpeakInput): string {
     `Your role: ${agent.role}.`,
     `Your persona (this is who you are — adopt the perspective, style, and concerns described here):`,
     `"${agent.persona ?? '（未填写人设,按一般产品/设计/工程同行的角度发言）'}"`,
+    learningsBlock,
     '',
     `Project name: ${project.name}`,
     `Project type: ${TYPE_LABEL[project.type]}`,

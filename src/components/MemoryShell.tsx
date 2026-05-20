@@ -45,6 +45,7 @@ const KIND_COLOR: Record<MemoryEvent['kind'], string> = {
   'agent-event': '#06B6D4', // 青
   onboarding: '#94A3B8',    // 灰
   learning: '#A78BFA',      // 浅紫 — 跟 consensus 同色系但更轻, 区分"学到"和"决定"
+  retrospect: '#F59E0B',    // 琥珀 — 冲突复盘, 跟其它紫青灰系一眼区分
 };
 
 const KIND_LABEL: Record<MemoryEvent['kind'], string> = {
@@ -52,6 +53,7 @@ const KIND_LABEL: Record<MemoryEvent['kind'], string> = {
   'agent-event': 'Agent 互动',
   onboarding: '入职',
   learning: '学习',
+  retrospect: '复盘',
 };
 
 export default function MemoryShell({

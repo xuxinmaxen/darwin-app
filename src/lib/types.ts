@@ -78,6 +78,19 @@ export type TensionResolution = {
   decidedBy: string[];      // employee ids
   decidedAt: string;
   threadId?: string | null; // 关联讨论 thread (v2: 4.13)
+  /**
+   * 复盘卡 — resolve 后 fire-and-forget LLM 生成。
+   * 抓的是"谁让步、为什么让步、lesson", 而不是流水。
+   * 缺失 (LLM 失败 / 还在跑 / 老数据) 时, UI 不渲染气泡, timeline 也不出复盘事件。
+   */
+  retrospect?: {
+    winnerSide: string;        // 胜出方向: intentId 或 'compromise' (双方都让步)
+    yieldedBy: string[];       // 让步者员工 name 数组 (可空, compromise 时为 [])
+    summary: string;           // 1-2 句, 第三人称
+    lesson: string;            // ≤30 字, 一句话能背下来
+    durationMinutes: number;   // 冲突创建到 resolved 经过的分钟数
+    messageCount: number;      // 关联 thread 的消息数 (0 = 无 thread)
+  };
 };
 
 export type Tension = {
@@ -175,7 +188,7 @@ export type AgentLearning = {
   tagsIntentCount: number;
 };
 
-export type MemoryEventKind = 'consensus' | 'agent-event' | 'onboarding' | 'learning';
+export type MemoryEventKind = 'consensus' | 'agent-event' | 'onboarding' | 'learning' | 'retrospect';
 
 export type MemoryEvent = {
   id: string;

@@ -203,7 +203,21 @@ export default function DiscussionDrawer({
 
       {isResolved ? (
         <div className="drawer-resolved-foot">
-          讨论已经收敛。产物会按定下来的方案重新合成。
+          {tension?.resolution?.retrospect ? (
+            <div className="drawer-retrospect">
+              <div className="drawer-retrospect-summary">{tension.resolution.retrospect.summary}</div>
+              <div className="drawer-retrospect-lesson">
+                <span className="drawer-retrospect-icon" aria-hidden>💡</span>
+                <span>{tension.resolution.retrospect.lesson}</span>
+                <span className="drawer-retrospect-meta">
+                  · {tension.resolution.retrospect.durationMinutes} 分钟
+                  {tension.resolution.retrospect.messageCount > 0 ? ` · ${tension.resolution.retrospect.messageCount} 条讨论` : ''}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <span>讨论已经收敛。产物会按定下来的方案重新合成。</span>
+          )}
         </div>
       ) : (
         <div className="drawer-input">

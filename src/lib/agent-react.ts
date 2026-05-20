@@ -22,6 +22,7 @@ import {
   chainDepthOf,
 } from './intents';
 import { callLLMJSON, llmProvider } from './llm';
+import { listLearningsByEmployee } from './learnings';
 import {
   buildAgentReactSystem,
   buildAgentReactUser,
@@ -100,7 +101,11 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
     };
   }
 
-  const existingIntents = await listIntentsByProject(input.projectId);
+  const [existingIntents, learnings] = await Promise.all([
+    listIntentsByProject(input.projectId),
+    // 拉 agent 跨项目学习沉淀注入 system prompt; 表不存在 / 老 agent 没记录 → 空数组, 不阻断
+    listLearningsByEmployee(agent.id, 5).catch(() => []),
+  ]);
 
   try {
     const out = await Promise.race([
@@ -115,6 +120,7 @@ export async function reactOnce(input: ReactInput): Promise<ReactOutcome> {
           collaborators,
           existingIntents,
           triggerIntent,
+          learnings,
         }),
         user: buildAgentReactUser({
           agent,

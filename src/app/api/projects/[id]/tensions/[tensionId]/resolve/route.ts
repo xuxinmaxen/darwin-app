@@ -108,6 +108,43 @@ export async function POST(req: NextRequest, { params }: Params) {
       }
     });
 
+    // fire-and-forget: 冲突复盘 + agent 主动观察
+    //   1. 复盘 (retrospect): 给所有 owner 看, 落 tension.resolution.retrospect, 也喂 timeline
+    //   2. 观察 (observe): 仅冲突涉及的 agent 触发, 让它从整个项目角度补一刀
+    // 顺序: 先 retrospect (latency 短一些), 后 observe (会读取 tension.resolution 含 retrospect 后的状态)
+    after(async () => {
+      try {
+        const retroMod = await import('@/lib/tension-retrospect');
+        await retroMod.generateRetrospect(tensionId).then(r => {
+          if (!r.ok) console.warn('[retrospect] failed:', r.error);
+        });
+      } catch (err) {
+        console.warn('[retrospect] threw:', err);
+      }
+
+      try {
+        const { getIntent } = await import('@/lib/intents');
+        const observeMod = await import('@/lib/agent-observe');
+        // 冲突涉及的 intent → 拿出 agent 作者 → 各自 observe
+        const tensionIntents = await Promise.all(tension.intentIds.map(getIntent));
+        const agentIds = new Set<string>();
+        for (const it of tensionIntents) {
+          if (it && it.authorKind === 'agent') agentIds.add(it.authorId);
+        }
+        if (agentIds.size > 0) {
+          await Promise.allSettled(
+            [...agentIds].map(aid =>
+              observeMod.observeProject(aid, projectId, tensionId).catch(err =>
+                console.warn(`[observe] (${aid}) failed:`, err)
+              )
+            )
+          );
+        }
+      } catch (err) {
+        console.warn('[observe] threw:', err);
+      }
+    });
+
     revalidatePath(`/projects/${projectId}`);
     revalidatePath('/');
     return NextResponse.json({ ok: true, tension: resolved, threadId });

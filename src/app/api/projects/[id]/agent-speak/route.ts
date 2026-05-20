@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { getProject, listCollaborators, bumpToCollaborating } from '@/lib/projects';
 import { getEmployee } from '@/lib/employees';
 import { listIntentsByProject, createIntent } from '@/lib/intents';
+import { listLearningsByEmployee } from '@/lib/learnings';
 import { callLLMJSON, llmProvider } from '@/lib/llm';
 import {
   buildAgentSpeakSystem,
@@ -82,7 +83,10 @@ export async function POST(req: NextRequest, { params }: Params) {
     );
   }
 
-  const existingIntents = await listIntentsByProject(projectId);
+  const [existingIntents, learnings] = await Promise.all([
+    listIntentsByProject(projectId),
+    listLearningsByEmployee(agent.id, 5).catch(() => []),
+  ]);
   const promptInput = {
     agent,
     project: {
@@ -92,6 +96,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     },
     collaborators,
     existingIntents,
+    learnings,
   };
 
   try {

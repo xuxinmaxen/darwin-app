@@ -94,3 +94,20 @@ export async function resolveTension(input: ResolveTensionInput): Promise<Tensio
   }).eq('id', input.tensionId));
   return getTension(input.tensionId);
 }
+
+/**
+ * 把 LLM 生成的 retrospect 合并到现有 resolution JSON 里, 保留 selectedOptionKey / decidedBy /
+ * decidedAt / threadId 不动。fire-and-forget 路径用; 如果 retrospect 已存在会被覆盖 (最新一份为准)。
+ */
+export async function attachRetrospect(
+  tensionId: string,
+  retrospect: NonNullable<TensionResolution['retrospect']>
+): Promise<Tension | null> {
+  const existing = await getTension(tensionId);
+  if (!existing || !existing.resolution) return null;
+  const merged: TensionResolution = { ...existing.resolution, retrospect };
+  assertOk(await db().from('tensions').update({
+    resolution: JSON.stringify(merged),
+  }).eq('id', tensionId));
+  return getTension(tensionId);
+}
