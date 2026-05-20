@@ -91,28 +91,41 @@ export async function synthesize(
 
     // 标注修改专用快路径: 所有新 intent 都是 【标注修改】 块 → 服务端 cheerio 拼接,
     // LLM 只输出被 pin 元素的小补丁。不让 LLM 重写整页, 避免它输出占位 stub。
+    //
+    // 重要: 一旦进入这条路径, 即使内部失败 (0 命中 / ratio 异常 / 异常抛出),
+    // 也**绝不** fall-through 到 LLM 全量重写 — 那会破坏"标注后只改对应模块, 其他保持不变"
+    // 的系统级承诺。失败时返回 existing.html 原样, 用 reason 告诉用户哪条 pin 没生效。
     if (allIntentsAreAnnotatedPatches(newIntents)) {
+      let patchResult: { applied: number; skipped: number; html: string; errors: string[] };
       try {
-        const patched = await applyAnnotatedPatches(existing.html, newIntents);
-        if (patched.applied > 0) {
-          // sanity check: 输出 bytes 应该 ≈ existing (允许 5% 浮动)
-          const ratio = patched.html.length / existing.html.length;
-          if (ratio >= 0.7 && ratio <= 1.3) {
-            return {
-              content: patched.html,
-              source: 'patch',
-              mode: 'incremental',
-              reason: `${patched.applied} pin(s) applied${patched.skipped > 0 ? `, ${patched.skipped} skipped` : ''}`,
-            };
-          }
-          console.warn(`[synthesize] patch produced suspicious size ratio ${ratio.toFixed(2)}, falling back`);
-        } else {
-          console.warn('[synthesize] patch path applied 0 pins, falling back to LLM:', patched.errors);
-        }
+        patchResult = await applyAnnotatedPatches(existing.html, newIntents);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
-        console.warn('[synthesize] patch path threw, falling back to LLM:', reason);
+        console.warn('[synthesize] patch path threw, keeping existing unchanged:', reason);
+        return {
+          content: existing.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `标注修补异常, 保留上一版未改: ${reason.slice(0, 160)}`,
+        };
       }
+      const ratio = patchResult.html.length / existing.html.length;
+      if (patchResult.applied > 0 && ratio >= 0.7 && ratio <= 1.3) {
+        return {
+          content: patchResult.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `${patchResult.applied} pin(s) applied${patchResult.skipped > 0 ? `, ${patchResult.skipped} skipped` : ''}`,
+        };
+      }
+      // patch 内所有 pin 都没命中或被跳过 → existing 不变
+      console.warn(`[synthesize] patch produced ${patchResult.applied} applied / ${patchResult.skipped} skipped, ratio=${ratio.toFixed(2)}; keeping existing unchanged`);
+      return {
+        content: existing.html,
+        source: 'patch',
+        mode: 'incremental',
+        reason: `标注未能精准应用, 保留上一版不变 (applied=${patchResult.applied}, skipped=${patchResult.skipped})${patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 3).join(' | ') : ''}`,
+      };
     }
 
     // 只有新增 intent 才走增量;如果 intent 没变化或全是新的,走全量
@@ -271,24 +284,32 @@ export async function* synthesizeStream(
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
 
-    // 标注修改快路径: 同 synthesize() 非流版本
+    // 标注修改快路径: 同 synthesize() 非流版本 — 失败也不 fall-through, 保留 existing 不变
     if (allIntentsAreAnnotatedPatches(newIntents)) {
       yield { type: 'thinking', message: `AI 正在精准修补 ${newIntents.length} 条标注…` };
+      let patchResult: { applied: number; skipped: number; html: string; errors: string[] };
       try {
-        const patched = await applyAnnotatedPatches(existing.html, newIntents);
-        if (patched.applied > 0) {
-          const ratio = patched.html.length / existing.html.length;
-          if (ratio >= 0.7 && ratio <= 1.3) {
-            yield { type: 'chunk', content: patched.html };
-            yield { type: 'complete', source: 'patch', mode: 'incremental', html: patched.html };
-            return;
-          }
-        }
-        // 否则降级走 LLM 整页 (下面那段)
-        yield { type: 'thinking', message: '标注精准修补未命中, 降级到全文 LLM 更新…' };
+        patchResult = await applyAnnotatedPatches(existing.html, newIntents);
       } catch (err) {
-        yield { type: 'thinking', message: `标注修补失败, 降级到 LLM: ${err instanceof Error ? err.message : String(err)}` };
+        const reason = err instanceof Error ? err.message : String(err);
+        yield { type: 'thinking', message: `标注修补异常, 保留上一版未改: ${reason.slice(0, 100)}` };
+        yield { type: 'chunk', content: existing.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+        return;
       }
+      const ratio = patchResult.html.length / existing.html.length;
+      if (patchResult.applied > 0 && ratio >= 0.7 && ratio <= 1.3) {
+        yield { type: 'thinking', message: `已精准修补 ${patchResult.applied} 处${patchResult.skipped > 0 ? `, ${patchResult.skipped} 处跳过` : ''}` };
+        yield { type: 'chunk', content: patchResult.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: patchResult.html };
+        return;
+      }
+      // 完全未命中或大小异常 — 保留 existing 不变, 不降级到 LLM 全量
+      const hint = patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 2).join(' | ') : '';
+      yield { type: 'thinking', message: `标注未能精准应用, 保留上一版不变 (applied=${patchResult.applied}, skipped=${patchResult.skipped})${hint}` };
+      yield { type: 'chunk', content: existing.html };
+      yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+      return;
     }
 
     if (newIntents.length > 0 && newIntents.length < intents.length) {

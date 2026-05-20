@@ -230,6 +230,11 @@ export async function applyAnnotatedPatches(
   );
 
   // 串行 replaceWith — cheerio 同一棵 DOM, 替换之间互不依赖只要 ref 拿在前面
+  //
+  // 每个 pin 独立做大小完整性检查: LLM 拿到容器级元素 (整个 view / section, 几十 KB outerHTML) +
+  // 新增功能型注解 (如"请补充 logo 图片") 时, 会倾向于"摘要式"重写, 输出只剩骨架。
+  // 检测办法: 替换后 outerHTML 的字节比原 outerHTML 跌到 0.5 以下 → 视为 LLM 偷懒,
+  // 跳过这条 pin (不应用), 不影响其他 pin。
   const errors: string[] = [];
   let applied = 0;
   let skipped = 0;
@@ -237,6 +242,15 @@ export async function applyAnnotatedPatches(
     if (!r.result || !r.task.el) {
       skipped++;
       errors.push(`pin #${r.task.patch.pinIndex}: ${r.error}`);
+      continue;
+    }
+    const origLen = r.task.outerHtml.length;
+    const newLen = r.result.length;
+    const elemRatio = origLen > 0 ? newLen / origLen : 1;
+    // 容器级 outerHTML 又被 LLM 缩成骨架 — 跳过, 保留原元素不动
+    if (elemRatio < 0.5) {
+      skipped++;
+      errors.push(`pin #${r.task.patch.pinIndex}: LLM 输出大小异常 (${origLen}B → ${newLen}B, ratio=${elemRatio.toFixed(2)}), 已跳过保留原元素`);
       continue;
     }
     // cheerio Cheerio<Element> 需要重新包一遍
