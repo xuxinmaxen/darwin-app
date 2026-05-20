@@ -24,7 +24,10 @@ const MAX_RAW_HTML_BYTES = 500_000;
  * 给 LLM prompt 用的体积上限。原始 HTML 可能上百万字符,
  * 但 250KB 已经够 Claude/GPT 看到完整 head + 主结构, 同时 200k token 上下文不会爆。
  */
-export const REFERENCE_HTML_PROMPT_BUDGET = 250_000;
+// 500KB 上限 — 对齐客户端本地文件上限 + 服务端 fetch 上限。
+// Claude/GPT context 200K token (≈ 600KB chars) 装得下, 不需要更激进的 250K cap。
+// import-seed v1 路径下根本不进 LLM, 这个 budget 只对 v2+ 增量合成的 LLM prompt 起兜底作用。
+export const REFERENCE_HTML_PROMPT_BUDGET = 500_000;
 
 export const REF_MARKER_OPEN = '【导入参考 (HTML)】';
 export const REF_MARKER_CLOSE = '【/导入参考 (HTML)】';
@@ -32,14 +35,16 @@ export const REF_MARKER_CLOSE = '【/导入参考 (HTML)】';
 export const REF_LAZY_PLACEHOLDER = '原始 HTML: (将在首次合成时自动拉取)';
 
 /**
- * 把抓到的 rawHtml 压缩到 budget 内喂给 LLM:
- * - 把 data:base64 大图替换成 placeholder (保留语义, 省体积)
+ * 把抓到的 rawHtml 压缩 (可选) + 截到 budget 内:
  * - 折叠"标签之间"的纯空白 (不动 <pre>/<textarea> 等内部)
  * - 超 budget 时取头 75% + 尾 25%, 中间省略
+ *
+ * 注: base64 data URI 不再剥离 — 用户能传上来的 HTML 已经被 500KB 上限 cap 住,
+ * 把 base64 图片换成 placeholder 会让 1:1 复刻路径下的图片显示不出。LLM 上下文窗
+ * 大模型够吞, 真撑爆再说 (在 condense 末尾会按 budget 截断兜底)。
  */
 export function condenseReferenceHtml(raw: string): string {
   let s = raw;
-  s = s.replace(/data:[^"')\s]+;base64,[^"')\s]+/g, 'data:base64:[stripped]');
   s = s.replace(/>\s{2,}</g, '> <');
   s = s.replace(/\n{3,}/g, '\n\n');
   if (s.length <= REFERENCE_HTML_PROMPT_BUDGET) return s;
