@@ -1,9 +1,10 @@
 /**
- * Observer + Retrospect + Pulse e2e — 验证三件事 端到端:
+ * Observer + Retrospect e2e — 验证 端到端:
  *   1. tension 解决后, resolution.retrospect 由 LLM 生成并落库 (Feature B)
  *   2. timeline 出现 kind='retrospect' 事件, body 含 lesson (Feature B)
- *   3. /api/pulse 返回包含本次测试项目 + 至少跑过的 unresolved tension (Feature C)
- *   4. (软断言) /api/projects/[id]/intents 可能多出 '【观察】' 前缀的 intent (Feature A 主动观察)
+ *   3. (软断言) /api/projects/[id]/intents 可能多出 '【观察】' 前缀的 intent (Feature A 主动观察)
+ *
+ * 注: 原版还含 Pulse 断言, 用户已撤掉 Pulse 视图, 测试同步删除 pulse 段。
  *
  * 设计要点:
  *   - 测试目标默认 https://darwin.org.cn (prod), 可用 E2E_BASE 覆盖
@@ -150,21 +151,7 @@ async function main() {
     ok('本项目的 retrospect 出现在 timeline', !!myRetro,
       myRetro ? `body="${myRetro.body?.slice(0, 60)}"` : `projectIds=${retroEvents.map(e => e.projectId?.slice(0, 8)).join(',')}`);
 
-    // 8. 验证 pulse — 项目可能已经从 collaborating 转 converged (无 active tension), 仍 != published, 会进 activeProjects
-    const pulse = await api('GET', '/api/pulse', null, cookie);
-    ok('pulse 200', pulse.status === 200);
-    const p = pulse.json?.pulse;
-    ok('pulse.activeProjects 是数组', Array.isArray(p?.activeProjects));
-    ok('pulse.unresolvedTensions 是数组', Array.isArray(p?.unresolvedTensions));
-    ok('pulse.recentEvents 是数组', Array.isArray(p?.recentEvents));
-    const myProject = (p?.activeProjects || []).find(ap => ap.projectId === projectId);
-    ok('本项目出现在 pulse.activeProjects', !!myProject,
-      myProject ? `intents=${myProject.intentsCount}` : `IDs=${(p?.activeProjects||[]).map(ap=>ap.projectId.slice(0,8)).join(',')}`);
-    // recentEvents 应该包含本项目的 retrospect
-    const recentForUs = (p?.recentEvents || []).find(e => e.projectId === projectId && e.kind === 'retrospect');
-    ok('pulse.recentEvents 含本项目 retrospect', !!recentForUs);
-
-    // 9. (软断言) 主动观察 — 看是不是多了带 【观察】 前缀的 agent intent
+    // 8. (软断言) 主动观察 — 看是不是多了带 【观察】 前缀的 agent intent
     const finalIntents = await api('GET', `/api/projects/${projectId}/intents`, null, cookie);
     const observationIntents = (finalIntents.json?.intents || []).filter(i =>
       i.authorKind === 'agent' && i.statement?.startsWith('【观察】')
@@ -175,7 +162,7 @@ async function main() {
     }
 
   } finally {
-    // 10. 清理 — 删项目, FK cascade 清掉 intents/tensions/learnings
+    // 9. 清理 — 删项目, FK cascade 清掉 intents/tensions/learnings
     if (projectId) {
       const del = await api('DELETE', `/api/projects/${projectId}`, null, cookie);
       console.log(`  cleanup: DELETE project ${projectId.slice(0, 8)}… → ${del.status}`);

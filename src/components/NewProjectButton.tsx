@@ -92,25 +92,66 @@ export default function NewProjectButton({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // 新建 vs 导入: 落地页可导入 URL, PPT 可导入文件
+  // 新建 vs 导入: 落地页可导入 URL 或本地 HTML 文件, PPT 可导入文件
   // 关于 URL 导入: 创建项目时只存 URL, 不抓 HTML。
   // 详情页点"开始合成"时, 服务端按 URL 后台抓取 → 拼 prompt。
-  // 这样新建对话更顺滑,失败的抓取不会卡住"创建"动作。
+  // 关于本地 HTML 文件导入: 客户端用 FileReader 读完整源码, 直接随 referenceHtml POST 给服务端,
+  // 跳过 lazy-fetch 路径 — 服务端 /api/projects 已经支持这条 (zod schema 已经有 referenceHtml 字段)。
   const [sourceMode, setSourceMode] = useState<SourceMode>('blank');
+  // HTML 导入的子模式: 链接 vs 本地文件
+  const [htmlImportMode, setHtmlImportMode] = useState<'url' | 'file'>('url');
   const [importUrl, setImportUrl] = useState('');
+  // 本地 HTML 文件 (HTML import 路径) — 跟 PPT 那条 importedFile 互不相干, 单独 state
+  const [importedHtmlFile, setImportedHtmlFile] = useState<{ name: string; content: string; bytes: number } | null>(null);
   const [importedFile, setImportedFile] = useState<
     { name: string; isText: boolean; text?: string; note?: string } | null
   >(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // 切换 type 时重置导入态 (HTML 导入 URL, PPT 导入文件 — 不通用)
+  // 切换 type 时重置导入态 (HTML 导入 URL/文件, PPT 导入文件 — 不通用)
   useEffect(() => {
     setSourceMode('blank');
+    setHtmlImportMode('url');
     setImportUrl('');
+    setImportedHtmlFile(null);
     setImportedFile(null);
     setImportError(null);
   }, [type]);
+
+  // 读本地 HTML 文件 → setImportedHtmlFile
+  // 体积上限 480 KB — 服务端 referenceHtml zod 是 500 KB max, 留余量避免边界
+  const HTML_FILE_MAX_BYTES = 480 * 1024;
+  async function handleImportHtmlFile(file: File) {
+    setImporting(true);
+    setImportError(null);
+    try {
+      if (file.size > HTML_FILE_MAX_BYTES) {
+        setImportError(`文件太大 (${Math.round(file.size / 1024)} KB), 上限 480 KB`);
+        return;
+      }
+      const text = await file.text();
+      if (!text || text.trim().length === 0) {
+        setImportError('文件内容为空');
+        return;
+      }
+      // 简易合法性检查 — 至少能找到 <html 或 <!doctype, 避免有人传 .txt 错认为 HTML
+      const lower = text.slice(0, 2000).toLowerCase();
+      if (!lower.includes('<html') && !lower.includes('<!doctype') && !lower.includes('<body')) {
+        setImportError('不像 HTML 文件 (找不到 <html / <!doctype / <body)');
+        return;
+      }
+      setImportedHtmlFile({ name: file.name, content: text, bytes: file.size });
+      if (!name) {
+        const stripped = file.name.replace(/\.[^.]+$/, '');
+        setName(stripped);
+      }
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function handleImportFile(file: File) {
     setImporting(true);
@@ -190,16 +231,24 @@ export default function NewProjectButton({
     }
     if (sourceMode === 'import') {
       if (type === 'html') {
-        const trimmedUrl = importUrl.trim();
-        if (!trimmedUrl) {
-          setError('请填写要复刻的 HTML 链接');
-          return;
-        }
-        try {
-          new URL(trimmedUrl);
-        } catch {
-          setError('链接格式不对,需要 https:// 开头的完整 URL');
-          return;
+        if (htmlImportMode === 'url') {
+          const trimmedUrl = importUrl.trim();
+          if (!trimmedUrl) {
+            setError('请填写要复刻的 HTML 链接');
+            return;
+          }
+          try {
+            new URL(trimmedUrl);
+          } catch {
+            setError('链接格式不对,需要 https:// 开头的完整 URL');
+            return;
+          }
+        } else {
+          // file 模式
+          if (!importedHtmlFile) {
+            setError('请先选择要导入的 HTML 文件');
+            return;
+          }
         }
       }
       if (type === 'ppt' && !importedFile) {
@@ -212,16 +261,29 @@ export default function NewProjectButton({
     // 真正抓页面延后到详情页"开始合成"那一步, 服务端按需 fetch。
     const finalBackground = background.trim();
 
-    // 导入参考 → 生成种子意图 (HTML 项目: 只存 URL, 合成时再抓)
+    // 导入参考 → 生成种子意图 + 决定走哪条 referenceXxx 字段
+    //   - HTML + URL 模式: 传 referenceUrl, 服务端 lazy fetch
+    //   - HTML + 本地文件: 直接传 referenceHtml + referenceTitle, 服务端跳过 lazy fetch
+    //   - PPT: 复用旧路径
     let seedIntent: { statement: string } | undefined;
     let referenceUrl: string | undefined;
+    let referenceHtml: string | undefined;
+    let referenceTitle: string | undefined;
     if (sourceMode === 'import') {
       if (type === 'html') {
-        const url = importUrl.trim();
-        seedIntent = {
-          statement: `请按照 ${url} 的结构、文案、视觉风格复刻一份作为本项目的起点, 后续意图在此基础上增量调整。`,
-        };
-        referenceUrl = url;
+        if (htmlImportMode === 'url') {
+          const url = importUrl.trim();
+          seedIntent = {
+            statement: `请按照 ${url} 的结构、文案、视觉风格 1:1 还原作为本项目的起点, 包括所有子页面 / 章节 / 隐藏 tab 的文案、交互、视觉; 后续意图在此基础上增量调整。`,
+          };
+          referenceUrl = url;
+        } else if (importedHtmlFile) {
+          seedIntent = {
+            statement: `请基于上传的 ${importedHtmlFile.name} 的 HTML 源代码 1:1 还原作为本项目起点, 完整保留全部章节 / tab / 模态 / 隐藏区域的文案、交互、视觉; 后续意图在此基础上增量调整。`,
+          };
+          referenceHtml = importedHtmlFile.content;
+          referenceTitle = importedHtmlFile.name;
+        }
       } else if (type === 'ppt' && importedFile) {
         seedIntent = {
           statement: `请基于上传的 ${importedFile.name} 的内容和结构来合成本 PPT,意图后续可由团队增量调整。`,
@@ -242,6 +304,8 @@ export default function NewProjectButton({
             collaboratorIds: Array.from(collaboratorIds),
             ...(seedIntent ? { seedIntent } : {}),
             ...(referenceUrl ? { referenceUrl } : {}),
+            ...(referenceHtml ? { referenceHtml } : {}),
+            ...(referenceTitle ? { referenceTitle } : {}),
           }),
         });
         const json = await res.json();
@@ -359,14 +423,48 @@ export default function NewProjectButton({
 
               {sourceMode === 'import' && type === 'html' && (
                 <div className="field">
-                  <label className="field-label" htmlFor="np-url">要复刻的 HTML 链接</label>
-                  <input
-                    id="np-url" className="field-input" type="url"
-                    placeholder="https://example.com/landing"
-                    value={importUrl}
-                    onChange={e => setImportUrl(e.target.value)}
-                    disabled={isPending}
-                  />
+                  <label className="field-label">参考 HTML 来源</label>
+                  {/* 子切换: URL / 本地文件 */}
+                  <div className="np-html-import-tabs">
+                    <button
+                      type="button"
+                      className={`np-html-import-tab${htmlImportMode === 'url' ? ' active' : ''}`}
+                      onClick={() => { setHtmlImportMode('url'); setImportError(null); }}
+                      disabled={isPending}
+                    >链接</button>
+                    <button
+                      type="button"
+                      className={`np-html-import-tab${htmlImportMode === 'file' ? ' active' : ''}`}
+                      onClick={() => { setHtmlImportMode('file'); setImportError(null); }}
+                      disabled={isPending}
+                    >本地文件</button>
+                  </div>
+                  {htmlImportMode === 'url' ? (
+                    <input
+                      id="np-url" className="field-input" type="url"
+                      placeholder="https://example.com/landing"
+                      value={importUrl}
+                      onChange={e => setImportUrl(e.target.value)}
+                      disabled={isPending}
+                    />
+                  ) : (
+                    <>
+                      <input
+                        id="np-html-file" className="field-input" type="file"
+                        accept=".html,.htm"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleImportHtmlFile(f); }}
+                        disabled={isPending || importing}
+                      />
+                      {importing && <div className="import-info">读取中…</div>}
+                      {importedHtmlFile && (
+                        <div className="import-ok">
+                          ✓ 已加载 <strong>{importedHtmlFile.name}</strong>
+                          <span className="import-ok-meta"> · {Math.round(importedHtmlFile.bytes / 1024)} KB · 合成时将基于这份源码 1:1 还原</span>
+                        </div>
+                      )}
+                      {importError && <div className="import-error">⚠️ {importError}</div>}
+                    </>
+                  )}
                 </div>
               )}
 
