@@ -13,6 +13,7 @@
 import type { Project, Intent } from './types';
 import { callLLM, callLLMStream, llmProvider } from './llm';
 import { extractReferenceHtmlFromBackground } from './fetch-imported-html';
+import { applyAnnotatedPatches, allIntentsAreAnnotatedPatches } from './patches';
 import {
   buildSynthesizeSystem,
   buildSynthesizeUser,
@@ -28,14 +29,14 @@ export type SynthesisEvent =
   /** 从 LLM 流出的 HTML 文本片段 */
   | { type: 'chunk'; content: string }
   /** LLM 输出结束 — 包含最终清洗过的完整 HTML（route handler 用来入库） */
-  | { type: 'complete'; source: 'llm' | 'template'; mode: 'full' | 'incremental'; html: string }
+  | { type: 'complete'; source: 'llm' | 'template' | 'patch'; mode: 'full' | 'incremental'; html: string }
   /** 版本已入库 — 客户端用来更新 currentVersion 状态 */
   | { type: 'saved'; version: Record<string, unknown>; mode: string }
   | { type: 'error'; message: string };
 
 export type SynthesisResult = {
   content: string;
-  source: 'llm' | 'template';
+  source: 'llm' | 'template' | 'patch';
   reason?: string;
   mode?: 'full' | 'incremental';
 };
@@ -88,6 +89,32 @@ export async function synthesize(
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
 
+    // 标注修改专用快路径: 所有新 intent 都是 【标注修改】 块 → 服务端 cheerio 拼接,
+    // LLM 只输出被 pin 元素的小补丁。不让 LLM 重写整页, 避免它输出占位 stub。
+    if (allIntentsAreAnnotatedPatches(newIntents)) {
+      try {
+        const patched = await applyAnnotatedPatches(existing.html, newIntents);
+        if (patched.applied > 0) {
+          // sanity check: 输出 bytes 应该 ≈ existing (允许 5% 浮动)
+          const ratio = patched.html.length / existing.html.length;
+          if (ratio >= 0.7 && ratio <= 1.3) {
+            return {
+              content: patched.html,
+              source: 'patch',
+              mode: 'incremental',
+              reason: `${patched.applied} pin(s) applied${patched.skipped > 0 ? `, ${patched.skipped} skipped` : ''}`,
+            };
+          }
+          console.warn(`[synthesize] patch produced suspicious size ratio ${ratio.toFixed(2)}, falling back`);
+        } else {
+          console.warn('[synthesize] patch path applied 0 pins, falling back to LLM:', patched.errors);
+        }
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn('[synthesize] patch path threw, falling back to LLM:', reason);
+      }
+    }
+
     // 只有新增 intent 才走增量;如果 intent 没变化或全是新的,走全量
     if (newIntents.length > 0 && newIntents.length < intents.length) {
       try {
@@ -95,7 +122,11 @@ export async function synthesize(
           callLLMForIncrementalUpdate(project, newIntents, existing.html),
           timeout(LLM_TIMEOUT_MS),
         ]);
-        return { content: html, source: 'llm', mode: 'incremental' };
+        // sanity check: bytes 不能崩到 50% 以下, 防止 LLM 输出占位 stub
+        if (html.length >= existing.html.length * 0.5) {
+          return { content: html, source: 'llm', mode: 'incremental' };
+        }
+        console.warn(`[synthesize] incremental output suspiciously small (${html.length} vs existing ${existing.html.length}), falling back`);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         console.warn('[synthesize] incremental update failed, falling back to full synthesis:', reason);
@@ -239,6 +270,27 @@ export async function* synthesizeStream(
   if (existing?.html) {
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
+
+    // 标注修改快路径: 同 synthesize() 非流版本
+    if (allIntentsAreAnnotatedPatches(newIntents)) {
+      yield { type: 'thinking', message: `AI 正在精准修补 ${newIntents.length} 条标注…` };
+      try {
+        const patched = await applyAnnotatedPatches(existing.html, newIntents);
+        if (patched.applied > 0) {
+          const ratio = patched.html.length / existing.html.length;
+          if (ratio >= 0.7 && ratio <= 1.3) {
+            yield { type: 'chunk', content: patched.html };
+            yield { type: 'complete', source: 'patch', mode: 'incremental', html: patched.html };
+            return;
+          }
+        }
+        // 否则降级走 LLM 整页 (下面那段)
+        yield { type: 'thinking', message: '标注精准修补未命中, 降级到全文 LLM 更新…' };
+      } catch (err) {
+        yield { type: 'thinking', message: `标注修补失败, 降级到 LLM: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+
     if (newIntents.length > 0 && newIntents.length < intents.length) {
       yield { type: 'thinking', message: `AI 正在把 ${newIntents.length} 条新意图融入产物…` };
       try {

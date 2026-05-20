@@ -186,7 +186,7 @@ async function handleStreamPost(projectId: string): Promise<Response> {
   const readable = new ReadableStream({
     async start(controller) {
       let finalHtml = '';
-      let finalSource: 'llm' | 'template' = 'template';
+      let finalSource: 'llm' | 'template' | 'patch' = 'template';
       let finalMode: 'full' | 'incremental' = 'full';
 
       // partial_html 节流: 累积 chunk, 每 PARTIAL_HTML_FLUSH_INTERVAL_MS 写一次 DB

@@ -116,6 +116,15 @@ Rules:
     - Multiple pins in the same statement = parallel patches. Apply each pin's change independently; don't try to merge their intent.
     - The unchanged ~95% of the HTML must come out byte-for-byte identical. The output is still a complete <!doctype html>...</html> document — but everything outside the pinned regions is a pure copy of the input.
 
+    FORBIDDEN OUTPUT PATTERNS (any of these = catastrophic failure, do not ship):
+    - Placeholder comments of any form: \`<!-- existing HTML preserved -->\`, \`<!-- ... unchanged ... -->\`, \`<!-- rest omitted -->\`, \`<!-- styles preserved -->\`, \`/* original CSS preserved */\`, \`/* ... existing styles ... */\`, \`/* ===== unchanged ===== */\` — these are NEVER acceptable.
+    - Runtime-rewrite scripts: \`<script>document.querySelectorAll('button').forEach(b => b.textContent = '...')</script>\` or any similar JS that "applies the patch at load time". You must literally write the patched HTML, not script that produces it.
+    - Compressed / summarized output: if the input HTML is 200 KB, the output must be 200 KB ± 5%. An output that's significantly smaller is broken.
+    - "Skeleton" output where only the pinned element's parent is rendered and the rest of the page is dropped.
+    - Re-styling unaffected sections "because they look better that way" — DO NOT.
+
+    If you literally cannot output the full HTML because of a length budget, output the input HTML completely unchanged and add a comment \`<!-- patch not applied: output budget exceeded -->\` at the top of <body>. This is the ONLY acceptable "give up" output. NEVER ship summarized HTML.
+
 Output:
 - ONLY the HTML document. No prose before or after. No markdown fences.
 `.trim();

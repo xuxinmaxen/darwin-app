@@ -42,6 +42,14 @@ type DarwinAnnotation = {
   label: string;
   selector: string;
   text: string;
+  /** ancestor selector chain — 跨多 tab/section 用来 disambiguate */
+  parentPath?: string;
+  /** 最近 heading 文本 — 同名按钮在多 modal 时定位关键 */
+  nearestHeading?: string;
+  /** 最近有标识的容器 (aria-label / data-mm-label / data-scope / tabpanel) */
+  containerLabel?: string;
+  /** 元素所在的 section id 或 data-scope */
+  pageSection?: string;
   note: string;
 };
 
@@ -249,8 +257,13 @@ export default function IntentForm({
     }
     const block = '【标注修改】\n' + anns.map((a, i) => {
       const note = a.note || '(没写评论 — 见 statement 文字)';
-      const meta = a.text ? `${a.selector} · "${a.text}"` : a.selector;
-      return `${i + 1}. [${meta}] ${note}`;
+      // meta 拼 [selector · "text" · at: parentPath · in: "heading"]
+      // 越完整的定位上下文, 服务端 patch 路径越能在多 tab/modal 里精准命中
+      const parts: string[] = [a.selector];
+      if (a.text) parts.push(`"${a.text}"`);
+      if (a.parentPath) parts.push(`at: ${a.parentPath}`);
+      if (a.nearestHeading) parts.push(`in: "${a.nearestHeading}"`);
+      return `${i + 1}. [${parts.join(' · ')}] ${note}`;
     }).join('\n');
 
     setStatement(prev => {

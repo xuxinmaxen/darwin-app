@@ -30,6 +30,14 @@ export type DarwinMarkAnnotation = {
   label: string;
   selector: string;
   text: string;
+  /** ancestor selector chain; e.g. "body > #view-pending > .state-hero > button" */
+  parentPath?: string;
+  /** 最近 heading 文本; ≤60 字 */
+  nearestHeading?: string;
+  /** 最近有标识的容器; aria-label / data-mm-label / data-scope / tabpanel */
+  containerLabel?: string;
+  /** 元素所在 section id 或 data-scope */
+  pageSection?: string;
   note: string;
 };
 export type DarwinMarkAPI = {

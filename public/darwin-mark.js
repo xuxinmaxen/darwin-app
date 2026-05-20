@@ -553,33 +553,142 @@ body.mm-on .mm-pin { cursor: pointer !important; }
     document.getElementById('mm-collapse').textContent = collapsed ? '+' : '−';
   }
 
-  function describeElement(el) {
-    let cur = el;
-    while (cur && cur !== document.body && cur !== document.documentElement) {
-      if (cur.getAttribute && cur.getAttribute('data-mm-label')) {
-        return { label: cur.getAttribute('data-mm-label'), selector: '[data-mm-label]', text: textOf(cur), target: cur };
-      }
-      if (cur.id) return { label: '#' + cur.id, selector: '#' + cur.id, text: textOf(cur), target: cur };
-      if (cur.getAttribute && cur.getAttribute('aria-label')) {
-        return { label: cur.getAttribute('aria-label'), selector: cur.tagName.toLowerCase(), text: textOf(cur), target: cur };
-      }
-      if (cur.matches) {
-        if (cur.matches('button, [role="button"]')) return { label: 'Button', selector: 'button', text: textOf(cur), target: cur };
-        if (cur.matches('a[href]')) return { label: 'Link', selector: 'a', text: textOf(cur), target: cur };
-        if (cur.matches('input, select, textarea')) {
-          const v = cur.placeholder || cur.value || '';
-          return { label: cur.tagName.toLowerCase(), selector: cur.tagName.toLowerCase(), text: v.slice(0, 80), target: cur };
-        }
-        if (cur.matches('h1, h2, h3, h4, h5, h6')) {
-          return { label: cur.tagName.toLowerCase(), selector: cur.tagName.toLowerCase(), text: textOf(cur), target: cur };
+  // 用 tag + 第一个 class 或 #id 给单个元素生成精简 selector — 仅用于 parentPath
+  function shortSelectorFor(el) {
+    if (!el || !el.tagName) return '';
+    if (el.id) return '#' + el.id;
+    const tag = el.tagName.toLowerCase();
+    const cls = (el.className && typeof el.className === 'string')
+      ? el.className.split(' ').filter(Boolean)[0]
+      : '';
+    return tag + (cls ? '.' + cls : '');
+  }
+
+  // 上溯 4 层 ancestor, 给 cheerio 找元素时拼接成 "body > #x > .y > z" 形态。
+  // 跨多 tab / modal / hidden section 时, 这是 disambiguate 的关键 — 因为 selector 单独看可能命中多处。
+  function parentPathOf(el) {
+    const path = [];
+    let cur = el.parentElement;
+    let depth = 0;
+    while (cur && cur !== document.body && cur !== document.documentElement && depth < 5) {
+      path.unshift(shortSelectorFor(cur));
+      cur = cur.parentElement;
+      depth++;
+    }
+    return path.filter(Boolean).join(' > ');
+  }
+
+  // 最近的 ancestor heading (h1-h6) 的 textContent — 用来 disambiguate 同名按钮 (e.g. "Change plan"
+  // 在 Pricing/Billing/Checkout 三个 modal 里都有, 但每个 modal 里都有一条不同的 heading)
+  function nearestHeadingOf(el) {
+    // 上溯找包含 heading 的 section/div ancestor, 然后取它子树里最早出现的 heading
+    let cur = el.parentElement;
+    while (cur && cur !== document.body) {
+      const h = cur.querySelector ? cur.querySelector('h1, h2, h3, h4, h5, h6') : null;
+      if (h && h.textContent && h !== el) {
+        // 但要确保这个 heading 真的"管"el — h 应该出现在 cur 子树里 el 之前
+        if (cur.contains(el) && cur.contains(h)) {
+          const t = (h.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t) return t.slice(0, 60);
         }
       }
       cur = cur.parentElement;
     }
-    const tag = el.tagName ? el.tagName.toLowerCase() : 'unknown';
-    const cls = (el.className && typeof el.className === 'string') ? el.className.split(' ').filter(Boolean)[0] : '';
-    const sel = tag + (cls ? '.' + cls : '');
-    return { label: sel, selector: sel, text: textOf(el), target: el };
+    return null;
+  }
+
+  // 最近含 aria-label / data-mm-label / data-scope / [role=tabpanel] 的 container 标识
+  function containerLabelOf(el) {
+    let cur = el.parentElement;
+    let depth = 0;
+    while (cur && cur !== document.body && depth < 8) {
+      if (cur.getAttribute) {
+        const aria = cur.getAttribute('aria-label');
+        if (aria) return aria.slice(0, 40);
+        const mm = cur.getAttribute('data-mm-label');
+        if (mm) return mm.slice(0, 40);
+        const ds = cur.getAttribute('data-scope');
+        if (ds) return ds.slice(0, 40);
+        const role = cur.getAttribute('role');
+        if (role === 'tabpanel') {
+          const labelledBy = cur.getAttribute('aria-labelledby');
+          if (labelledBy) {
+            const labelEl = document.getElementById(labelledBy);
+            if (labelEl && labelEl.textContent) return labelEl.textContent.slice(0, 40);
+          }
+          return 'tabpanel';
+        }
+      }
+      cur = cur.parentElement;
+      depth++;
+    }
+    return null;
+  }
+
+  // 最近的 <section> 或带 id 的 ancestor 的 id / data-scope — page-level anchor
+  function pageSectionOf(el) {
+    let cur = el.parentElement;
+    while (cur && cur !== document.body) {
+      if (cur.id) return '#' + cur.id;
+      if (cur.getAttribute && cur.getAttribute('data-scope')) return cur.getAttribute('data-scope');
+      if (cur.tagName === 'SECTION') {
+        // 没有 id 但是 section, 试 data-scope or 第一个 class
+        const sec = cur.getAttribute('data-scope') || (cur.className && cur.className.split(' ')[0]);
+        if (sec) return sec;
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  // 给定一个 target 元素, 计算所有定位上下文字段 — 上层调用方按需读取
+  function locationContextOf(targetEl) {
+    if (!targetEl || !targetEl.parentElement) return {};
+    return {
+      parentPath: parentPathOf(targetEl),
+      nearestHeading: nearestHeadingOf(targetEl),
+      containerLabel: containerLabelOf(targetEl),
+      pageSection: pageSectionOf(targetEl),
+    };
+  }
+
+  function describeElement(el) {
+    let cur = el;
+    let base = null;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      if (cur.getAttribute && cur.getAttribute('data-mm-label')) {
+        base = { label: cur.getAttribute('data-mm-label'), selector: '[data-mm-label]', text: textOf(cur), target: cur };
+        break;
+      }
+      if (cur.id) { base = { label: '#' + cur.id, selector: '#' + cur.id, text: textOf(cur), target: cur }; break; }
+      if (cur.getAttribute && cur.getAttribute('aria-label')) {
+        base = { label: cur.getAttribute('aria-label'), selector: cur.tagName.toLowerCase(), text: textOf(cur), target: cur };
+        break;
+      }
+      if (cur.matches) {
+        if (cur.matches('button, [role="button"]')) { base = { label: 'Button', selector: 'button', text: textOf(cur), target: cur }; break; }
+        if (cur.matches('a[href]')) { base = { label: 'Link', selector: 'a', text: textOf(cur), target: cur }; break; }
+        if (cur.matches('input, select, textarea')) {
+          const v = cur.placeholder || cur.value || '';
+          base = { label: cur.tagName.toLowerCase(), selector: cur.tagName.toLowerCase(), text: v.slice(0, 80), target: cur };
+          break;
+        }
+        if (cur.matches('h1, h2, h3, h4, h5, h6')) {
+          base = { label: cur.tagName.toLowerCase(), selector: cur.tagName.toLowerCase(), text: textOf(cur), target: cur };
+          break;
+        }
+      }
+      cur = cur.parentElement;
+    }
+    if (!base) {
+      const tag = el.tagName ? el.tagName.toLowerCase() : 'unknown';
+      const cls = (el.className && typeof el.className === 'string') ? el.className.split(' ').filter(Boolean)[0] : '';
+      const sel = tag + (cls ? '.' + cls : '');
+      base = { label: sel, selector: sel, text: textOf(el), target: el };
+    }
+    // 富化定位上下文 — 给服务端 patch 匹配用
+    const ctx = locationContextOf(base.target);
+    return { ...base, ...ctx };
   }
 
   function textOf(el) {
@@ -634,6 +743,11 @@ body.mm-on .mm-pin { cursor: pointer !important; }
     const ann = {
       id: id, ctx: ctx,
       label: desc.label, selector: desc.selector, text: desc.text,
+      // 富化定位字段 — 给服务端 patch 路径用; 老格式 (没这些字段) 仍兼容
+      parentPath: desc.parentPath || '',
+      nearestHeading: desc.nearestHeading || '',
+      containerLabel: desc.containerLabel || '',
+      pageSection: desc.pageSection || '',
       note: '', pinEl: pin, targetEl: desc.target
     };
     annotations.push(ann);
@@ -884,6 +998,10 @@ body.mm-on .mm-pin { cursor: pointer !important; }
           label: a.label,
           selector: a.selector,
           text: a.text,
+          parentPath: a.parentPath || '',
+          nearestHeading: a.nearestHeading || '',
+          containerLabel: a.containerLabel || '',
+          pageSection: a.pageSection || '',
           note: a.note || '',
         };
       });
