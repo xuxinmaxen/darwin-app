@@ -14,6 +14,7 @@ import type { Project, Intent } from './types';
 import { callLLM, callLLMStream, llmProvider } from './llm';
 import { extractReferenceHtmlFromBackground } from './fetch-imported-html';
 import { applyAnnotatedPatches, allIntentsAreAnnotatedPatches } from './patches';
+import { trySurgicalIncrementalUpdate } from './surgical-edit';
 import {
   buildSynthesizeSystem,
   buildSynthesizeUser,
@@ -130,6 +131,25 @@ export async function synthesize(
 
     // 只有新增 intent 才走增量;如果 intent 没变化或全是新的,走全量
     if (newIntents.length > 0 && newIntents.length < intents.length) {
+      const surgical = await trySurgicalIncrementalUpdate(project, newIntents, existing.html);
+      if (surgical.ok) {
+        return {
+          content: surgical.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: surgical.reason,
+        };
+      }
+      if (!surgical.allowFullRewrite) {
+        console.warn('[synthesize] surgical edit refused, keeping existing unchanged:', surgical.reason);
+        return {
+          content: existing.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `局部修改保护: ${surgical.reason}`,
+        };
+      }
+
       try {
         const html = await Promise.race([
           callLLMForIncrementalUpdate(project, newIntents, existing.html),
@@ -359,6 +379,20 @@ export async function* synthesizeStream(
 
     if (newIntents.length > 0 && newIntents.length < intents.length) {
       yield { type: 'thinking', message: `AI 正在把 ${newIntents.length} 条新意图融入产物…` };
+      const surgical = await trySurgicalIncrementalUpdate(project, newIntents, existing.html);
+      if (surgical.ok) {
+        yield { type: 'thinking', message: surgical.reason };
+        yield { type: 'chunk', content: surgical.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: surgical.html };
+        return;
+      }
+      if (!surgical.allowFullRewrite) {
+        yield { type: 'thinking', message: `局部修改保护: ${surgical.reason}` };
+        yield { type: 'chunk', content: existing.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+        return;
+      }
+
       try {
         let html = '';
         let fenceState: 'unknown' | 'stripped' | 'plain' = 'unknown';
