@@ -3,7 +3,7 @@ import { db, assertOk, newId, nowISO } from './db';
 export type Version = {
   id: string; projectId: string; format: string; content: string;
   intentIds: string[]; createdAt: string; publishedAt: string | null;
-  source?: 'llm' | 'template';
+  source?: 'llm' | 'template' | 'patch';
 };
 export type VersionMeta = Omit<Version, 'content'>;
 

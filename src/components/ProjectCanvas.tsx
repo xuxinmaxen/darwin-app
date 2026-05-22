@@ -57,6 +57,28 @@ const AUTO_SYNC_DEBOUNCE_MS = Number(
     : process?.env?.DARWIN_AUTOSYNC_DEBOUNCE_MS
 ) || 2_500;
 
+function sourceMeta(source?: Version['source']) {
+  if (source === 'llm') return { cls: 'llm', label: 'LLM', title: 'LLM 完整合成' };
+  if (source === 'patch') return { cls: 'patch', label: '局部修补', title: '只修改命中的局部区域,其余保持原样' };
+  if (source === 'template') return { cls: 'template', label: '模板', title: '本地模板（LLM 不可用时回退）' };
+  return { cls: 'saved', label: '已保存版本', title: '历史保存版本' };
+}
+
+const IFRAME_COMPAT_SCRIPT = `
+(function(){
+  try {
+    var NativeMutationObserver = window.MutationObserver;
+    if (!NativeMutationObserver || NativeMutationObserver.__darwinObserveGuard) return;
+    var nativeObserve = NativeMutationObserver.prototype.observe;
+    NativeMutationObserver.prototype.observe = function(target, options) {
+      if (!target || typeof target.nodeType !== 'number') return;
+      return nativeObserve.call(this, target, options);
+    };
+    NativeMutationObserver.__darwinObserveGuard = true;
+  } catch (e) {}
+})();
+`;
+
 /**
  * 让 iframe 内的合成 HTML 表现得像一个真实的、自洽的单页网站:
  *
@@ -105,6 +127,17 @@ function prepareIframeHtml(
   } else if (/<base\b[^>]*>/i.test(s)) {
     // 没源 URL 但 LLM 自己输出了 <base> → 去掉, 避免它带歪 target
     s = s.replace(/<base\b[^>]*>/i, '');
+  }
+
+  // (1b) 生成/导入 HTML 的脚本质量不可控; 局部修补后常见空节点 observe 导致整页 JS 中断。
+  //      只兜住 MutationObserver.observe(non-Node) 这一类脆弱点,其他错误仍正常暴露。
+  const compatTag = `<script data-darwin-iframe-compat>${IFRAME_COMPAT_SCRIPT}</script>`;
+  if (!/data-darwin-iframe-compat/i.test(s)) {
+    if (/<head\b[^>]*>/i.test(s)) {
+      s = s.replace(/<head([^>]*)>/i, `<head$1>${compatTag}`);
+    } else {
+      s = `${compatTag}${s}`;
+    }
   }
 
   // (2) 在 body 顶部注入 <a id="top"> 锚点 → 让 logo (#top) 滚到顶
@@ -773,6 +806,7 @@ export default function ProjectCanvas({
     ? rawDisplayContent  // streamingHtml 路径已注入, 不重复
     : injectBaseTarget(rawDisplayContent, sourceUrl, markScript);
   const displaySource = displayVersion?.source;
+  const displaySourceMeta = sourceMeta(displaySource);
 
   // ─── Thinking overlay 阶段判断 ──────────────────────────
   // 阶段 1 (detect): 有新意图未合成 → 正在检测冲突中 (等待 10s debounce + 5s poll)
@@ -902,14 +936,10 @@ export default function ProjectCanvas({
           ) : displayVersion ? (
             <>
               <span
-                className={`canvas-source-pill canvas-source-${displaySource || 'template'}`}
-                title={
-                  displaySource === 'llm'
-                    ? 'LLM 直出'
-                    : '本地模板（LLM 不可用时回退）'
-                }
+                className={`canvas-source-pill canvas-source-${displaySourceMeta.cls}`}
+                title={displaySourceMeta.title}
               >
-                {displaySource === 'llm' ? '🤖 LLM' : '⚙️ 模板'}
+                {displaySourceMeta.label}
               </span>
               <span>{isPreviewing ? '预览历史版本' : '已同步'}</span>
               <span>·</span>

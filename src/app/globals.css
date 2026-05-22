@@ -1713,12 +1713,21 @@ body {
   padding: 2px 8px; border-radius: 99px;
   font-size: 11px; font-weight: 600;
 }
+.canvas-source-llm,
 .canvas-source-claude {
   background: var(--accent-soft); color: var(--accent-text);
   border: 1px solid var(--accent-soft-2);
 }
+.canvas-source-patch {
+  background: #ECFDF5; color: #047857;
+  border: 1px solid #A7F3D0;
+}
 .canvas-source-template {
   background: var(--panel-2); color: var(--text-2);
+  border: 1px solid var(--line);
+}
+.canvas-source-saved {
+  background: #F8FAFC; color: var(--text-3);
   border: 1px solid var(--line);
 }
 /* Auto-sync indicators */

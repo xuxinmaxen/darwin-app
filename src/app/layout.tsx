@@ -11,7 +11,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
       {/* 防止暗色模式闪烁: 在 hydration 前读 localStorage 设 data-theme */}
       <head>
         <script
