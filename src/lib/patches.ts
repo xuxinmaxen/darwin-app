@@ -39,6 +39,11 @@ export type AnnotatedPatch = {
   note: string;              // 用户写的修改注解
 };
 
+type TextReplacement = {
+  from?: string;
+  to: string;
+};
+
 /**
  * 从一条 intent.statement 里抽出所有 patch tuples。
  * Statement 里既可能含用户的 free text, 也含 【标注修改】 块 — 我们只取块内每行。
@@ -99,7 +104,7 @@ export function hasAnnotatedPatches(intents: Intent[]): boolean {
 
 export function htmlPreservesAnnotatedTextExpectations(html: string, intents: Intent[]): boolean {
   const expected = collectPatchesFromIntents(intents)
-    .map(patch => simpleTextReplacementFromNote(patch.note))
+    .map(patch => simpleTextReplacementFromNote(patch.note)?.to)
     .filter((value): value is string => Boolean(value));
   if (expected.length === 0) return true;
 
@@ -263,6 +268,11 @@ export async function applyAnnotatedPatches(
     }
     const origLen = r.task.outerHtml.length;
     const newLen = r.result.length;
+    if (normalizeText(r.result) === normalizeText(r.task.outerHtml)) {
+      skipped++;
+      errors.push(`pin #${r.task.patch.pinIndex}: patch output unchanged, 已跳过`);
+      continue;
+    }
     const elemRatio = origLen > 0 ? newLen / origLen : 1;
     // 容器级 outerHTML 又被 LLM 缩成骨架 — 跳过, 保留原元素不动
     if (elemRatio < 0.5) {
@@ -303,34 +313,59 @@ function patchOuterHtmlDeterministically(
   const root = $root.get(0);
   if (!root) return null;
 
-  const source = patch.text;
+  const source = replacement.from ?? patch.text;
   let changed = false;
 
   if ($root.children().length === 0) {
     const current = normalizeText($root.text());
     const expected = normalizeText(source);
-    if (current === expected || current.startsWith(expected) || current.includes(expected)) {
-      $root.text(replacement);
+    if (replacement.from && current.includes(expected)) {
+      $root.text($root.text().replace(source, replacement.to));
+      changed = true;
+    } else if (!replacement.from && (current === expected || current.startsWith(expected) || current.includes(expected))) {
+      $root.text(replacement.to);
       changed = true;
     }
   }
 
   if (!changed) {
-    changed = replaceTextNode(root, source, replacement);
+    changed = replaceTextNode(root, source, replacement.to);
   }
 
   return changed ? $.html($root) : null;
 }
 
-function simpleTextReplacementFromNote(note: string): string | null {
+function simpleTextReplacementFromNote(note: string): TextReplacement | null {
   const trimmed = note.trim();
   const startsAsTextChange = /^(改成|改为|换成|替换成|替换为)\s*/.test(trimmed);
   const namesTextTarget = /(文案|标题|按钮文字|按钮文案|文字|copy|text|label).{0,12}(改成|改为|换成|替换成|替换为)/i.test(trimmed);
-  if (!startsAsTextChange && !namesTextTarget) return null;
+  const direct = trimmed.match(/^(?:改成|改为|换成|替换成|替换为)\s*(.+)$/);
+  if (startsAsTextChange && direct?.[1]) {
+    const to = cleanReplacementText(direct[1]);
+    return to ? { to } : null;
+  }
 
-  const m = trimmed.match(/(?:改成|改为|换成|替换成|替换为)\s*(.+)$/);
-  if (!m?.[1]) return null;
-  return cleanReplacementText(m[1]);
+  const scoped = trimmed.match(/(?:文案|标题|按钮文字|按钮文案|文字|copy|text|label).{0,12}(?:改成|改为|换成|替换成|替换为)\s*(.+)$/i);
+  if (namesTextTarget && scoped?.[1]) {
+    const to = cleanReplacementText(scoped[1]);
+    return to ? { to } : null;
+  }
+
+  const fromTo = trimmed.match(/^(.{1,120}?)(?:\s*)(?:改成|改为|换成|替换成|替换为)(?:\s*)(.{1,120})$/);
+  if (fromTo?.[1] && fromTo?.[2]) {
+    const from = cleanReplacementText(fromTo[1]);
+    const to = cleanReplacementText(fromTo[2]);
+    if (from && to && from !== to) return { from, to };
+  }
+
+  const arrow = trimmed.match(/^(.{1,120}?)(?:\s*)(?:->|→|=>)(?:\s*)(.{1,120})$/);
+  if (arrow?.[1] && arrow?.[2]) {
+    const from = cleanReplacementText(arrow[1]);
+    const to = cleanReplacementText(arrow[2]);
+    if (from && to && from !== to) return { from, to };
+  }
+
+  return null;
 }
 
 function cleanReplacementText(value: string): string | null {

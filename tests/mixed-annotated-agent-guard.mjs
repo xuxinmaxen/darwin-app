@@ -58,6 +58,17 @@ try {
   assert.equal(htmlPreservesAnnotatedTextExpectations(patched.html.replace('founded', 'found'), [humanIntent]), false);
   assert.equal(htmlPreservesAnnotatedTextExpectations(patched.html, [agentIntent]), true);
 
+  const substringIntent = {
+    id: 'human-2',
+    statement: '【标注修改】\n1. [h1 · "Your store, founded by AI" · at: #view-welcome-plan > div.view-inner > div.shell-wide > div.welcome-hero] founded by AI 改成 found by AI',
+  };
+  const substringInput = patched.html;
+  const substringPatched = await applyAnnotatedPatches(substringInput, [substringIntent]);
+  assert.equal(substringPatched.applied, 1, substringPatched.errors.join(' | '));
+  assert.match(substringPatched.html, /Your store, found by AI/);
+  assert.doesNotMatch(substringPatched.html, /Your store, founded by AI/);
+  assert.equal(htmlPreservesAnnotatedTextExpectations(substringPatched.html, [substringIntent]), true);
+
   console.log('mixed-annotated-agent guard: ok');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
