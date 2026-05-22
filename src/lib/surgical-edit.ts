@@ -15,7 +15,7 @@
 import { createHash } from 'crypto';
 import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
-import type { Element } from 'domhandler';
+import type { AnyNode, Element } from 'domhandler';
 import type { Intent, Project } from './types';
 import { callLLM, callLLMJSON, llmProvider } from './llm';
 import { stripCodeFences } from './prompts/synthesize-html';
@@ -45,6 +45,11 @@ type EditPlan = {
   confidence?: number;
   targets?: EditPlanTarget[];
   reason?: string;
+};
+
+type TextReplacement = {
+  from: string;
+  to: string;
 };
 
 export type SurgicalEditResult =
@@ -89,18 +94,23 @@ export async function trySurgicalIncrementalUpdate(
     };
   }
 
-  if (!llmProvider()) {
-    return {
-      ok: false,
-      reason: '未配置 LLM,为避免破坏现有产物,保留上一版',
-    };
-  }
-
   const regions = buildDomRegions(existingHtml);
   if (regions.length === 0) {
     return {
       ok: false,
       reason: '当前 HTML 没有可定位的 section/header/footer 区域,保留上一版',
+    };
+  }
+
+  const deterministic = tryDeterministicTextUpdate(project, newIntents, existingHtml, regions);
+  if (deterministic) {
+    return deterministic;
+  }
+
+  if (!llmProvider()) {
+    return {
+      ok: false,
+      reason: '未配置 LLM,为避免破坏现有产物,保留上一版',
     };
   }
 
@@ -194,6 +204,136 @@ export async function trySurgicalIncrementalUpdate(
     changedKeys,
     reason: `局部修改已应用到 ${changedKeys.join(', ')}${errors.length ? `; skipped: ${errors.slice(0, 2).join(' | ')}` : ''}`,
   };
+}
+
+function tryDeterministicTextUpdate(
+  _project: Project,
+  intents: Intent[],
+  existingHtml: string,
+  regions: DomRegion[]
+): SurgicalEditResult | null {
+  const replacements = extractTextReplacements(intents);
+  if (replacements.length === 0) return null;
+
+  const $ = cheerio.load(existingHtml, { xml: false });
+  const heuristic = heuristicPlan(intents, regions);
+  const heuristicKeys = new Set((heuristic.targets ?? []).map(t => t.key));
+  const changedKeys = new Set<string>();
+  const notes: string[] = [];
+
+  for (const replacement of replacements) {
+    const targetRegions = deterministicTargetRegions($, regions, replacement, heuristicKeys, intents);
+    if (targetRegions.length === 0) {
+      return null;
+    }
+
+    let applied = 0;
+    for (const region of targetRegions) {
+      const $el = selectRegion($, region);
+      if ($el.length === 0) continue;
+      const count = replaceTextInNode($el.get(0), replacement.from, replacement.to);
+      if (count > 0) {
+        applied += count;
+        changedKeys.add(region.key);
+      }
+    }
+
+    if (applied === 0) {
+      return null;
+    }
+    notes.push(`"${replacement.from}" -> "${replacement.to}" x${applied}`);
+  }
+
+  if (changedKeys.size === 0) return null;
+
+  const output = $.html();
+  const guard = verifyUnchangedOutsideTargets(existingHtml, output, changedKeys);
+  if (!guard.ok) {
+    return {
+      ok: false,
+      reason: `确定性文本替换被结构守门拒绝: ${guard.reason}`,
+    };
+  }
+
+  return {
+    ok: true,
+    html: output,
+    changedKeys: [...changedKeys],
+    reason: `确定性文本替换已应用: ${notes.join('; ')}`,
+  };
+}
+
+function deterministicTargetRegions(
+  $: CheerioAPI,
+  regions: DomRegion[],
+  replacement: TextReplacement,
+  heuristicKeys: Set<string>,
+  intents: Intent[]
+): DomRegion[] {
+  const withText = regions.filter(region => {
+    const text = normalizeText(selectRegion($, region).text());
+    return text.includes(normalizeText(replacement.from));
+  });
+  if (withText.length === 0) return [];
+
+  const explicitAll = intents.some(intent => /全部|所有|all\s+(occurrences|instances)|every\s+occurrence/i.test(intent.statement));
+  if (explicitAll) return withText;
+
+  const heuristicMatches = withText.filter(region => heuristicKeys.has(region.key));
+  if (heuristicMatches.length > 0) return heuristicMatches.slice(0, 1);
+
+  if (withText.length === 1) return withText;
+  return [];
+}
+
+function extractTextReplacements(intents: Intent[]): TextReplacement[] {
+  const replacements: TextReplacement[] = [];
+  for (const intent of intents) {
+    const statement = intent.statement.replace(/\s+/g, ' ').trim();
+    const patterns = [
+      /从\s*(.+?)\s*(?:改成|改为|换成|替换成|替换为)\s*(.+?)(?=[，,。；;\n]|$)/gi,
+      /把\s*(.+?)\s*(?:改成|改为|换成|替换成|替换为)\s*(.+?)(?=[，,。；;\n]|$)/gi,
+      /(["“]?[^"'“”‘’，,。；;\n]{1,80}["”]?)\s*(?:->|→|=>)\s*(["“]?[^"'“”‘’，,。；;\n]{1,80}["”]?)/gi,
+    ];
+
+    for (const pattern of patterns) {
+      for (const match of statement.matchAll(pattern)) {
+        const from = cleanReplacementPart(match[1] ?? '');
+        const to = cleanReplacementPart(match[2] ?? '');
+        if (!from || !to || from === to) continue;
+        if (from.length > 120 || to.length > 120) continue;
+        replacements.push({ from, to });
+      }
+    }
+  }
+  return dedupeBy(replacements, item => `${item.from}\u0000${item.to}`).slice(0, 4);
+}
+
+function cleanReplacementPart(value: string): string {
+  return value
+    .trim()
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    .replace(/[。！]\s*$/g, '')
+    .trim();
+}
+
+function replaceTextInNode(node: AnyNode | undefined, from: string, to: string): number {
+  if (!node) return 0;
+  let count = 0;
+  if (node.type === 'text' && typeof node.data === 'string') {
+    const before = node.data;
+    if (before.includes(from)) {
+      node.data = before.split(from).join(to);
+      return (before.match(new RegExp(escapeRegex(from), 'g')) ?? []).length;
+    }
+    return 0;
+  }
+
+  const children = 'children' in node && Array.isArray(node.children) ? node.children : [];
+  for (const child of children) {
+    count += replaceTextInNode(child, from, to);
+  }
+  return count;
 }
 
 function isExplicitFullRewrite(intents: Intent[]): boolean {
@@ -643,6 +783,10 @@ function clip(s: string, max: number): string {
 
 function cssEscape(s: string): string {
   return s.replace(/([ #.;?+*~':"!^$[\]()=>|/@])/g, '\\$1');
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function dedupe<T>(items: T[]): T[] {
