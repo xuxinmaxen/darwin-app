@@ -13,7 +13,12 @@
 import type { Project, Intent } from './types';
 import { callLLM, callLLMStream, llmProvider } from './llm';
 import { extractReferenceHtmlFromBackground } from './fetch-imported-html';
-import { applyAnnotatedPatches, allIntentsAreAnnotatedPatches } from './patches';
+import {
+  applyAnnotatedPatches,
+  allIntentsAreAnnotatedPatches,
+  hasAnnotatedPatches,
+  htmlPreservesAnnotatedTextExpectations,
+} from './patches';
 import { trySurgicalIncrementalUpdate } from './surgical-edit';
 import {
   buildSynthesizeSystem,
@@ -90,16 +95,22 @@ export async function synthesize(
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
 
-    // 标注修改专用快路径: 所有新 intent 都是 【标注修改】 块 → 服务端 cheerio 拼接,
+    // 标注修改专用快路径: 有 【标注修改】 块 → 服务端 cheerio 拼接,
     // LLM 只输出被 pin 元素的小补丁。不让 LLM 重写整页, 避免它输出占位 stub。
     //
-    // 重要: 一旦进入这条路径, 即使内部失败 (0 命中 / ratio 异常 / 异常抛出),
-    // 也**绝不** fall-through 到 LLM 全量重写 — 那会破坏"标注后只改对应模块, 其他保持不变"
-    // 的系统级承诺。失败时返回 existing.html 原样, 用 reason 告诉用户哪条 pin 没生效。
-    if (allIntentsAreAnnotatedPatches(newIntents)) {
+    // 重要: 标注修改和 agent 建议可能同批进入。先兑现人的精准标注, 再把剩余非标注意图
+    // 走 surgical 局部综合; 后者失败不能回滚已经成功的标注。
+    if (hasAnnotatedPatches(newIntents)) {
+      const annotatedIntents = newIntents.filter(intent => hasAnnotatedPatches([intent]));
+      const remainingIntents = newIntents.filter(intent => !hasAnnotatedPatches([intent]));
+      const hasHumanAnnotatedIntent = annotatedIntents.some(intent => intent.authorKind === 'human');
+      let workingHtml = existing.html;
+      const reasons: string[] = [];
+      let appliedAnnotated = 0;
+
       let patchResult: { applied: number; skipped: number; html: string; errors: string[] };
       try {
-        patchResult = await applyAnnotatedPatches(existing.html, newIntents);
+        patchResult = await applyAnnotatedPatches(workingHtml, annotatedIntents);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         console.warn('[synthesize] patch path threw, keeping existing unchanged:', reason);
@@ -112,20 +123,76 @@ export async function synthesize(
       }
       const ratio = patchResult.html.length / existing.html.length;
       if (patchResult.applied > 0 && ratio >= 0.7 && ratio <= 1.3) {
+        workingHtml = patchResult.html;
+        appliedAnnotated = patchResult.applied;
+        reasons.push(`${patchResult.applied} pin(s) applied${patchResult.skipped > 0 ? `, ${patchResult.skipped} skipped` : ''}`);
+      } else if (allIntentsAreAnnotatedPatches(newIntents)) {
+        // 纯标注批次完全未命中或大小异常 — 保留 existing 不变, 不降级到 LLM 全量。
+        console.warn(`[synthesize] patch produced ${patchResult.applied} applied / ${patchResult.skipped} skipped, ratio=${ratio.toFixed(2)}; keeping existing unchanged`);
         return {
-          content: patchResult.html,
+          content: existing.html,
           source: 'patch',
           mode: 'incremental',
-          reason: `${patchResult.applied} pin(s) applied${patchResult.skipped > 0 ? `, ${patchResult.skipped} skipped` : ''}`,
+          reason: `标注未能精准应用, 保留上一版不变 (applied=${patchResult.applied}, skipped=${patchResult.skipped})${patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 3).join(' | ') : ''}`,
+        };
+      } else {
+        reasons.push(`标注未命中 (applied=${patchResult.applied}, skipped=${patchResult.skipped})`);
+      }
+
+      if (hasHumanAnnotatedIntent && appliedAnnotated === 0) {
+        return {
+          content: existing.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `${reasons.join('; ') || '人的标注修改未能精准应用, 保留上一版不变'}${patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 3).join(' | ') : ''}`,
         };
       }
-      // patch 内所有 pin 都没命中或被跳过 → existing 不变
-      console.warn(`[synthesize] patch produced ${patchResult.applied} applied / ${patchResult.skipped} skipped, ratio=${ratio.toFixed(2)}; keeping existing unchanged`);
+
+      if (remainingIntents.length > 0) {
+        const surgical = await trySurgicalIncrementalUpdate(project, remainingIntents, workingHtml);
+        if (surgical.ok) {
+          if (htmlPreservesAnnotatedTextExpectations(surgical.html, annotatedIntents)) {
+            workingHtml = surgical.html;
+            reasons.push(surgical.reason);
+          } else {
+            reasons.push('剩余意图与已应用标注冲突,已保留人的明确标注');
+          }
+        } else if (surgical.allowFullRewrite && appliedAnnotated === 0) {
+          // 没有任何标注成功时,才允许显式全局请求走旧完整增量。
+          // 一旦标注已经成功,全局重写会破坏"人的明确修改先落地"。
+          try {
+            const html = await Promise.race([
+              callLLMForIncrementalUpdate(project, remainingIntents, workingHtml),
+              timeout(LLM_TIMEOUT_MS),
+            ]);
+            const sanity = checkIncrementalOutput(html, workingHtml);
+            if (sanity.ok) {
+              return { content: html, source: 'llm', mode: 'incremental' };
+            }
+            reasons.push(`剩余意图未生效: ${sanity.reason}`);
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            reasons.push(`剩余意图修改失败: ${reason.slice(0, 120)}`);
+          }
+        } else {
+          reasons.push(`剩余意图未生效: ${surgical.reason}`);
+        }
+      }
+
+      if (appliedAnnotated > 0 || workingHtml !== existing.html) {
+        return {
+          content: workingHtml,
+          source: 'patch',
+          mode: 'incremental',
+          reason: reasons.join('; '),
+        };
+      }
+
       return {
         content: existing.html,
         source: 'patch',
         mode: 'incremental',
-        reason: `标注未能精准应用, 保留上一版不变 (applied=${patchResult.applied}, skipped=${patchResult.skipped})${patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 3).join(' | ') : ''}`,
+        reason: `${reasons.join('; ') || '标注未能精准应用, 保留上一版不变'}${patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 3).join(' | ') : ''}`,
       };
     }
 
@@ -349,12 +416,19 @@ export async function* synthesizeStream(
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
 
-    // 标注修改快路径: 同 synthesize() 非流版本 — 失败也不 fall-through, 保留 existing 不变
-    if (allIntentsAreAnnotatedPatches(newIntents)) {
-      yield { type: 'thinking', message: `AI 正在精准修补 ${newIntents.length} 条标注…` };
+    // 标注修改快路径: 同 synthesize() 非流版本。混合 human 标注 + agent 建议时,
+    // 先做标注,再综合剩余意图; 失败不回滚已成功的标注。
+    if (hasAnnotatedPatches(newIntents)) {
+      const annotatedIntents = newIntents.filter(intent => hasAnnotatedPatches([intent]));
+      const remainingIntents = newIntents.filter(intent => !hasAnnotatedPatches([intent]));
+      const hasHumanAnnotatedIntent = annotatedIntents.some(intent => intent.authorKind === 'human');
+      let workingHtml = existing.html;
+      let appliedAnnotated = 0;
+      yield { type: 'thinking', message: `AI 正在精准修补 ${annotatedIntents.length} 条标注…` };
+
       let patchResult: { applied: number; skipped: number; html: string; errors: string[] };
       try {
-        patchResult = await applyAnnotatedPatches(existing.html, newIntents);
+        patchResult = await applyAnnotatedPatches(workingHtml, annotatedIntents);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         yield { type: 'thinking', message: `标注修补异常, 保留上一版未改: ${reason.slice(0, 100)}` };
@@ -364,16 +438,45 @@ export async function* synthesizeStream(
       }
       const ratio = patchResult.html.length / existing.html.length;
       if (patchResult.applied > 0 && ratio >= 0.7 && ratio <= 1.3) {
+        workingHtml = patchResult.html;
+        appliedAnnotated = patchResult.applied;
         yield { type: 'thinking', message: `已精准修补 ${patchResult.applied} 处${patchResult.skipped > 0 ? `, ${patchResult.skipped} 处跳过` : ''}` };
-        yield { type: 'chunk', content: patchResult.html };
-        yield { type: 'complete', source: 'patch', mode: 'incremental', html: patchResult.html };
+      } else if (allIntentsAreAnnotatedPatches(newIntents)) {
+        // 完全未命中或大小异常 — 保留 existing 不变, 不降级到 LLM 全量
+        const hint = patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 2).join(' | ') : '';
+        yield { type: 'thinking', message: `标注未能精准应用, 保留上一版不变 (applied=${patchResult.applied}, skipped=${patchResult.skipped})${hint}` };
+        yield { type: 'chunk', content: existing.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+        return;
+      } else {
+        yield { type: 'thinking', message: `标注未命中 (applied=${patchResult.applied}, skipped=${patchResult.skipped}), 继续综合其余意图…` };
+      }
+
+      if (hasHumanAnnotatedIntent && appliedAnnotated === 0) {
+        const hint = patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 2).join(' | ') : '';
+        yield { type: 'thinking', message: `人的标注修改未能精准应用, 保留上一版不变${hint}` };
+        yield { type: 'chunk', content: existing.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
         return;
       }
-      // 完全未命中或大小异常 — 保留 existing 不变, 不降级到 LLM 全量
-      const hint = patchResult.errors.length ? '; ' + patchResult.errors.slice(0, 2).join(' | ') : '';
-      yield { type: 'thinking', message: `标注未能精准应用, 保留上一版不变 (applied=${patchResult.applied}, skipped=${patchResult.skipped})${hint}` };
-      yield { type: 'chunk', content: existing.html };
-      yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+
+      if (remainingIntents.length > 0) {
+        yield { type: 'thinking', message: `继续综合 ${remainingIntents.length} 条非标注意图…` };
+        const surgical = await trySurgicalIncrementalUpdate(project, remainingIntents, workingHtml);
+        if (surgical.ok) {
+          if (htmlPreservesAnnotatedTextExpectations(surgical.html, annotatedIntents)) {
+            workingHtml = surgical.html;
+            yield { type: 'thinking', message: surgical.reason };
+          } else {
+            yield { type: 'thinking', message: '剩余意图与已应用标注冲突,已保留人的明确标注' };
+          }
+        } else {
+          yield { type: 'thinking', message: `剩余意图未生效: ${surgical.reason}` };
+        }
+      }
+
+      yield { type: 'chunk', content: appliedAnnotated > 0 || workingHtml !== existing.html ? workingHtml : existing.html };
+      yield { type: 'complete', source: 'patch', mode: 'incremental', html: appliedAnnotated > 0 || workingHtml !== existing.html ? workingHtml : existing.html };
       return;
     }
 

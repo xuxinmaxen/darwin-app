@@ -19,7 +19,22 @@ assert.match(
 );
 
 const callCount = (synth.match(/trySurgicalIncrementalUpdate\(project, newIntents, existing\.html\)/g) || []).length;
-assert.equal(callCount, 2, 'synthesize.ts must call surgical edit in non-stream and stream incremental paths');
+assert.equal(callCount, 2, 'synthesize.ts must still call surgical edit in non-stream and stream free-text paths');
+
+const mixedCallCount = (synth.match(/trySurgicalIncrementalUpdate\(project, remainingIntents, workingHtml\)/g) || []).length;
+assert.equal(mixedCallCount, 2, 'synthesize.ts must surgically apply remaining mixed-batch intents after annotated patches');
+
+assert.match(
+  synth,
+  /if \(hasAnnotatedPatches\(newIntents\)\)/,
+  'mixed batches with any annotated patch must enter the annotated patch path'
+);
+
+assert.match(
+  synth,
+  /htmlPreservesAnnotatedTextExpectations\(surgical\.html, annotatedIntents\)/,
+  'agent/free-text synthesis must not overwrite human annotated text expectations'
+);
 
 assert.match(
   synth,

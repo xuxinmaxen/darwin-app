@@ -93,6 +93,21 @@ export function collectPatchesFromIntents(intents: Intent[]): AnnotatedPatch[] {
   return all;
 }
 
+export function hasAnnotatedPatches(intents: Intent[]): boolean {
+  return intents.some(i => /【标注修改】/.test(i.statement));
+}
+
+export function htmlPreservesAnnotatedTextExpectations(html: string, intents: Intent[]): boolean {
+  const expected = collectPatchesFromIntents(intents)
+    .map(patch => simpleTextReplacementFromNote(patch.note))
+    .filter((value): value is string => Boolean(value));
+  if (expected.length === 0) return true;
+
+  const $ = cheerio.load(html, { xml: false });
+  const text = normalizeText($('body').text() || $.text());
+  return expected.every(value => text.includes(normalizeText(value)));
+}
+
 /** 折叠所有空白比较 — pin 的 text 是 80 字截断, 元素 textContent 可能含换行 */
 function normalizeText(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
@@ -217,6 +232,8 @@ export async function applyAnnotatedPatches(
   const llmResults = await Promise.all(
     tasks.map(async t => {
       if (!t.el) return { task: t, result: null as null | string, error: 'element not found' };
+      const deterministic = patchOuterHtmlDeterministically(t.outerHtml, t.patch);
+      if (deterministic) return { task: t, result: deterministic, error: null };
       const r = await patchElement({
         outerHtml: t.outerHtml,
         note: t.patch.note,
@@ -271,5 +288,75 @@ export async function applyAnnotatedPatches(
 /** 判断一组 intent 是否都是纯标注 patch (没有自由文本意图混着) */
 export function allIntentsAreAnnotatedPatches(intents: Intent[]): boolean {
   if (intents.length === 0) return false;
-  return intents.every(i => /【标注修改】/.test(i.statement));
+  return intents.every(i => hasAnnotatedPatches([i]));
+}
+
+function patchOuterHtmlDeterministically(
+  outerHtml: string,
+  patch: AnnotatedPatch
+): string | null {
+  const replacement = simpleTextReplacementFromNote(patch.note);
+  if (!replacement || !patch.text) return null;
+
+  const $ = cheerio.load(outerHtml, { xml: false }, false);
+  const $root = $.root().children().first();
+  const root = $root.get(0);
+  if (!root) return null;
+
+  const source = patch.text;
+  let changed = false;
+
+  if ($root.children().length === 0) {
+    const current = normalizeText($root.text());
+    const expected = normalizeText(source);
+    if (current === expected || current.startsWith(expected) || current.includes(expected)) {
+      $root.text(replacement);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    changed = replaceTextNode(root, source, replacement);
+  }
+
+  return changed ? $.html($root) : null;
+}
+
+function simpleTextReplacementFromNote(note: string): string | null {
+  const trimmed = note.trim();
+  const startsAsTextChange = /^(改成|改为|换成|替换成|替换为)\s*/.test(trimmed);
+  const namesTextTarget = /(文案|标题|按钮文字|按钮文案|文字|copy|text|label).{0,12}(改成|改为|换成|替换成|替换为)/i.test(trimmed);
+  if (!startsAsTextChange && !namesTextTarget) return null;
+
+  const m = trimmed.match(/(?:改成|改为|换成|替换成|替换为)\s*(.+)$/);
+  if (!m?.[1]) return null;
+  return cleanReplacementText(m[1]);
+}
+
+function cleanReplacementText(value: string): string | null {
+  const cleaned = value
+    .trim()
+    .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
+    .replace(/[。！]\s*$/g, '')
+    .trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function replaceTextNode(node: AnyNode, source: string, replacement: string): boolean {
+  const children = 'children' in node && Array.isArray(node.children) ? node.children : [];
+  let changed = false;
+  for (const child of children) {
+    if (child.type === 'text' && typeof child.data === 'string') {
+      if (child.data.includes(source)) {
+        child.data = child.data.replace(source, replacement);
+        changed = true;
+      } else if (normalizeText(child.data) === normalizeText(source)) {
+        child.data = replacement;
+        changed = true;
+      }
+    } else if (replaceTextNode(child, source, replacement)) {
+      changed = true;
+    }
+  }
+  return changed;
 }
