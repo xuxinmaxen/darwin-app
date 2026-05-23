@@ -17,6 +17,7 @@ import * as cheerio from 'cheerio';
 import type { CheerioAPI } from 'cheerio';
 import type { AnyNode, Element } from 'domhandler';
 import type { Intent, Project } from './types';
+import { classifyEditBatch, extractImageReferences } from './edit-intent';
 import { callLLM, callLLMJSON, llmProvider } from './llm';
 import { stripCodeFences } from './prompts/synthesize-html';
 
@@ -38,6 +39,7 @@ type EditPlanTarget = {
   selector?: string;
   operation?: 'modify' | 'add_inside' | 'replace_text';
   reason?: string;
+  verification?: string;
 };
 
 type EditPlan = {
@@ -346,12 +348,14 @@ async function createEditPlan(
   regions: DomRegion[]
 ): Promise<EditPlan> {
   const heuristic = heuristicPlan(intents, regions);
+  const images = imageInputsFor(intents);
 
   try {
     const plan = await Promise.race([
       callLLMJSON<EditPlan>({
         system: buildEditPlanSystem(),
         user: buildEditPlanUser(project, intents, regions, heuristic),
+        images,
         maxTokens: 1200,
         temperature: 0,
         tier: 'fast',
@@ -378,9 +382,10 @@ function buildEditPlanSystem(): string {
     '3. If the user says to edit a logo, image, button, price, FAQ item, CTA, hero copy, or one feature, target the region that contains that thing.',
     '4. If the intent is ambiguous and no region is plausible, return no_op.',
     '5. Never target unrelated sibling regions just to make the page visually consistent.',
+    '6. If screenshots are attached, use them only to locate the requested visible target. Still patch the smallest matching DOM region.',
     '',
     'Schema:',
-    '{"mode":"patch"|"global_rewrite"|"no_op","confidence":0-1,"targets":[{"key":"region key","operation":"modify"|"add_inside"|"replace_text","reason":"why"}],"reason":"short reason"}',
+    '{"mode":"patch"|"global_rewrite"|"no_op","confidence":0-1,"targets":[{"key":"region key","operation":"modify"|"add_inside"|"replace_text","reason":"why this region","verification":"what must be true after patch"}],"reason":"short reason"}',
   ].join('\n');
 }
 
@@ -390,13 +395,18 @@ function buildEditPlanUser(
   regions: DomRegion[],
   heuristic: EditPlan
 ): string {
+  const classification = classifyEditBatch(intents);
   return [
     `Project: ${project.name} (${project.type})`,
+    `Edit classification: ${classification.kinds.join(', ')} (${classification.reason})`,
     '',
     'New intents:',
     ...intents.map((it, idx) =>
       `${idx + 1}. [${it.type} · scope:${it.scope} · ${it.weight} · ${it.authorKind}] ${clip(it.statement, 900)}`
     ),
+    classification.imageRefs.length > 0
+      ? `\nAttached screenshots/images: ${classification.imageRefs.map(ref => `${ref.name}: ${ref.url}`).join(' | ')}`
+      : '',
     '',
     'Available DOM regions (choose key from this list):',
     JSON.stringify(regions.map(r => ({
@@ -414,8 +424,10 @@ function buildEditPlanUser(
     '',
     `Heuristic suggestion: ${JSON.stringify(heuristic)}`,
     '',
+    'Verification requirement: describe the target-only postcondition in the plan. If the requested target cannot be located, return no_op instead of guessing.',
+    '',
     'Return the edit plan JSON now.',
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 function isValidEditPlan(x: unknown): x is EditPlan {
@@ -528,6 +540,7 @@ async function patchRegion(input: {
       callLLM({
         system: buildPatchRegionSystem(),
         user: buildPatchRegionUser(input),
+        images: imageInputsFor(input.intents),
         maxTokens,
         temperature: 0.1,
         tier: 'full',
@@ -556,7 +569,8 @@ function buildPatchRegionSystem(): string {
     '3. Apply only the requested local change inside this region.',
     '4. Do not redesign the region for consistency. Do not rewrite sibling sections; you cannot see them and must not imply changes to them.',
     '5. Preserve all unrelated copy, links, images, scripts, data attributes, hidden states, and child order inside the region.',
-    '6. If the intent is too ambiguous for this region, return the input region unchanged.',
+    '6. If screenshots are attached, use them to understand the marked target, but only edit elements that exist in this region.',
+    '7. If the intent is too ambiguous for this region, return the input region unchanged.',
   ].join('\n');
 }
 
@@ -576,6 +590,9 @@ function buildPatchRegionUser(input: {
     ...input.intents.map((it, idx) =>
       `${idx + 1}. [${it.type} · scope:${it.scope} · ${it.weight} · ${it.authorKind}] ${it.statement}`
     ),
+    imageInputsFor(input.intents).length > 0
+      ? `\nAttached screenshots/images are included in this message. Use them as visual references for the exact target, not as permission to redesign.`
+      : '',
     '',
     'Region outerHTML to patch:',
     '```html',
@@ -584,6 +601,17 @@ function buildPatchRegionUser(input: {
     '',
     'Return the complete patched outerHTML for this same region only.',
   ].filter(Boolean).join('\n');
+}
+
+function imageInputsFor(intents: Intent[]) {
+  return dedupeBy(
+    intents.flatMap(intent => extractImageReferences(intent.statement)),
+    ref => ref.url
+  ).map(ref => ({
+    url: ref.url,
+    name: ref.name,
+    detail: 'high' as const,
+  }));
 }
 
 function validatePatchedRegion(

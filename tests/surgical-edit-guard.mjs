@@ -18,7 +18,7 @@ assert.match(
   'synthesize.ts must import the surgical edit path'
 );
 
-const callCount = (synth.match(/trySurgicalIncrementalUpdate\(project, newIntents, existing\.html\)/g) || []).length;
+const callCount = (synth.match(/trySurgicalIncrementalUpdate\(project, newIntents, (?:existing\.html|workingHtml)\)/g) || []).length;
 assert.equal(callCount, 2, 'synthesize.ts must still call surgical edit in non-stream and stream free-text paths');
 
 const mixedCallCount = (synth.match(/trySurgicalIncrementalUpdate\(project, remainingIntents, workingHtml\)/g) || []).length;

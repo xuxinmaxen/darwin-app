@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidatePath } from 'next/cache';
+import { createHash } from 'crypto';
 import { getProject, updateProject } from '@/lib/projects';
 import { listIntentsByProject } from '@/lib/intents';
 import { synthesize, synthesizeStream, type SynthesisEvent } from '@/lib/synthesize';
@@ -116,6 +117,19 @@ export async function POST(req: NextRequest, { params }: Params) {
       ? { html: latestVersion.content, intentIds: latestVersion.intentIds }
       : null;
     const result = await synthesize(project, intents, existing);
+    const unchanged = latestVersion && sameHtml(latestVersion.content, result.content);
+    if (unchanged) {
+      return NextResponse.json(
+        {
+          ok: false,
+          unchanged: true,
+          error: '本次意图没有产生可安全保存的修改,已保留上一版',
+          reason: result.reason,
+        },
+        { status: 422 }
+      );
+    }
+
     const version = await createVersion({
       projectId: id, format: project.type, content: result.content,
       intentIds: intents.map(i => i.id),
@@ -227,6 +241,14 @@ async function handleStreamPost(projectId: string): Promise<Response> {
 
       // 版本入库 — 即使客户端已断开也要完成,让轮询能找到新版本
       if (finalHtml) {
+        if (latestVersion && sameHtml(latestVersion.content, finalHtml)) {
+          const msg = '本次意图没有产生可安全保存的修改,已保留上一版';
+          safeEnqueue(controller, { type: 'error', message: msg });
+          await finishSynthesisJob(projectId, { phase: 'error', error: msg });
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
+
         updateThinking(projectId, '保存版本中…', 'saving').catch(() => {});
         try {
           const version = await createVersion({
@@ -267,4 +289,12 @@ async function handleStreamPost(projectId: string): Promise<Response> {
 
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function sameHtml(a: string, b: string): boolean {
+  return hashHtml(a) === hashHtml(b);
+}
+
+function hashHtml(html: string): string {
+  return createHash('sha256').update(html).digest('hex');
 }

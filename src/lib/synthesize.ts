@@ -20,6 +20,8 @@ import {
   htmlPreservesAnnotatedTextExpectations,
 } from './patches';
 import { trySurgicalIncrementalUpdate } from './surgical-edit';
+import { countLikelyBrokenAssetRefs, repairAssetsForIntents } from './asset-repair';
+import { classifyEditBatch, extractImageReferences } from './edit-intent';
 import {
   buildSynthesizeSystem,
   buildSynthesizeUser,
@@ -47,6 +49,12 @@ export type SynthesisResult = {
   mode?: 'full' | 'incremental';
 };
 
+type AssetRepairStep = {
+  html: string;
+  changed: boolean;
+  reason?: string;
+};
+
 // HTML 8000 token 约 80-100s 生成,留足 margin。可通过 env 调,长时间项目也能用。
 const LLM_TIMEOUT_MS = Number(process.env.LLM_SYNTHESIZE_TIMEOUT_MS) || 180_000;
 
@@ -56,7 +64,7 @@ export async function synthesize(
   /** 如果传入当前版本 HTML + 已合成的 intentIds，会走增量更新而非完全重生成 */
   existing?: { html: string; intentIds: string[] } | null
 ): Promise<SynthesisResult> {
-  if (process.env.DARWIN_DISABLE_CLAUDE === '1') {
+  if (!existing && process.env.DARWIN_DISABLE_CLAUDE === '1') {
     return {
       content: renderTemplate(project, intents),
       source: 'template',
@@ -65,7 +73,7 @@ export async function synthesize(
     };
   }
 
-  if (!llmProvider()) {
+  if (!existing && !llmProvider()) {
     return {
       content: renderTemplate(project, intents),
       source: 'template',
@@ -94,6 +102,23 @@ export async function synthesize(
   if (existing && existing.html) {
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
+    if (newIntents.length === 0) {
+      const backfillRepair = applyAssetRepairStep(existing.html, intents);
+      if (backfillRepair.changed) {
+        return {
+          content: backfillRepair.html,
+          source: 'patch',
+          mode: 'incremental',
+          reason: `历史意图资源修复补偿: ${backfillRepair.reason}`,
+        };
+      }
+      return {
+        content: existing.html,
+        source: 'patch',
+        mode: 'incremental',
+        reason: '没有新增 intent,保留上一版不变',
+      };
+    }
 
     // 标注修改专用快路径: 有 【标注修改】 块 → 服务端 cheerio 拼接,
     // LLM 只输出被 pin 元素的小补丁。不让 LLM 重写整页, 避免它输出占位 stub。
@@ -149,6 +174,23 @@ export async function synthesize(
       }
 
       if (remainingIntents.length > 0) {
+        const assetRepair = applyAssetRepairStep(workingHtml, remainingIntents);
+        if (assetRepair.changed) {
+          workingHtml = assetRepair.html;
+          reasons.push(assetRepair.reason || 'asset repair applied');
+        } else if (assetRepair.reason) {
+          reasons.push(`资源修复未命中: ${assetRepair.reason}`);
+        }
+
+        if (assetRepair.changed && assetRepairSatisfiesAll(remainingIntents)) {
+          return {
+            content: workingHtml,
+            source: 'patch',
+            mode: 'incremental',
+            reason: reasons.join('; '),
+          };
+        }
+
         const surgical = await trySurgicalIncrementalUpdate(project, remainingIntents, workingHtml);
         if (surgical.ok) {
           if (htmlPreservesAnnotatedTextExpectations(surgical.html, annotatedIntents)) {
@@ -198,16 +240,39 @@ export async function synthesize(
 
     // 只有新增 intent 才走增量;如果 intent 没变化或全是新的,走全量
     if (newIntents.length > 0 && newIntents.length < intents.length) {
-      const surgical = await trySurgicalIncrementalUpdate(project, newIntents, existing.html);
+      const reasons: string[] = [];
+      const assetRepair = applyAssetRepairStep(existing.html, newIntents);
+      const workingHtml = assetRepair.changed ? assetRepair.html : existing.html;
+      if (assetRepair.changed) {
+        reasons.push(assetRepair.reason || 'asset repair applied');
+      }
+      if (assetRepair.changed && assetRepairSatisfiesAll(newIntents)) {
+        return {
+          content: workingHtml,
+          source: 'patch',
+          mode: 'incremental',
+          reason: reasons.join('; '),
+        };
+      }
+
+      const surgical = await trySurgicalIncrementalUpdate(project, newIntents, workingHtml);
       if (surgical.ok) {
         return {
           content: surgical.html,
           source: 'patch',
           mode: 'incremental',
-          reason: surgical.reason,
+          reason: [...reasons, surgical.reason].join('; '),
         };
       }
       if (!surgical.allowFullRewrite) {
+        if (assetRepair.changed) {
+          return {
+            content: workingHtml,
+            source: 'patch',
+            mode: 'incremental',
+            reason: [...reasons, `局部修改保护: ${surgical.reason}`].join('; '),
+          };
+        }
         console.warn('[synthesize] surgical edit refused, keeping existing unchanged:', surgical.reason);
         return {
           content: existing.html,
@@ -218,18 +283,43 @@ export async function synthesize(
       }
 
       try {
+        if (process.env.DARWIN_DISABLE_CLAUDE === '1' || !llmProvider()) {
+          if (assetRepair.changed) {
+            return {
+              content: workingHtml,
+              source: 'patch',
+              mode: 'incremental',
+              reason: [...reasons, '未配置 LLM,已保留确定性资源修复'].join('; '),
+            };
+          }
+          return {
+            content: existing.html,
+            source: 'patch',
+            mode: 'incremental',
+            reason: '未配置 LLM,且没有可确定应用的局部修改',
+          };
+        }
+
         const html = await Promise.race([
-          callLLMForIncrementalUpdate(project, newIntents, existing.html),
+          callLLMForIncrementalUpdate(project, newIntents, workingHtml),
           timeout(LLM_TIMEOUT_MS),
         ]);
         // 增量 sanity check: 任何已有版本的修改都不能让产物缩水超过 20% (LLM "占位 stub" / 摘要式重写 / 截断 / "给出 stub 就跑了" 全打这条).
         // 命中 → 抛弃 LLM 输出, 保留 existing 不变, 不降级 LLM 全量也不降级模板.
         // 理由: 任何 v2+ 的 incremental 修改, 用户期望是"改一小块, 其他保持不变"; 输出明显比 existing 小 = LLM 删除了用户没让删的内容 = 系统级 bug.
-        const sanity = checkIncrementalOutput(html, existing.html);
+        const sanity = checkIncrementalOutput(html, workingHtml);
         if (sanity.ok) {
-          return { content: html, source: 'llm', mode: 'incremental' };
+          return { content: html, source: 'llm', mode: 'incremental', reason: reasons.join('; ') || undefined };
         }
         console.warn(`[synthesize] incremental output rejected (${sanity.reason}); keeping existing unchanged`);
+        if (assetRepair.changed) {
+          return {
+            content: workingHtml,
+            source: 'patch',
+            mode: 'incremental',
+            reason: [...reasons, `LLM 增量未生效: ${sanity.reason}`].join('; '),
+          };
+        }
         return {
           content: existing.html,
           source: 'patch',
@@ -238,6 +328,14 @@ export async function synthesize(
         };
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
+        if (assetRepair.changed) {
+          return {
+            content: workingHtml,
+            source: 'patch',
+            mode: 'incremental',
+            reason: [...reasons, `LLM 增量失败: ${reason.slice(0, 120)}`].join('; '),
+          };
+        }
         console.warn('[synthesize] incremental update failed, keeping existing unchanged:', reason);
         return {
           content: existing.html,
@@ -266,6 +364,50 @@ export async function synthesize(
       mode: 'full',
     };
   }
+}
+
+function applyAssetRepairStep(
+  html: string,
+  intents: Intent[]
+): AssetRepairStep {
+  if (intents.length === 0) return { html, changed: false };
+  const classification = classifyEditBatch(intents);
+  if (!classification.kinds.includes('asset_repair')) {
+    return { html, changed: false };
+  }
+
+  const beforeBroken = countLikelyBrokenAssetRefs(html);
+  const repair = repairAssetsForIntents(html, intents);
+  if (!repair.ok) return { html, changed: false, reason: repair.reason };
+  if (repair.html === html) return { html, changed: false, reason: 'asset repair produced no diff' };
+
+  const afterBroken = countLikelyBrokenAssetRefs(repair.html);
+  if (beforeBroken > 0 && afterBroken >= beforeBroken) {
+    return {
+      html,
+      changed: false,
+      reason: `asset repair failed verification (${beforeBroken} -> ${afterBroken} likely broken refs)`,
+    };
+  }
+
+  return {
+    html: repair.html,
+    changed: true,
+    reason: `${repair.reason}; likely broken refs ${beforeBroken} -> ${afterBroken}`,
+  };
+}
+
+function assetRepairSatisfiesAll(intents: Intent[]): boolean {
+  return intents.every(intent => {
+    const classification = classifyEditBatch([intent]);
+    const kinds = new Set(classification.kinds);
+    return (
+      kinds.has('asset_repair') &&
+      !kinds.has('annotated_patch') &&
+      !kinds.has('text_replace') &&
+      !kinds.has('global_rewrite')
+    );
+  });
 }
 
 /**
@@ -324,6 +466,7 @@ async function callLLMForHtmlSynthesis(
   const raw = await callLLM({
     system,
     user,
+    images: imageInputsForIntents(intents),
     cacheSystem: true,
     maxTokens: maxTokensFor(project),
     temperature: 0.4,
@@ -354,6 +497,7 @@ async function callLLMForIncrementalUpdate(
   const raw = await callLLM({
     system,
     user,
+    images: imageInputsForIntents(newIntents),
     cacheSystem: true,
     maxTokens: maxTokensFor(project),
     temperature: 0.2,  // 更低温度 → 更保守地修改
@@ -389,7 +533,7 @@ export async function* synthesizeStream(
   existing?: { html: string; intentIds: string[] } | null
 ): AsyncGenerator<SynthesisEvent> {
   // 模板模式 / 无 LLM 时: 快速返回整块 HTML
-  if (process.env.DARWIN_DISABLE_CLAUDE === '1' || !llmProvider()) {
+  if (!existing && (process.env.DARWIN_DISABLE_CLAUDE === '1' || !llmProvider())) {
     yield { type: 'thinking', message: '使用本地模板合成…' };
     const html = renderTemplate(project, intents);
     yield { type: 'chunk', content: html };
@@ -415,6 +559,19 @@ export async function* synthesizeStream(
   if (existing?.html) {
     const prevIds = new Set(existing.intentIds);
     const newIntents = intents.filter(i => !prevIds.has(i.id));
+    if (newIntents.length === 0) {
+      const backfillRepair = applyAssetRepairStep(existing.html, intents);
+      if (backfillRepair.changed) {
+        yield { type: 'thinking', message: `历史意图资源修复补偿: ${backfillRepair.reason}` };
+        yield { type: 'chunk', content: backfillRepair.html };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: backfillRepair.html };
+        return;
+      }
+      yield { type: 'thinking', message: '没有新增 intent,保留上一版不变' };
+      yield { type: 'chunk', content: existing.html };
+      yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+      return;
+    }
 
     // 标注修改快路径: 同 synthesize() 非流版本。混合 human 标注 + agent 建议时,
     // 先做标注,再综合剩余意图; 失败不回滚已成功的标注。
@@ -461,6 +618,20 @@ export async function* synthesizeStream(
       }
 
       if (remainingIntents.length > 0) {
+        const assetRepair = applyAssetRepairStep(workingHtml, remainingIntents);
+        if (assetRepair.changed) {
+          workingHtml = assetRepair.html;
+          yield { type: 'thinking', message: assetRepair.reason || '已修复缺失图片资源' };
+        } else if (assetRepair.reason) {
+          yield { type: 'thinking', message: `资源修复未命中: ${assetRepair.reason}` };
+        }
+
+        if (assetRepair.changed && assetRepairSatisfiesAll(remainingIntents)) {
+          yield { type: 'chunk', content: workingHtml };
+          yield { type: 'complete', source: 'patch', mode: 'incremental', html: workingHtml };
+          return;
+        }
+
         yield { type: 'thinking', message: `继续综合 ${remainingIntents.length} 条非标注意图…` };
         const surgical = await trySurgicalIncrementalUpdate(project, remainingIntents, workingHtml);
         if (surgical.ok) {
@@ -482,7 +653,20 @@ export async function* synthesizeStream(
 
     if (newIntents.length > 0 && newIntents.length < intents.length) {
       yield { type: 'thinking', message: `AI 正在把 ${newIntents.length} 条新意图融入产物…` };
-      const surgical = await trySurgicalIncrementalUpdate(project, newIntents, existing.html);
+      const assetRepair = applyAssetRepairStep(existing.html, newIntents);
+      const workingHtml = assetRepair.changed ? assetRepair.html : existing.html;
+      if (assetRepair.changed) {
+        yield { type: 'thinking', message: assetRepair.reason || '已修复缺失图片资源' };
+      } else if (assetRepair.reason) {
+        yield { type: 'thinking', message: `资源修复未命中: ${assetRepair.reason}` };
+      }
+      if (assetRepair.changed && assetRepairSatisfiesAll(newIntents)) {
+        yield { type: 'chunk', content: workingHtml };
+        yield { type: 'complete', source: 'patch', mode: 'incremental', html: workingHtml };
+        return;
+      }
+
+      const surgical = await trySurgicalIncrementalUpdate(project, newIntents, workingHtml);
       if (surgical.ok) {
         yield { type: 'thinking', message: surgical.reason };
         yield { type: 'chunk', content: surgical.html };
@@ -490,6 +674,12 @@ export async function* synthesizeStream(
         return;
       }
       if (!surgical.allowFullRewrite) {
+        if (assetRepair.changed) {
+          yield { type: 'thinking', message: `局部修改保护: ${surgical.reason}` };
+          yield { type: 'chunk', content: workingHtml };
+          yield { type: 'complete', source: 'patch', mode: 'incremental', html: workingHtml };
+          return;
+        }
         yield { type: 'thinking', message: `局部修改保护: ${surgical.reason}` };
         yield { type: 'chunk', content: existing.html };
         yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
@@ -497,12 +687,26 @@ export async function* synthesizeStream(
       }
 
       try {
+        if (process.env.DARWIN_DISABLE_CLAUDE === '1' || !llmProvider()) {
+          if (assetRepair.changed) {
+            yield { type: 'thinking', message: '未配置 LLM,已保留确定性资源修复' };
+            yield { type: 'chunk', content: workingHtml };
+            yield { type: 'complete', source: 'patch', mode: 'incremental', html: workingHtml };
+            return;
+          }
+          yield { type: 'thinking', message: '未配置 LLM,且没有可确定应用的局部修改,保留上一版不变' };
+          yield { type: 'chunk', content: existing.html };
+          yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
+          return;
+        }
+
         let html = '';
         let fenceState: 'unknown' | 'stripped' | 'plain' = 'unknown';
         let fenceBuffer = '';
         for await (const chunk of callLLMStream({
           system: buildSynthesizeSystem(project),
-          user: buildIncrementalUpdateUser(newIntents, existing.html),
+          user: buildIncrementalUpdateUser(newIntents, workingHtml),
+          images: imageInputsForIntents(newIntents),
           cacheSystem: true,
           maxTokens,
           temperature: 0.2,
@@ -540,8 +744,14 @@ export async function* synthesizeStream(
         }
         // 大小/占位 sanity check (同 synthesize() 同款 checkIncrementalOutput).
         // 缩水 / 膨胀 / 占位 stub → 一律保留 existing 不变, 绝不 fall-through 到全量重写.
-        const sanity = checkIncrementalOutput(html, existing.html);
+        const sanity = checkIncrementalOutput(html, workingHtml);
         if (!sanity.ok) {
+          if (assetRepair.changed) {
+            yield { type: 'thinking', message: `LLM 增量未生效,保留已完成的资源修复 (${sanity.reason})` };
+            yield { type: 'chunk', content: workingHtml };
+            yield { type: 'complete', source: 'patch', mode: 'incremental', html: workingHtml };
+            return;
+          }
           yield { type: 'thinking', message: `修改未能生效, 保留上一版不变 (${sanity.reason})` };
           yield { type: 'chunk', content: existing.html };
           yield { type: 'complete', source: 'patch', mode: 'incremental', html: existing.html };
@@ -551,6 +761,12 @@ export async function* synthesizeStream(
         return;
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
+        if (assetRepair.changed) {
+          yield { type: 'thinking', message: `LLM 增量失败,保留已完成的资源修复: ${reason.slice(0, 100)}` };
+          yield { type: 'chunk', content: workingHtml };
+          yield { type: 'complete', source: 'patch', mode: 'incremental', html: workingHtml };
+          return;
+        }
         // 任何 v2+ 增量失败 — 保留 existing 不变, 不再降级到全量重写 (那会把用户没让改的全模块都覆盖).
         yield { type: 'thinking', message: `修改失败, 保留上一版不变: ${reason.slice(0, 100)}` };
         yield { type: 'chunk', content: existing.html };
@@ -577,6 +793,7 @@ export async function* synthesizeStream(
     for await (const chunk of callLLMStream({
       system: buildSynthesizeSystem(project),
       user: buildSynthesizeUser(intents),
+      images: imageInputsForIntents(intents),
       cacheSystem: true,
       maxTokens,
       temperature: fullTemperature,
@@ -620,6 +837,29 @@ export async function* synthesizeStream(
     yield { type: 'chunk', content: html };
     yield { type: 'complete', source: 'template', mode: 'full', html };
   }
+}
+
+function imageInputsForIntents(intents: Intent[]) {
+  return dedupeBy(
+    intents.flatMap(intent => extractImageReferences(intent.statement)),
+    ref => ref.url
+  ).map(ref => ({
+    url: ref.url,
+    name: ref.name,
+    detail: 'high' as const,
+  }));
+}
+
+function dedupeBy<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const k = key(item);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(item);
+  }
+  return out;
 }
 
 // ─── Template fallback ────────────────────────────────────

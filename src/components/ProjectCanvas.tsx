@@ -622,32 +622,42 @@ export default function ProjectCanvas({
         for (const block of lines) {
           const dataLine = block.split('\n').find(l => l.startsWith('data: '));
           if (!dataLine) continue;
+          let evt: {
+            type?: string;
+            message?: string;
+            content?: string;
+            html?: string;
+            mode?: string;
+            version?: unknown;
+          };
           try {
-            const evt = JSON.parse(dataLine.slice(6));
-            if (evt.type === 'thinking') {
-              setThinkingMsg(evt.message);
-            } else if (evt.type === 'chunk') {
-              streamBufRef.current += evt.content;
-            } else if (evt.type === 'complete') {
-              // LLM 输出结束,立刻刷新一次 iframe 显示最终内容
-              streamBufRef.current = evt.html;
-              setStreamingHtml(injectBaseTarget(evt.html, sourceUrl, markScript));
-              setThinkingMsg('保存版本中…');
-            } else if (evt.type === 'saved') {
-              // 版本入库完成
-              stopStreamInterval();
-              lastSyncedHashRef.current = intentHash;
-              setLastSyncMode((evt.mode as 'full' | 'incremental') ?? 'full');
-              onVersionCreated(evt.version as Version);
-              setThinkingMsg('');
-              setStreamActive(false);
-              setStreamingHtml('');
-              streamBufRef.current = '';
-            } else if (evt.type === 'error') {
-              throw new Error(evt.message);
-            }
+            evt = JSON.parse(dataLine.slice(6));
           } catch {
             // 单条 SSE 解析失败不致命,跳过
+            continue;
+          }
+
+          if (evt.type === 'thinking') {
+            setThinkingMsg(evt.message || '');
+          } else if (evt.type === 'chunk') {
+            streamBufRef.current += evt.content || '';
+          } else if (evt.type === 'complete') {
+            // LLM 输出结束,立刻刷新一次 iframe 显示最终内容
+            streamBufRef.current = evt.html || '';
+            setStreamingHtml(injectBaseTarget(evt.html || '', sourceUrl, markScript));
+            setThinkingMsg('保存版本中…');
+          } else if (evt.type === 'saved') {
+            // 版本入库完成
+            stopStreamInterval();
+            lastSyncedHashRef.current = intentHash;
+            setLastSyncMode((evt.mode as 'full' | 'incremental') ?? 'full');
+            onVersionCreated(evt.version as Version);
+            setThinkingMsg('');
+            setStreamActive(false);
+            setStreamingHtml('');
+            streamBufRef.current = '';
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message || '合成失败');
           }
         }
       }

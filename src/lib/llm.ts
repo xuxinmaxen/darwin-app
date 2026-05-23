@@ -19,9 +19,16 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages';
 import OpenAI from 'openai';
+import type { ChatCompletionContentPart } from 'openai/resources/chat/completions';
 
 export type LLMProvider = 'anthropic' | 'openai';
+export type LLMImageInput = {
+  url: string;
+  name?: string;
+  detail?: 'auto' | 'low' | 'high';
+};
 
 let _anthropic: Anthropic | null = null;
 let _openai: OpenAI | null = null;
@@ -66,6 +73,8 @@ export function describeLLM(): LLMConfig {
 export type CallOpts = {
   system: string;
   user: string;
+  /** Optional visual references attached to the user turn. */
+  images?: LLMImageInput[];
   /** Anthropic prompt caching (no-op on OpenAI). */
   cacheSystem?: boolean;
   maxTokens?: number;
@@ -166,7 +175,7 @@ async function callAnthropic(opts: CallOpts): Promise<string> {
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0,
     system: systemBlocks,
-    messages: [{ role: 'user', content: opts.user }],
+    messages: [{ role: 'user', content: anthropicUserContent(opts) }],
   });
   const block = response.content[0];
   if (block.type !== 'text') throw new Error(`Anthropic returned ${block.type} block, expected text`);
@@ -186,7 +195,7 @@ async function* callAnthropicStream(opts: CallOpts): AsyncGenerator<string> {
     max_tokens: opts.maxTokens ?? 1024,
     temperature: opts.temperature ?? 0,
     system: systemBlocks,
-    messages: [{ role: 'user', content: opts.user }],
+    messages: [{ role: 'user', content: anthropicUserContent(opts) }],
   });
   for await (const event of stream) {
     if (
@@ -210,7 +219,7 @@ async function callOpenAI(opts: CallOpts): Promise<string> {
     temperature: opts.temperature ?? 0,
     messages: [
       { role: 'system', content: opts.system },
-      { role: 'user', content: opts.user },
+      { role: 'user', content: openAIUserContent(opts) },
     ],
   });
   const text = response.choices[0]?.message?.content;
@@ -227,7 +236,7 @@ async function* callOpenAIStream(opts: CallOpts): AsyncGenerator<string> {
     temperature: opts.temperature ?? 0,
     messages: [
       { role: 'system', content: opts.system },
-      { role: 'user', content: opts.user },
+      { role: 'user', content: openAIUserContent(opts) },
     ],
     stream: true,
   });
@@ -235,4 +244,65 @@ async function* callOpenAIStream(opts: CallOpts): AsyncGenerator<string> {
     const delta = chunk.choices[0]?.delta?.content ?? '';
     if (delta) yield delta;
   }
+}
+
+function normalizedImages(images: LLMImageInput[] | undefined): LLMImageInput[] {
+  return (images ?? [])
+    .map(image => ({ ...image, url: image.url.trim() }))
+    .filter(image => /^(https?:\/\/|data:image\/)/i.test(image.url))
+    .slice(0, 4);
+}
+
+function openAIUserContent(opts: CallOpts): string | ChatCompletionContentPart[] {
+  const images = normalizedImages(opts.images);
+  if (images.length === 0) return opts.user;
+  return [
+    { type: 'text' as const, text: opts.user },
+    ...images.map(image => ({
+      type: 'image_url' as const,
+      image_url: {
+        url: image.url,
+        detail: image.detail ?? 'high',
+      },
+    })),
+  ];
+}
+
+function anthropicUserContent(opts: CallOpts): string | ContentBlockParam[] {
+  const images = normalizedImages(opts.images);
+  if (images.length === 0) return opts.user;
+  const blocks: ContentBlockParam[] = [{ type: 'text', text: opts.user }];
+  for (const image of images) {
+      const data = parseDataImageUrl(image.url);
+      if (data) {
+        blocks.push({
+          type: 'image' as const,
+          source: {
+            type: 'base64' as const,
+            media_type: data.mediaType,
+            data: data.base64,
+          },
+        });
+      } else {
+        blocks.push({
+          type: 'image' as const,
+          source: {
+            type: 'url' as const,
+            url: image.url,
+          },
+        });
+      }
+  }
+  return blocks;
+}
+
+function parseDataImageUrl(
+  url: string
+): { mediaType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; base64: string } | null {
+  const match = url.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,([a-z0-9+/=]+)$/i);
+  if (!match) return null;
+  return {
+    mediaType: match[1].toLowerCase() as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+    base64: match[2],
+  };
 }
