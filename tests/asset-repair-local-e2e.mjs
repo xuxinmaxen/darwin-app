@@ -36,6 +36,12 @@ section{padding:48px}
 </body>
 </html>`;
 
+const wrongInlineSeedHtml = seedHtml
+  .replace('logo/FChatGPT.svg', 'data:image/svg+xml,%3Csvg%3Ewrong-chatgpt%3C%2Fsvg%3E')
+  .replace('logo/Claude.svg', 'data:image/svg+xml,%3Csvg%3Ewrong-claude%3C%2Fsvg%3E')
+  .replace('logo/Gemini.svg', 'data:image/svg+xml,%3Csvg%3Ewrong-gemini%3C%2Fsvg%3E')
+  .replace('logo/Perplexity.svg', 'data:image/svg+xml,%3Csvg%3Ewrong-perplexity%3C%2Fsvg%3E');
+
 async function api(method, path, body, cookie) {
   const headers = { 'Content-Type': 'application/json' };
   if (cookie) headers.Cookie = cookie;
@@ -59,6 +65,21 @@ async function login() {
   return `darwin_user_id=${m[1]}`;
 }
 
+async function createSeedProject(cookie, name, referenceHtml) {
+  const created = await api('POST', '/api/projects', {
+    name,
+    type: 'html',
+    conflictMode: 'discuss',
+    referenceHtml,
+    referenceTitle: 'logo-repair-fixture.html',
+    seedIntent: {
+      statement: '请基于上传 HTML 作为 v1 起点, 后续只做局部增量修改。',
+    },
+  }, cookie);
+  assert.equal(created.status, 201, created.json.error);
+  return created.json.project.id;
+}
+
 function section(html, id) {
   const re = new RegExp(`<section[^>]+id=["']${id}["'][\\s\\S]*?<\\/section>`, 'i');
   const m = html.match(re);
@@ -66,22 +87,16 @@ function section(html, id) {
   return m[0];
 }
 
+function dataImageCount(html) {
+  return (html.match(/data:image\/svg\+xml,/g) || []).length;
+}
+
 const cookie = await login();
-let projectId = null;
+const projectIds = [];
 
 try {
-  const created = await api('POST', '/api/projects', {
-    name: `Logo Repair Local ${Date.now()}`,
-    type: 'html',
-    conflictMode: 'discuss',
-    referenceHtml: seedHtml,
-    referenceTitle: 'logo-repair-fixture.html',
-    seedIntent: {
-      statement: '请基于上传 HTML 作为 v1 起点, 后续只做局部增量修改。',
-    },
-  }, cookie);
-  assert.equal(created.status, 201, created.json.error);
-  projectId = created.json.project.id;
+  const projectId = await createSeedProject(cookie, `Logo Repair Local ${Date.now()}`, seedHtml);
+  projectIds.push(projectId);
 
   const v1 = await api('POST', `/api/projects/${projectId}/synthesize`, {}, cookie);
   assert.ok(v1.status === 201 || v1.status === 200, v1.json.error);
@@ -107,15 +122,45 @@ try {
   assert.doesNotMatch(after, /src="logo\/Gemini\.svg"/);
   assert.doesNotMatch(after, /src="logo\/Perplexity\.svg"/);
   assert.match(after, /data:image\/svg\+xml,/);
+  assert.match(after, /OpenAI/);
+  assert.match(after, /Google%20Gemini/);
   assert.equal(section(after, 'pricing'), beforePricing, 'pricing section unchanged');
 
   const noChange = await api('POST', `/api/projects/${projectId}/synthesize`, {}, cookie);
   assert.equal(noChange.status, 422, 'unchanged synthesis must not save a fake version');
   assert.equal(noChange.json.unchanged, true);
 
+  const replaceProjectId = await createSeedProject(cookie, `Logo Replace Local ${Date.now()}`, wrongInlineSeedHtml);
+  projectIds.push(replaceProjectId);
+
+  const replaceV1 = await api('POST', `/api/projects/${replaceProjectId}/synthesize`, {}, cookie);
+  assert.ok(replaceV1.status === 201 || replaceV1.status === 200, replaceV1.json.error);
+  const wrongBefore = replaceV1.json.version.content;
+  const wrongBeforePricing = section(wrongBefore, 'pricing');
+  assert.match(wrongBefore, /wrong-chatgpt/);
+
+  const replaceIntent = await api('POST', `/api/projects/${replaceProjectId}/intents`, {
+    statement: '4 个 ai 平台的 logo 都是错的，请替换成正确的官方 logo',
+    type: 'Constraint',
+    scope: 'features',
+    weight: 'must',
+  }, cookie);
+  assert.equal(replaceIntent.status, 201, replaceIntent.json.error);
+
+  const v3 = await api('POST', `/api/projects/${replaceProjectId}/synthesize`, {}, cookie);
+  assert.ok(v3.status === 201 || v3.status === 200, v3.json.error);
+  assert.equal(v3.json.source, 'patch', 'wrong logo replacement should use patch source');
+  const replaced = v3.json.version.content;
+  assert.notEqual(replaced, wrongBefore, 'wrong inline logos must be overwritten');
+  assert.doesNotMatch(replaced, /wrong-chatgpt|wrong-claude|wrong-gemini|wrong-perplexity/);
+  assert.equal(dataImageCount(replaced), dataImageCount(wrongBefore), 'replace, do not add duplicate images');
+  assert.match(replaced, /OpenAI/);
+  assert.match(replaced, /Google%20Gemini/);
+  assert.equal(section(replaced, 'pricing'), wrongBeforePricing, 'pricing section unchanged after replacement');
+
   console.log('asset-repair-local-e2e: ok');
 } finally {
-  if (projectId) {
+  for (const projectId of projectIds) {
     await api('DELETE', `/api/projects/${projectId}`, undefined, cookie).catch(() => undefined);
   }
 }

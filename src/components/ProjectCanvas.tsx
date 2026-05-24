@@ -325,6 +325,7 @@ export default function ProjectCanvas({
   onRetrySynth,
   markMode = false,
   onMarkBridge,
+  onSynthesisError,
 }: {
   project: Project;
   intents: Intent[];
@@ -357,6 +358,8 @@ export default function ProjectCanvas({
   markMode?: boolean;
   /** iframe onLoad 后把 __darwinMark API 回吐给父组件, 用于提交意图时读取 pins */
   onMarkBridge?: (api: DarwinMarkAPI | null) => void;
+  /** SSE 流式合成失败后通知父组件释放跨刷新合成状态 */
+  onSynthesisError?: (message: string) => void;
 }) {
   const [isFirstPending, startFirstTransition] = useTransition();
   const [autoSyncing, setAutoSyncing] = useState(false);
@@ -406,6 +409,14 @@ export default function ProjectCanvas({
       clearInterval(streamIntervalRef.current);
       streamIntervalRef.current = null;
     }
+  }
+
+  function resetStreamState() {
+    stopStreamInterval();
+    setStreamActive(false);
+    setThinkingMsg('');
+    setStreamingHtml('');
+    streamBufRef.current = '';
   }
 
   // 上一次合成时的 intent 指纹 — 跟 currentVersion 一起更新
@@ -648,30 +659,24 @@ export default function ProjectCanvas({
             setThinkingMsg('保存版本中…');
           } else if (evt.type === 'saved') {
             // 版本入库完成
-            stopStreamInterval();
+            resetStreamState();
             lastSyncedHashRef.current = intentHash;
             setLastSyncMode((evt.mode as 'full' | 'incremental') ?? 'full');
             onVersionCreated(evt.version as Version);
-            setThinkingMsg('');
-            setStreamActive(false);
-            setStreamingHtml('');
-            streamBufRef.current = '';
           } else if (evt.type === 'error') {
+            resetStreamState();
             throw new Error(evt.message || '合成失败');
           }
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message);
+      resetStreamState();
+      onSynthesisError?.(message);
     } finally {
       stopStreamInterval();
       setAutoSyncing(false);
-      if (streamActive) {
-        setStreamActive(false);
-        setThinkingMsg('');
-        setStreamingHtml('');
-        streamBufRef.current = '';
-      }
     }
   }
 
@@ -841,35 +846,25 @@ export default function ProjectCanvas({
     : 'AI 正在检测意图冲突…';
 
   const showOverlay = isSynthPhase || isConflictPhase || isDetectPhase || isResumedPhase;
+  const errorBannerMsg = error || (inFailureCooldown ? synthFailureMsg : null);
+  const showErrorBanner = !!errorBannerMsg && !isSynthPhase && !isResumedPhase;
 
   return (
     <div className="canvas-result" style={{ position: 'relative' }}>
-      {/* 失败 banner — 合成被超时/出错杀掉后给用户清晰反馈和重试入口 */}
-      {inFailureCooldown && !isSynthPhase && (
-        <div className="canvas-failure-banner" role="alert" style={{
-          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-          display: 'flex', alignItems: 'center', gap: 12,
-          padding: '10px 16px',
-          background: 'linear-gradient(90deg, #FEF2F2, #FFFBEB)',
-          borderBottom: '1px solid #FCA5A5',
-          color: '#7F1D1D', fontSize: 13, lineHeight: 1.4,
-        }}>
-          <span style={{ flexShrink: 0 }}>⚠</span>
-          <span style={{ flex: 1 }}>
-            上次合成中断{synthFailureMsg ? `: ${synthFailureMsg}` : ''}。已暂停自动重试,你可以继续添加意图,然后手动点击下方按钮重新合成。
+      {/* 统一合成反馈: 保存失败 / 未产生可保存修改 / 超时中断都只在顶部展示 */}
+      {showErrorBanner && (
+        <div className="canvas-synthesis-banner" role="alert">
+          <span className="canvas-synthesis-banner-icon" aria-hidden>!</span>
+          <span className="canvas-synthesis-banner-text">
+            {errorBannerMsg}
+            {inFailureCooldown && !error ? '。已暂停自动重试,请调整意图后重试。' : ''}
           </span>
           <button
             type="button"
+            className="canvas-synthesis-banner-btn"
             onClick={() => {
               onRetrySynth?.();
-              // 主动触发: 用 runSynthesis (流式 SSE)
-              const hash = hashIntents(intents);
-              void runSynthesis(hash);
-            }}
-            style={{
-              flexShrink: 0, padding: '6px 14px', borderRadius: 6,
-              border: 0, background: '#1A1A1C', color: '#fff',
-              fontSize: 12, fontWeight: 500, cursor: 'pointer',
+              void runSynthesis(hashIntents(intents));
             }}
           >
             重新合成
@@ -932,18 +927,7 @@ export default function ProjectCanvas({
       <div className="canvas-result-foot">
         <div className="canvas-result-meta">
           {/* 所有 AI 工作阶段 (检测/冲突/合成) 均由顶部 thinking overlay 统一展示 */}
-          {showOverlay ? null : error ? (
-            <span className="canvas-sync-error">
-              <span>⚠️ 上次自动合成失败</span>
-              <button
-                type="button"
-                className="canvas-retry-btn"
-                onClick={() => runSynthesis(hashIntents(intents))}
-              >
-                重试
-              </button>
-            </span>
-          ) : displayVersion ? (
+          {showOverlay || showErrorBanner ? null : displayVersion ? (
             <>
               <span
                 className={`canvas-source-pill canvas-source-${displaySourceMeta.cls}`}
@@ -970,11 +954,6 @@ export default function ProjectCanvas({
         )}
       </div>
 
-      {error && !autoSyncing && (
-        <div className="canvas-result-error">
-          {error.length > 200 ? error.slice(0, 200) + '…' : error}
-        </div>
-      )}
     </div>
   );
 }

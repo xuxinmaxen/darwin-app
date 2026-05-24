@@ -1139,6 +1139,14 @@ export default function ProjectShell({
                 setRecentSynthFailureAt(null);
                 setSynthFailureMsg(null);
               }}
+              onSynthesisError={(message) => {
+                setIsSynthesizing(false);
+                setSynthesisPendingIds(new Set());
+                setResumePartialHtml(null);
+                setResumeThinkingMsg(null);
+                setRecentSynthFailureAt(Date.now());
+                setSynthFailureMsg(message);
+              }}
               markMode={markMode}
               onMarkBridge={onMarkBridge}
             />

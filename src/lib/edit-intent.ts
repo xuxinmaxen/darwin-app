@@ -28,7 +28,7 @@ const TEXT_REPLACE_RE =
   /(改成|改为|换成|替换成|替换为|->|→|=>)/i;
 
 const ASSET_REPAIR_RE =
-  /(logo|图标|图片|image|img|破图|缺失|加载不出来|没有加载|糊了|补全|补充|修复)/i;
+  /(logo|图标|图片|image|img|icon|破图|缺失|加载不出来|没有加载|糊了|补全|补充|修复|替换|换掉|换成|错|不对|错误|不正确|正确|官方|品牌|replace|wrong|correct)/i;
 
 const VISUAL_PATCH_RE =
   /(截图|红框|框中|如图|参考图片|看我上传|视觉|样式|位置|对齐)/i;
@@ -54,7 +54,7 @@ export function classifyEditBatch(intents: Intent[]): EditClassification {
     }
     if (ASSET_REPAIR_RE.test(statement)) {
       kinds.add('asset_repair');
-      reasons.push('mentions broken/missing visual asset');
+      reasons.push('mentions visual asset repair/replacement');
     }
     if (VISUAL_PATCH_RE.test(statement)) {
       kinds.add('visual_patch');

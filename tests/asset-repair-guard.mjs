@@ -71,6 +71,35 @@ try {
   assert.match(repaired.html, /data:image\/svg\+xml,/);
   assert.match(repaired.html, /Do not touch pricing/);
 
+  const staleInlineHtml = `<!doctype html>
+<html><head><title>fixture</title></head><body>
+<section id="ai-flow">
+  <div class="flow-node"><img class="flow-node-logo" src="data:image/svg+xml,%3Csvg%3Ewrong-chatgpt%3C%2Fsvg%3E" alt="logo"><span>ChatGPT</span></div>
+  <div class="flow-node"><img class="flow-node-logo" src="data:image/svg+xml,%3Csvg%3Ewrong-claude%3C%2Fsvg%3E" alt="logo"><span>Claude</span></div>
+  <div class="flow-node"><img class="flow-node-logo" src="data:image/svg+xml,%3Csvg%3Ewrong-gemini%3C%2Fsvg%3E" alt="logo"><span>Gemini</span></div>
+  <div class="flow-node"><img class="flow-node-logo" src="data:image/svg+xml,%3Csvg%3Ewrong-perplexity%3C%2Fsvg%3E" alt="logo"><span>Perplexity</span></div>
+</section>
+<section id="pricing"><p>Do not touch pricing.</p></section>
+</body></html>`;
+
+  const replaceIntent = {
+    ...intent,
+    id: 'intent-replace-logo',
+    statement: '4 个 ai 平台的 logo 都是错的，请替换成正确的官方 logo',
+  };
+  const replaced = repairAssetsForIntents(staleInlineHtml, [replaceIntent]);
+  assert.equal(replaced.ok, true, replaced.reason);
+  assert.equal(replaced.changed, 4);
+  assert.doesNotMatch(replaced.html, /wrong-chatgpt|wrong-claude|wrong-gemini|wrong-perplexity/);
+  assert.match(replaced.html, /OpenAI/);
+  assert.match(replaced.html, /Claude/);
+  assert.match(replaced.html, /Google%20Gemini/);
+  assert.match(replaced.html, /Perplexity/);
+  assert.match(replaced.html, /Do not touch pricing/);
+
+  const secondPass = repairAssetsForIntents(replaced.html, [replaceIntent]);
+  assert.equal(secondPass.ok, false, 'canonical logo replacement should be idempotent');
+
   console.log('asset-repair guard: ok');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

@@ -404,7 +404,6 @@ function assetRepairSatisfiesAll(intents: Intent[]): boolean {
     return (
       kinds.has('asset_repair') &&
       !kinds.has('annotated_patch') &&
-      !kinds.has('text_replace') &&
       !kinds.has('global_rewrite')
     );
   });

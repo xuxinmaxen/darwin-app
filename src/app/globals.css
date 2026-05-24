@@ -1649,6 +1649,43 @@ body {
   background: linear-gradient(135deg, rgba(79,70,229,0.92) 0%, rgba(124,58,237,0.90) 100%);
 }
 
+.canvas-synthesis-banner {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 11;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  background: linear-gradient(90deg, #FEF2F2, #FFFBEB);
+  border-bottom: 1px solid #FCA5A5;
+  color: #7F1D1D;
+  font-size: 13px; line-height: 1.4;
+}
+.canvas-synthesis-banner-icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #DC2626; color: #fff;
+  font-size: 12px; font-weight: 700;
+}
+.canvas-synthesis-banner-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.canvas-synthesis-banner-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 0;
+  background: #1A1A1C;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+}
+.canvas-synthesis-banner-btn:hover { background: #2A2A2E; }
+
 .canvas-thinking-pulse {
   width: 8px; height: 8px; border-radius: 50%;
   background: rgba(255,255,255,0.9);
