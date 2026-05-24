@@ -79,12 +79,146 @@ const IFRAME_COMPAT_SCRIPT = `
 })();
 `;
 
+const IMPORT_STATIC_FIDELITY_SCRIPT = `
+(function(){
+  function baseClass(token) {
+    var parts = String(token || '').split(':');
+    return parts[parts.length - 1] || '';
+  }
+  function isInitialHiddenToken(token) {
+    return baseClass(token) === 'opacity-0';
+  }
+  function isRevealTransformToken(token) {
+    var base = baseClass(token);
+    return /^-?translate-y-/.test(base) || /^scale-9[0-9]$/.test(base) || /^blur-(?:sm|md|lg|xl|2xl|3xl)$/.test(base);
+  }
+  function revealStaticImport() {
+    try {
+      document.querySelectorAll('[class]').forEach(function(el) {
+        var classes = Array.prototype.slice.call(el.classList || []);
+        var hasInitialHidden = classes.some(isInitialHiddenToken);
+        if (!hasInitialHidden) return;
+        classes.forEach(function(cls) {
+          if (isInitialHiddenToken(cls) || isRevealTransformToken(cls)) {
+            el.classList.remove(cls);
+          }
+        });
+        el.classList.add('darwin-import-revealed');
+        el.style.opacity = '1';
+        if (el.style.transform && /translateY\\(|scale\\(/i.test(el.style.transform)) {
+          el.style.transform = 'none';
+        }
+        if (el.style.filter && /blur\\(/i.test(el.style.filter)) {
+          el.style.filter = 'none';
+        }
+      });
+    } catch (e) {}
+  }
+  window.__darwinRevealStaticImport = revealStaticImport;
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', revealStaticImport, { once: true });
+  } else {
+    revealStaticImport();
+  }
+})();
+`;
+
+const IMPORT_STATIC_FIDELITY_STYLE = `
+  .darwin-import-revealed {
+    opacity: 1 !important;
+  }
+`;
+
+function looksLikeRawImportedHtml(html: string, sourceUrl?: string | null): boolean {
+  if (!sourceUrl) return false;
+  // Darwin-generated pages are expected to carry data-scope provenance. Raw imported
+  // source usually does not, and it may depend on stripped framework scripts for reveal.
+  return !/\bdata-scope\s*=/i.test(html);
+}
+
+function buildImportArchiveRouterScript(sourceUrl?: string | null): string {
+  const sourceUrlLiteral = JSON.stringify(sourceUrl || '');
+  return `
+(function(){
+  var sourceUrl = ${sourceUrlLiteral};
+  if (!sourceUrl) return;
+  function normalize(href) {
+    try {
+      var u = new URL(href, sourceUrl);
+      u.hash = '';
+      u.search = '';
+      var path = u.pathname.replace(/\\/+$/, '') || '/';
+      return u.origin.toLowerCase() + path.toLowerCase();
+    } catch (e) {
+      return null;
+    }
+  }
+  function archive() {
+    return document.querySelector('[data-darwin-imported-subpages]');
+  }
+  function findTemplate(href) {
+    var key = normalize(href);
+    var root = archive();
+    if (!key || !root) return null;
+    var templates = root.querySelectorAll('template[data-darwin-imported-page][data-url]');
+    for (var i = 0; i < templates.length; i++) {
+      if (normalize(templates[i].getAttribute('data-url')) === key) return templates[i];
+    }
+    return null;
+  }
+  function mergeHead(parsed, pageUrl) {
+    var head = document.head || document.getElementsByTagName('head')[0];
+    if (!head || !parsed.head) return;
+    var base = head.querySelector('base');
+    if (!base) {
+      base = document.createElement('base');
+      head.insertBefore(base, head.firstChild);
+    }
+    base.setAttribute('href', pageUrl);
+    Array.prototype.forEach.call(
+      parsed.head.querySelectorAll('link[rel], style'),
+      function(node) {
+        var key = node.outerHTML;
+        var exists = Array.prototype.some.call(
+          head.querySelectorAll('link[rel], style'),
+          function(existing) { return existing.outerHTML === key; }
+        );
+        if (!exists) head.appendChild(node.cloneNode(true));
+      }
+    );
+    if (parsed.title) document.title = parsed.title;
+  }
+  function renderArchivedPage(template, pageUrl) {
+    var root = archive();
+    var archiveHtml = root ? root.outerHTML : '';
+    var parsed = new DOMParser().parseFromString(template.innerHTML, 'text/html');
+    mergeHead(parsed, pageUrl);
+    document.body.innerHTML = (parsed.body ? parsed.body.innerHTML : template.innerHTML) + archiveHtml;
+    window.scrollTo(0, 0);
+    if (typeof window.__darwinRevealStaticImport === 'function') {
+      window.__darwinRevealStaticImport();
+    }
+  }
+  document.addEventListener('click', function(event) {
+    var target = event.target;
+    var link = target && target.closest ? target.closest('a[href]') : null;
+    if (!link) return;
+    var template = findTemplate(link.getAttribute('href'));
+    if (!template) return;
+    event.preventDefault();
+    renderArchivedPage(template, template.getAttribute('data-url') || link.href);
+  }, true);
+})();
+`;
+}
+
 /**
  * 让 iframe 内的合成 HTML 表现得像一个真实的、自洽的单页网站:
  *
- *   - 导航 link 在 iframe 内部跳转/滚动 (不跑去 darwin.org.cn, 不开新窗口)
- *   - 相对路径 <a href="/about"> → 转成 <a href="#about"> 让浏览器在本页找锚点
- *   - <a href="/"> (logo 回首页) → 转成 <a href="#top"> + body 头部加 id=top 锚点
+ *   - 生成/已编辑 HTML: 导航 link 在 iframe 内部跳转/滚动, 保持单页自洽
+ *   - 原始导入 HTML: 源站同源 link 保留为源站 URL, 让用户能检查原站子页面
+ *   - 相对路径 <a href="/about"> → 生成页转成 <a href="#about">; 原始导入页转成源站绝对 URL
+ *   - <a href="/"> (logo 回首页) → 生成页转成 <a href="#top"> + body 头部加 id=top 锚点
  *   - hash anchor <a href="#features"> 保留, 浏览器原生滚动
  *   - 真正外部 URL <a href="https://other.com"> 保留, 加 target=_blank rel=noopener
  *   - <img src> 等资源相对路径: 保留 <base href=sourceUrl> 让相对资源还原到原站
@@ -97,12 +231,18 @@ function prepareIframeHtml(
   markScript?: string | null
 ): string {
   let s = html;
+  const rawImportedHtml = looksLikeRawImportedHtml(html, sourceUrl);
 
-  // 抽源站 host — 用于把 "指向原站自己" 的绝对/相对链接也压成 hash anchor.
-  // 规则: 复刻出来的 HTML 必须自洽, 任何 <a> 都不应该把用户带回原 HTML.
+  // 抽源站 host — 生成/已编辑 HTML 用它识别 "指向原站自己" 的链接并压成 hash anchor;
+  // 原始导入 HTML 则保留为可导航源站 URL, 避免用户点子页面时落到无效 #anchor。
   let sourceHost: string | null = null;
+  let sourceOrigin: string | null = null;
   if (sourceUrl) {
-    try { sourceHost = new URL(sourceUrl).host.toLowerCase(); } catch { /* ignore */ }
+    try {
+      const u = new URL(sourceUrl);
+      sourceHost = u.host.toLowerCase();
+      sourceOrigin = u.origin;
+    } catch { /* ignore */ }
   }
   // 把任意路径压成 #anchor: /how-it-works → #how-it-works, /a/b → #a-b, about.html → #about
   const pathToAnchor = (path: string): string => {
@@ -111,6 +251,14 @@ function prepareIframeHtml(
     cleaned = cleaned.replace(/\.(html?|php|aspx?|jsp)$/i, '');
     if (!cleaned) return '#top';
     return '#' + cleaned.replace(/\//g, '-');
+  };
+  const sourceHref = (href: string): string => {
+    if (!sourceUrl) return href;
+    try {
+      return new URL(href, sourceUrl).href;
+    } catch {
+      return '#';
+    }
   };
 
   // (1) 注入 <base href=sourceUrl> (没有 target!) — 让 <img/link/style> 的相对路径
@@ -140,6 +288,25 @@ function prepareIframeHtml(
     }
   }
 
+  // (1c) 原始导入页常见问题: Next/React 等框架的外联 JS 被 sanitize 剥掉后,
+  //      scroll reveal 的初始类 (opacity-0 + translate-y-*) 永远不会被移除。
+  //      这里只展开这类"动画初始隐藏"状态,不执行远端 JS,也不强行展示 hidden tab/menu。
+  if (rawImportedHtml && !/data-darwin-import-static-fidelity/i.test(s)) {
+    const styleTag = `<style data-darwin-import-static-fidelity>${IMPORT_STATIC_FIDELITY_STYLE}</style>`;
+    const scriptTag = `<script data-darwin-import-static-fidelity>${IMPORT_STATIC_FIDELITY_SCRIPT}</script>`;
+    const routerTag = `<script data-darwin-import-archive-router>${buildImportArchiveRouterScript(sourceUrl)}</script>`;
+    if (/<head\b[^>]*>/i.test(s)) {
+      s = s.replace(/<head([^>]*)>/i, `<head$1>${styleTag}`);
+    } else {
+      s = `${styleTag}${s}`;
+    }
+    if (/<\/body>/i.test(s)) {
+      s = s.replace(/<\/body>/i, `${scriptTag}${routerTag}</body>`);
+    } else {
+      s += scriptTag + routerTag;
+    }
+  }
+
   // (2) 在 body 顶部注入 <a id="top"> 锚点 → 让 logo (#top) 滚到顶
   if (/<body\b[^>]*>/i.test(s) && !/<a\b[^>]*id\s*=\s*["']top["']/i.test(s)) {
     s = s.replace(/(<body\b[^>]*>)/i, '$1<a id="top" aria-hidden="true"></a>');
@@ -165,6 +332,9 @@ function prepareIframeHtml(
       try {
         const u = new URL('https:' + cleanedHref);
         if (sourceHost && u.host.toLowerCase() === sourceHost) {
+          if (rawImportedHtml) {
+            return `<a${beforeC} href="${escapeAttr(u.href)}"${afterC}>`;
+          }
           return `<a${beforeC} href="${pathToAnchor(u.pathname)}"${afterC}>`;
         }
         return `<a${beforeC} href="https:${cleanedHref}" target="_blank" rel="noopener noreferrer"${afterC}>`;
@@ -176,7 +346,10 @@ function prepareIframeHtml(
       try {
         const u = new URL(cleanedHref);
         if (sourceHost && u.host.toLowerCase() === sourceHost) {
-          // 指向原站自己 — 压成 hash anchor, 不要让用户跳回原页面
+          if (rawImportedHtml) {
+            return `<a${beforeC} href="${escapeAttr(u.href)}"${afterC}>`;
+          }
+          // 指向原站自己 — 生成/已编辑页压成 hash anchor, 不要让用户跳回原页面
           return `<a${beforeC} href="${pathToAnchor(u.pathname)}"${afterC}>`;
         }
         // 真外站 — 新窗口
@@ -185,7 +358,10 @@ function prepareIframeHtml(
         return `<a${beforeC} href="#"${afterC}>`;
       }
     }
-    // 站内根路径 / 站内相对路径都压成 hash anchor (默认 <base> 会把它们解析回原站)
+    // 站内根路径 / 站内相对路径: 原始导入页保留可点的源站 URL;生成页压成 hash anchor。
+    if (rawImportedHtml && sourceOrigin) {
+      return `<a${beforeC} href="${escapeAttr(sourceHref(cleanedHref))}"${afterC}>`;
+    }
     if (cleanedHref === '/') return `<a${beforeC} href="#top"${afterC}>`;
     if (cleanedHref.startsWith('/')) return `<a${beforeC} href="${pathToAnchor(cleanedHref)}"${afterC}>`;
     return `<a${beforeC} href="${pathToAnchor(cleanedHref)}"${afterC}>`;

@@ -17,8 +17,10 @@
 import { z } from 'zod';
 
 const FETCH_TIMEOUT_MS = 12_000;
+const SUBPAGE_FETCH_TIMEOUT_MS = 6_000;
 const MAX_TEXT_CHARS = 8_000;
 const MAX_RAW_HTML_BYTES = 500_000;
+const MAX_IMPORTED_SUBPAGES = 8;
 
 /**
  * 给 LLM prompt 用的体积上限。原始 HTML 可能上百万字符,
@@ -151,6 +153,10 @@ export type FetchImportedHtmlResult = {
   rawHtml: string;
   rawHtmlBytes: number;
   rawHtmlTruncated: boolean;
+  /** 同源子页面抓取数量（写入 rawHtml 末尾的 inert template, 不影响首页渲染） */
+  subpageCount: number;
+  subpageUrls: string[];
+  subpagesTruncated: boolean;
 };
 
 export class FetchImportedHtmlError extends Error {
@@ -200,6 +206,128 @@ export function sanitizeHtmlPreserveAnimations(html: string): string {
     // javascript: URL → #
     .replace(/(href|src)\s*=\s*"javascript:[^"]*"/gi, '$1="#"')
     .replace(/(href|src)\s*=\s*'javascript:[^']*'/gi, "$1='#'");
+}
+
+type ImportedSubpage = {
+  url: string;
+  title: string | null;
+  html: string;
+};
+
+const NON_HTML_PATH_EXT_RE =
+  /\.(?:png|jpe?g|gif|webp|avif|svg|ico|css|js|mjs|json|xml|pdf|zip|rar|7z|gz|mp4|mov|webm|mp3|wav|woff2?|ttf|otf|eot)$/i;
+
+function discoverSameOriginSubpageUrls(sourceUrl: string, html: string): string[] {
+  const source = new URL(sourceUrl);
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  const re = /<a\b[^>]*?\shref\s*=\s*("|')([^"']+)\1/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const rawHref = m[2].trim();
+    if (
+      !rawHref ||
+      rawHref.startsWith('#') ||
+      /^(mailto:|tel:|sms:|javascript:)/i.test(rawHref)
+    ) {
+      continue;
+    }
+
+    let u: URL;
+    try {
+      u = new URL(rawHref, sourceUrl);
+    } catch {
+      continue;
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') continue;
+    if (u.host.toLowerCase() !== source.host.toLowerCase()) continue;
+    if (NON_HTML_PATH_EXT_RE.test(u.pathname)) continue;
+
+    u.hash = '';
+    // Query-heavy links are usually tracking/search state, not stable site pages.
+    u.search = '';
+    const key = normalizePageKey(u);
+    if (!key || key === normalizePageKey(source) || seen.has(key)) continue;
+    seen.add(key);
+    urls.push(u.href);
+    if (urls.length >= MAX_IMPORTED_SUBPAGES) break;
+  }
+  return urls;
+}
+
+function normalizePageKey(u: URL): string {
+  return u.pathname.replace(/\/+$/, '') || '/';
+}
+
+async function fetchSubpageHtml(url: string): Promise<ImportedSubpage | null> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), SUBPAGE_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (DarwinImporter/1.0)',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+    });
+    if (!res.ok) return null;
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType && !/text\/html|application\/xhtml\+xml/i.test(contentType)) return null;
+    const html = await res.text();
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim().slice(0, 120) : null;
+    const sanitized = injectBase(sanitizeHtmlPreserveAnimations(html), url);
+    return { url, title, html: sanitized };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function fetchSameOriginSubpages(opts: {
+  sourceUrl: string;
+  sourceHtml: string;
+  availableChars: number;
+}): Promise<{ pages: ImportedSubpage[]; truncated: boolean }> {
+  if (opts.availableChars <= 6000) return { pages: [], truncated: true };
+  const candidates = discoverSameOriginSubpageUrls(opts.sourceUrl, opts.sourceHtml);
+  const pages: ImportedSubpage[] = [];
+  let remaining = opts.availableChars;
+  let truncated = false;
+
+  const fetched = await Promise.all(candidates.map(fetchSubpageHtml));
+  for (const page of fetched) {
+    if (!page) continue;
+    const wrappedSize = page.html.length + 500;
+    if (wrappedSize > remaining) {
+      truncated = true;
+      continue;
+    }
+    pages.push(page);
+    remaining -= wrappedSize;
+  }
+
+  return { pages, truncated };
+}
+
+function appendImportedSubpageArchive(html: string, pages: ImportedSubpage[]): string {
+  if (pages.length === 0) return html;
+  const archive = [
+    '<!-- Darwin imported same-origin subpages: kept inert for 1:1 reference fidelity. -->',
+    '<div data-darwin-imported-subpages hidden>',
+    ...pages.map(page => [
+      `<template data-darwin-imported-page data-url="${escapeAttr(page.url)}"${page.title ? ` data-title="${escapeAttr(page.title)}"` : ''}>`,
+      page.html,
+      '</template>',
+    ].join('\n')),
+    '</div>',
+  ].join('\n');
+
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${archive}</body>`);
+  }
+  return `${html}\n${archive}`;
 }
 
 /**
@@ -265,8 +393,20 @@ export async function fetchImportedHtml(url: string): Promise<FetchImportedHtmlR
 
   let rawHtml = sanitizeHtmlPreserveAnimations(html);
   rawHtml = injectBase(rawHtml, url);
-  const rawHtmlTruncated = rawHtml.length > MAX_RAW_HTML_BYTES;
-  if (rawHtmlTruncated) rawHtml = rawHtml.slice(0, MAX_RAW_HTML_BYTES);
+  const rootRawHtmlTruncated = rawHtml.length > MAX_RAW_HTML_BYTES;
+  if (rootRawHtmlTruncated) rawHtml = rawHtml.slice(0, MAX_RAW_HTML_BYTES);
+
+  const subpageBudget = Math.max(0, MAX_RAW_HTML_BYTES - rawHtml.length - 2000);
+  const subpages = rootRawHtmlTruncated
+    ? { pages: [] as ImportedSubpage[], truncated: true }
+    : await fetchSameOriginSubpages({
+        sourceUrl: url,
+        sourceHtml: html,
+        availableChars: subpageBudget,
+      });
+  rawHtml = appendImportedSubpageArchive(rawHtml, subpages.pages);
+  const rawHtmlTruncated = rootRawHtmlTruncated || rawHtml.length > MAX_RAW_HTML_BYTES || subpages.truncated;
+  if (rawHtml.length > MAX_RAW_HTML_BYTES) rawHtml = rawHtml.slice(0, MAX_RAW_HTML_BYTES);
 
   return {
     url,
@@ -278,5 +418,8 @@ export async function fetchImportedHtml(url: string): Promise<FetchImportedHtmlR
     rawHtml,
     rawHtmlBytes: rawHtml.length,
     rawHtmlTruncated,
+    subpageCount: subpages.pages.length,
+    subpageUrls: subpages.pages.map(p => p.url),
+    subpagesTruncated: subpages.truncated,
   };
 }
