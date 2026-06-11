@@ -27,9 +27,10 @@ export default function LoginForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim(), code: code.trim() }),
       });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        setError(json.error || `登录失败 (${res.status})`);
+      // 服务端异常时 body 可能为空, 不能让 res.json() 直接抛 "Unexpected end of JSON input"
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setError(json?.error || `服务暂时不可用 (${res.status}),请稍后重试`);
         return;
       }
       router.push('/');

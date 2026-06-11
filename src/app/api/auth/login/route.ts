@@ -40,25 +40,35 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const emp = await findHumanByEmail(body.email);
-  if (!emp) {
+  try {
+    const emp = await findHumanByEmail(body.email);
+    if (!emp) {
+      return NextResponse.json(
+        { ok: false, error: '这个邮箱不在团队成员里' },
+        { status: 404 }
+      );
+    }
+
+    await setLoginCookie(emp.id);
+    await bumpLastActive(emp.id); // 标记本次登录, 立刻进入在线状态
+    return NextResponse.json({
+      ok: true,
+      user: {
+        id: emp.id,
+        name: emp.name,
+        role: emp.role,
+        email: emp.email,
+        short: emp.short,
+        cls: emp.cls,
+      },
+    });
+  } catch (err) {
+    // 数据库不可达 (如 Supabase 项目暂停 / 网络故障) 时不能裸 500 空 body,
+    // 前端 res.json() 会炸成 "Unexpected end of JSON input"
+    console.error('[auth/login] db error:', err);
     return NextResponse.json(
-      { ok: false, error: '这个邮箱不在团队成员里' },
-      { status: 404 }
+      { ok: false, error: '数据库暂时不可用,请稍后重试。如果持续出现,请联系管理员检查 Supabase 项目状态。' },
+      { status: 503 }
     );
   }
-
-  await setLoginCookie(emp.id);
-  await bumpLastActive(emp.id); // 标记本次登录, 立刻进入在线状态
-  return NextResponse.json({
-    ok: true,
-    user: {
-      id: emp.id,
-      name: emp.name,
-      role: emp.role,
-      email: emp.email,
-      short: emp.short,
-      cls: emp.cls,
-    },
-  });
 }
